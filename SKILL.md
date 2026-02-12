@@ -70,5 +70,5 @@ pup auth refresh        # Refresh expired token
 Additional skills available shortly.
 
 ```bash
-npx skills add datadog-ai-labs/agent-skills --list --full-depth
+npx skills add datadog-labs/agent-skills --list --full-depth
 ```
