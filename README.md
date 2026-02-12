@@ -14,17 +14,7 @@
 
 ## Install
 
-```bash
-npx skills add datadog-ai-labs/agent-skills \
-  --skill dd-pup \
-  --skill dd-monitors \
-  --skill dd-logs \
-  --skill dd-apm \
-  --skill dd-docs \
-  --full-depth -y
-```
-
-## Setup
+### Setup Pup
 
 ```bash
 # Install pup CLI
@@ -33,6 +23,26 @@ export PATH="$HOME/go/bin:$PATH"
 
 # Authenticate
 pup auth login
+```
+
+### Add Skill(s) 
+
+For JUST `dd-pup`:
+
+```bash
+npx skills add datadog-labs/agent-skills \
+  --skill dd-pup \
+  --full-depth -y
+```
+
+```bash
+npx skills add datadog-labs/agent-skills \
+  --skill dd-pup \
+  --skill dd-monitors \
+  --skill dd-logs \
+  --skill dd-apm \
+  --skill dd-docs \
+  --full-depth -y
 ```
 
 ## Quick Reference
@@ -64,7 +74,7 @@ Additional skills available soon.
 
 ```bash
 # List all available
-npx skills add datadog-ai-labs/agent-skills --list --full-depth
+npx skills add datadog-labs/agent-skills --list --full-depth
 ```
 
 ## License
