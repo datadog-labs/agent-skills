@@ -4,7 +4,7 @@ description: APM - traces, services, dependencies, performance analysis.
 metadata:
   version: "1.0.0"
   author: datadog-labs
-  repository: https://github.com/datadog-labs/dd-skills
+  repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,tracing,performance,distributed-tracing,dd-apm
   globs: "**/ddtrace*,**/datadog*.yaml,**/*trace*"
   alwaysApply: "false"
