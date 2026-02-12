@@ -4,7 +4,7 @@ description: Log management - search, pipelines, archives, and cost control.
 metadata:
   version: "1.0.0"
   author: datadog-labs
-  repository: https://github.com/datadog-labs/dd-skills
+  repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,logs,logging,search,dd-logs
   globs: "**/datadog*.yaml,**/*log*"
   alwaysApply: "false"
