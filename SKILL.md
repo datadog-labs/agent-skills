@@ -1,7 +1,8 @@
 ---
 name: agent-skills
 description: Datadog skills for AI agents. Essential monitoring, logging, tracing and observability.
-version: 1.0.0
+metadata:
+  version: "1.0.0"
 ---
 
 # Datadog Skills
