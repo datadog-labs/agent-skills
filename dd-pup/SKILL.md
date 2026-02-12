@@ -161,9 +161,9 @@ pup events post --title "Deploy started" --text "v1.2.3" --tags "env:prod"
 
 ### Downtimes
 ```bash
-pup downtimes list
-pup downtimes create --scope "env:staging" --duration 2h --message "Maintenance"
-pup downtimes cancel --id 12345
+pup downtime list
+pup downtime create --scope "env:staging" --duration 2h --message "Maintenance"
+pup downtime cancel --id 12345
 ```
 
 ### Users / Teams
