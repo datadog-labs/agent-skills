@@ -1,19 +1,13 @@
 ---
 name: dd-monitors
 description: Monitor management - create, update, mute, and alerting best practices.
-version: 1.0.0
-author: datadog-labs
-repository: https://github.com/datadog-labs/agent-skills
-tags:
-  - datadog
-  - monitors
-  - alerting
-  - alerts
-  - dd-monitors
-globs:
-  - "**/datadog*.yaml"
-  - "**/*monitor*"
-alwaysApply: false
+metadata:
+  version: "1.0.0"
+  author: datadog-labs
+  repository: https://github.com/datadog-labs/agent-skills
+  tags: datadog,monitors,alerting,alerts,dd-monitors
+  globs: "**/datadog*.yaml,**/*monitor*"
+  alwaysApply: "false"
 ---
 
 # Datadog Monitors
