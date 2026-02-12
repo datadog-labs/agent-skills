@@ -32,13 +32,13 @@ pup auth login
 
 ```bash
 # Basic search
-pup logs search "status:error" --from -1h
+pup logs search --query="status:error" --from="1h"
 
 # With filters
-pup logs search "service:api status:error" --from -1h --limit 100
+pup logs search --query="service:api status:error" --from="1h" --limit 100
 
 # JSON output
-pup logs search "@http.status_code:>=500" --from -1h --json
+pup logs search --query="@http.status_code:>=500" --from="1h" --json
 ```
 
 ### Search Syntax
@@ -108,7 +108,7 @@ pup logs pipelines create --json @pipeline.json
 
 ```bash
 # Find noisiest log sources
-pup logs search "*" --from -1h --json | jq 'group_by(.service) | map({service: .[0].service, count: length}) | sort_by(-.count)[:10]'
+pup logs search --query="*" --from="1h" --json | jq 'group_by(.service) | map({service: .[0].service, count: length}) | sort_by(-.count)[:10]'
 ```
 
 | Exclude | Query |
