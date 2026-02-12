@@ -2,8 +2,8 @@
 name: dd-apm
 description: APM - traces, services, dependencies, performance analysis.
 version: 1.0.0
-author: dd-skill-test
-repository: https://github.com/dd-skill-test/dd-skills
+author: datadog-labs
+repository: https://github.com/datadog-labs/dd-skills
 tags:
   - datadog
   - apm
