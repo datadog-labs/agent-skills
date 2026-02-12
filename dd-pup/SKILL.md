@@ -20,7 +20,7 @@ Pup CLI for Datadog API operations. Supports OAuth2 and API key auth.
 | Search error logs | `pup logs search --query "status:error" --duration 1h` |
 | List monitors | `pup monitors list` |
 | Mute a monitor | `pup monitors mute --id 123 --duration 1h` |
-| Find slow traces | `pup traces search --service api --min-duration 500ms` |
+| Find slow traces | `pup apm traces list --service api --min-duration 500ms` |
 | List active incidents | `pup incidents list --status active` |
 | Create incident | `pup incidents create --title "Issue" --severity SEV-2` |
 | Query metrics | `pup metrics query --query "avg:system.cpu.user{*}"` |
@@ -100,10 +100,10 @@ pup metrics list --filter "system.*"
 ### APM / Traces
 ```bash
 pup apm services list
-pup traces search --service my-service --duration 1h
-pup traces search --service api --min-duration 500ms --duration 1h
-pup traces search --service api --status error --duration 1h
-pup traces get --trace-id abc123
+pup apm traces list --service my-service --duration 1h
+pup apm traces list --service api --min-duration 500ms --duration 1h
+pup apm traces list --service api --status error --duration 1h
+pup apm traces get abc123def456
 ```
 
 ### Incidents
