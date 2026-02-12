@@ -1,15 +1,12 @@
 ---
 name: dd-docs
 description: Datadog docs lookup using docs.datadoghq.com/llms.txt and linked Markdown pages.
-version: 1.0.0
-author: datadog-labs
-repository: https://github.com/datadog-labs/agent-skills
-tags:
-  - datadog
-  - docs
-  - llms.txt
-  - dd-docs
-alwaysApply: false
+metadata:
+  version: "1.0.0"
+  author: datadog-labs
+  repository: https://github.com/datadog-labs/agent-skills
+  tags: datadog,docs,llms.txt,dd-docs
+  alwaysApply: "false"
 ---
 
 # Datadog Docs
