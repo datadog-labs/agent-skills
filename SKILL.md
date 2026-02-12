@@ -1,20 +1,27 @@
-# Datadog Skills for AI Agents
+---
+name: datadog-ai-labs/agent-skills
+description: Datadog skills for AI agents. Essential monitoring and observability.
+version: 1.0.0
+---
 
-5 essential Datadog skills for Claude Code, Cursor, OpenCode, and other AI agents.
+# Datadog Skills
 
-## Skills
+Essential Datadog skills for AI agents.
+
+## Core Skills
 
 | Skill | Description |
 |-------|-------------|
-| **dd-pup** | Primary CLI - commands, auth, PATH setup |
-| **dd-monitors** | Create, manage, mute monitors |
-| **dd-logs** | Search logs |
-| **dd-apm** | Traces, services, performance |
+| **dd-pup** | Primary CLI - all pup commands, auth, PATH setup |
+| **dd-monitors** | Create, manage, mute monitors and alerts |
+| **dd-logs** | Search logs, pipelines, archives |
+| **dd-apm** | Traces, services, performance analysis |
 | **dd-docs** | Search Datadog documentation |
 
 ## Install
 
 ```bash
+# Install core skills
 npx skills add datadog-ai-labs/agent-skills \
   --skill dd-pup \
   --skill dd-monitors \
@@ -24,7 +31,7 @@ npx skills add datadog-ai-labs/agent-skills \
   --full-depth -y
 ```
 
-## Setup
+## Prerequisites
 
 ```bash
 # Install pup CLI
@@ -44,36 +51,23 @@ pup auth login
 | Mute a monitor | `pup monitors mute --id 123 --duration 1h` |
 | Find slow traces | `pup traces search --service api --min-duration 500ms` |
 | Query metrics | `pup metrics query --query "avg:system.cpu.user{*}"` |
-| List services | `pup apm services list` |
 | Check auth | `pup auth status` |
 | Refresh token | `pup auth refresh` |
 
 ## Auth
 
 ```bash
-pup auth login      # OAuth2 browser flow
-pup auth status     # Check token
-pup auth refresh    # Refresh expired token
+pup auth login          # OAuth2 (recommended)
+pup auth status         # Check token
+pup auth refresh        # Refresh expired token
 ```
 
-Tokens expire (~1 hour). Run `pup auth refresh` if you get 401/403 errors.
+**⚠️ Token Expiry**: OAuth tokens expire (~1 hour). Run `pup auth refresh` if commands fail with 401/403.
 
 ## More Skills
 
-100+ additional skills available in [SKILL_FULL.md](./SKILL_FULL.md):
-
-- Security: kubehound, guarddog, stratus-red-team
-- Infrastructure: dd-infra, dd-containers, cloudcraft  
-- CI/CD: dd-ci, dd-dora
-- Incidents: dd-oncall, dd-incident-commander
-- And more...
+Additional skills available shortly.
 
 ```bash
-# List all available
 npx skills add datadog-ai-labs/agent-skills --list --full-depth
 ```
-
-## License
-
-MIT
-
