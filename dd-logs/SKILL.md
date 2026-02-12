@@ -190,18 +190,6 @@ def sanitize_log(message: str) -> str:
     return message
 ```
 
-## Terminal Sparklines
-
-Log volume and error trends:
-
-```bash
-# Log volume
-python3 scripts/sparkline.py --metric "sum:datadog.estimated_usage.logs.ingested_bytes{*}" --hours 24
-
-# Error log rate
-python3 scripts/sparkline.py --metric "sum:log.error{*}.as_rate()" --hours 1
-```
-
 ## Troubleshooting
 
 | Problem | Fix |
