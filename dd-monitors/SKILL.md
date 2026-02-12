@@ -58,11 +58,14 @@ pup monitors create \
 ### Mute/Unmute
 
 ```bash
-# Mute with end time (REQUIRED)
-pup monitors mute <id> --end "2024-01-15T18:00:00Z"
+# Mute with duration
+pup monitors mute --id 12345 --duration 1h
+
+# Or mute with specific end time
+pup monitors mute --id 12345 --end "2024-01-15T18:00:00Z"
 
 # Unmute
-pup monitors unmute <id>
+pup monitors unmute --id 12345
 ```
 
 ## ⚠️ Monitor Creation Best Practices
