@@ -2,8 +2,8 @@
 name: dd-docs
 description: Datadog docs lookup using docs.datadoghq.com/llms.txt and linked Markdown pages.
 version: 1.0.0
-author: dd-skill-test
-repository: https://github.com/datadog-ai-labs/agent-skills
+author: datadog-labs
+repository: https://github.com/datadog-labs/agent-skills
 tags:
   - datadog
   - docs
