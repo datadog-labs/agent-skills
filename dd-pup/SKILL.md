@@ -103,7 +103,7 @@ pup apm services list
 pup apm traces list --service my-service --duration 1h
 pup apm traces list --service api --min-duration 500ms --duration 1h
 pup apm traces list --service api --status error --duration 1h
-pup apm traces get <trace_id>
+pup apm traces get abc123def456
 ```
 
 ### Incidents
