@@ -1,7 +1,9 @@
 ---
-name: pup
+name: dd-pup
 description: Datadog CLI (Go). OAuth2 auth with token refresh.
 version: 1.0.0
+author: datadog-labs
+repository: https://github.com/datadog-labs/agent-skills
 tags:
   - datadog
   - cli
