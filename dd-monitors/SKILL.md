@@ -2,7 +2,7 @@
 name: dd-monitors
 description: Monitor management - create, update, mute, and alerting best practices.
 version: 1.0.0
-author: dd-skill-test
+author: datadog-labs
 repository: https://github.com/datadog-labs/agent-skills
 tags:
   - datadog
