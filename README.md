@@ -60,13 +60,7 @@ Tokens expire (~1 hour). Run `pup auth refresh` if you get 401/403 errors.
 
 ## More Skills
 
-100+ additional skills available in [SKILL_FULL.md](./SKILL_FULL.md):
-
-- Security: kubehound, guarddog, stratus-red-team
-- Infrastructure: dd-infra, dd-containers, cloudcraft  
-- CI/CD: dd-ci, dd-dora
-- Incidents: dd-oncall, dd-incident-commander
-- And more...
+Additional skills available soon.
 
 ```bash
 # List all available
