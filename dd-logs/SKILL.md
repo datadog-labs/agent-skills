@@ -2,8 +2,8 @@
 name: dd-logs
 description: Log management - search, pipelines, archives, and cost control.
 version: 1.0.0
-author: dd-skill-test
-repository: https://github.com/dd-skill-test/dd-skills
+author: datadog-labs
+repository: https://github.com/datadog-labs/dd-skills
 tags:
   - datadog
   - logs
