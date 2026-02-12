@@ -1,6 +1,6 @@
 ---
-name: datadog-ai-labs/agent-skills
-description: Datadog skills for AI agents. Essential monitoring and observability.
+name: agent-skills
+description: Datadog skills for AI agents. Essential monitoring, logging, tracing and observability.
 version: 1.0.0
 ---
 
@@ -22,7 +22,7 @@ Essential Datadog skills for AI agents.
 
 ```bash
 # Install core skills
-npx skills add datadog-ai-labs/agent-skills \
+npx skills add datadog-labs/agent-skills \
   --skill dd-pup \
   --skill dd-monitors \
   --skill dd-logs \
