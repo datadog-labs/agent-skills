@@ -58,6 +58,8 @@ npx skills add datadog-labs/agent-skills \
 | Check auth | `pup auth status` |
 | Refresh token | `pup auth refresh` |
 
+More commands for `pup` are found in the [official pup docs](https://github.com/DataDog/pup/blob/main/docs/COMMANDS.md). 
+
 ## Auth
 
 ```bash
