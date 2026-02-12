@@ -52,7 +52,7 @@ npx skills add datadog-labs/agent-skills \
 | Search error logs | `pup logs search --query "status:error" --duration 1h` |
 | List monitors | `pup monitors list` |
 | Mute a monitor | `pup monitors mute --id 123 --duration 1h` |
-| Find slow traces | `pup traces search --service api --min-duration 500ms` |
+| Find slow traces | `pup apm traces list --service api --min-duration 500ms` |
 | Query metrics | `pup metrics query --query "avg:system.cpu.user{*}"` |
 | List services | `pup apm services list` |
 | Check auth | `pup auth status` |
