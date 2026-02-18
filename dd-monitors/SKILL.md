@@ -18,15 +18,14 @@ Create, manage, and maintain monitors for alerting.
 ## Prerequisites
 This requires Go or the pup binary in your path. 
 
-`pup` - `go install github.com/DataDog/pup@latest`
-Or ensure `~/go/bin` is in `$PATH`.
+`pup` - `go install github.com/datadog-labs/pup@latest`
+Ensure `~/go/bin` is in `$PATH`.
 
 
 ## Quick Start
 
 ```bash
 pup auth login
-# or: export DD_API_KEY=xxx && export DD_APP_KEY=xxx
 ```
 
 ## Common Operations
