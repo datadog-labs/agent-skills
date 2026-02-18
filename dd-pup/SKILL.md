@@ -35,13 +35,8 @@ Pup CLI for Datadog API operations. Supports OAuth2 and API key auth.
 
 ```bash
 # Install pup
-go install github.com/DataDog/pup@latest
+go install github.com/datadog-labs/pup@latest
 export PATH="$HOME/go/bin:$PATH"
-
-# For headless/CI environments
-export DD_API_KEY=your-api-key
-export DD_APP_KEY=your-app-key
-export DD_SITE=datadoghq.com  # Optional: datadoghq.eu, us3.datadoghq.com, etc.
 ```
 
 ## Auth
@@ -63,6 +58,7 @@ pup auth login          # If refresh fails, full re-auth
 ### Headless/CI (no browser)
 
 ```bash
+# Use env vars or:
 export DD_API_KEY=your-api-key
 export DD_APP_KEY=your-app-key
 export DD_SITE=datadoghq.com    # or datadoghq.eu, etc.
