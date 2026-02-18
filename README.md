@@ -11,6 +11,7 @@
 | **dd-logs** | Search logs |
 | **dd-apm** | Traces, services, performance |
 | **dd-docs** | Search Datadog documentation |
+| **dd-llmo** | LLM Observability traces, experiments, evals |
 
 ## Install
 
