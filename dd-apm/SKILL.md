@@ -14,6 +14,14 @@ metadata:
 
 Distributed tracing, service maps, and performance analysis.
 
+## Requirements
+
+Datadog Labs Pup should be installed via:
+
+```bash
+go install github.com/datadog-labs/pup@latest
+```
+
 ## Quick Start
 
 ```bash
