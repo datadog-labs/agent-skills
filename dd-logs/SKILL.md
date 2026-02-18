@@ -16,16 +16,16 @@ Search, process, and archive logs with cost awareness.
 
 ## Prerequisites
 
-Datadog Pup (dd-pup/pup) should already be installed.
+Datadog Pup (dd-pup/pup) should already be installed:
+
+```bash
+go install github.com/datadog-labs/pup@latest
+```
 
 ## Quick Start
 
 ```bash
 pup auth login
-# or: 
-# export DD_API_KEY=your-api-key
-# export DD_APP_KEY=your-app-key
-# Optional: export DD_SITE=datadoghq.eu  # For EU region
 ```
 
 ## Search Logs
