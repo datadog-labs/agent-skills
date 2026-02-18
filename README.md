@@ -18,7 +18,7 @@
 
 ```bash
 # Install pup CLI
-go install github.com/DataDog/pup@latest
+go install github.com/datadog-labs/pup@latest
 export PATH="$HOME/go/bin:$PATH"
 
 # Authenticate
@@ -58,7 +58,7 @@ npx skills add datadog-labs/agent-skills \
 | Check auth | `pup auth status` |
 | Refresh token | `pup auth refresh` |
 
-More commands for `pup` are found in the [official pup docs](https://github.com/DataDog/pup/blob/main/docs/COMMANDS.md). 
+More commands for `pup` are found in the [official pup docs](https://github.com/datadog-labs/pup/blob/main/docs/COMMANDS.md). 
 
 ## Auth
 
