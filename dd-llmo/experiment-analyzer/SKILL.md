@@ -17,15 +17,24 @@ The experiment_id is: $ARGUMENTS
 
 ## Available Tools
 
-Use these llm-obs-mcp MCP tools for analysis:
+Use these MCP tools for analysis:
 
 | Tool | Purpose |
 |------|---------|
-| `get_experiment_summary` | Get total events, error count, metrics stats, available dimensions |
-| `get_events` | Query events with filters, sorting, pagination |
-| `get_event_by_id` | Get full event details (input, output, expected_output, metrics) |
-| `get_metric_values` | Get metric stats overall and segmented by dimension |
-| `get_unique_dimension_values` | List unique values for a dimension with counts |
+| `search_llmobs_spans` | Search for LLM Observability spans matching filters (entry point for trace analysis) |
+| `search_datadog_llmobs_spans` | Retrieve and analyze LLM Observability spans with custom attributes |
+| `get_llmobs_trace` | Get full structure of a trace as a span hierarchy tree |
+| `get_llmobs_span_details` | Get detailed metadata for one or more spans (timing, LLM info, content_info) |
+| `get_llmobs_span_content` | Retrieve actual content of a specific field from a span (input, output, messages, etc.) |
+| `expand_llmobs_spans` | Load children of specific spans in a trace for progressive tree exploration |
+| `find_llmobs_error_spans` | Find all error spans in a trace with propagation context |
+| `get_llmobs_agent_loop` | Get chronological view of an agent's execution loop (decisions, tool calls, LLM calls) |
+| `get_llmobs_experiment_summary` | Get high-level summary of an experiment with pre-computed metric stats |
+| `list_llmobs_experiment_events` | List experiment events with filters, sorting, and pagination |
+| `get_llmobs_experiment_event` | Get full details for a single experiment event (input, output, metrics, dimensions) |
+| `get_llmobs_experiment_metric_values` | Get statistical analysis for a metric, optionally segmented by dimension |
+| `get_llmobs_experiment_dimension_values` | Get unique values for a dimension with counts |
+
 
 ## Analysis Workflow
 
