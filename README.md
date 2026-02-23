@@ -46,6 +46,9 @@ npx skills add datadog-labs/agent-skills \
   --full-depth -y
 ```
 
+For llmo skills, copy the relevant skill directories from dd-llmo to their local home. 
+Ex - for Claude Code cp -r dd-llmo/experiment-analyzer ~/.claude/skills
+
 ## Quick Reference
 
 | Task | Command |
