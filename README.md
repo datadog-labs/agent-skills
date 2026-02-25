@@ -46,20 +46,24 @@ npx skills add datadog-labs/agent-skills \
   --full-depth -y
 ```
 
-### LLM Observability 
+### LLM Observability (LLMO)
 
-For llmo skills, copy the relevant skill directories from dd-llmo to their local home. 
-Ex - for Claude Code cp -r dd-llmo/experiment-analyzer ~/.claude/skills
+For LLMO skills, copy the relevant skill directories from `dd-llmo` to their local home. 
+E.g.: for Claude Code `cp -r dd-llmo/experiment-analyzer ~/.claude/skills`
 
-These have a dependency on the llmo toolset in the Datadog MCP server. The easiest way to add it is:
+These have a dependency on the LLMO toolset in the Datadog MCP server. The easiest way to add it is:
 
+```bash
 claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'
+```
 
 This will add it as an independent MCP server from the core datadog MCP tools. 
 
 If you'd like the ability to export results to a Datadog notebook, also install the core MCP tools. 
 
+```bash
 claude mcp add --scope user --transport http "datadog-mcp-core" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=core'
+```
 
 ## Quick Reference
 
