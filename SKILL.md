@@ -18,6 +18,7 @@ Essential Datadog skills for AI agents.
 | **dd-logs** | Search logs, pipelines, archives |
 | **dd-apm** | Traces, services, performance analysis |
 | **dd-docs** | Search Datadog documentation |
+| **dd-llmo** | LLM Observability traces, experiments, evals |
 
 ## Install
 
