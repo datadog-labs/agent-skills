@@ -18,10 +18,19 @@
 ### Setup Pup
 
 ```bash
-# Install pup CLI
-go install github.com/datadog-labs/pup@latest
-export PATH="$HOME/go/bin:$PATH"
+# Homebrew (macOS/Linux) — recommended
+brew tap datadog-labs/pack
+brew install datadog-labs/pack/pup
 
+# Or build from source
+git clone https://github.com/datadog-labs/pup.git && cd pup
+cargo build --release
+cp target/release/pup /usr/local/bin/pup
+```
+
+Pre-built binaries are also available from the [latest release](https://github.com/datadog-labs/pup/releases/latest).
+
+```bash
 # Authenticate
 pup auth login
 ```
