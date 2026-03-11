@@ -25,7 +25,7 @@ brew install datadog-labs/pack/pup
 # Or build from source
 git clone https://github.com/datadog-labs/pup.git && cd pup
 cargo build --release
-cp target/release/pup /usr/local/bin/pup
+cp target/release/pup ~/.local/bin
 ```
 
 Pre-built binaries are also available from the [latest release](https://github.com/datadog-labs/pup/releases/latest).
@@ -81,10 +81,10 @@ claude mcp add --scope user --transport http "datadog-mcp-core" 'https://mcp.dat
 #### Usage
 
 ```
-/experiment-analyzer <experiment_id>                          # single experiment
-/experiment-analyzer <baseline_id> <candidate_id>            # compare two experiments
-/experiment-analyzer <id(s)> <question>                      # ask a specific question
-/experiment-analyzer <id(s)> [question] --output notebook    # export to Datadog notebook
+experiment-analyzer <experiment_id>                         # single experiment
+experiment-analyzer <baseline_id> <candidate_id>            # compare two experiments
+experiment-analyzer <id(s)> <question>                      # ask a specific question
+experiment-analyzer <id(s)> [question] --output notebook    # export to Datadog notebook
 ```
 
 ## Quick Reference
