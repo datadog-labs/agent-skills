@@ -35,14 +35,7 @@ npx skills add datadog-labs/agent-skills \
 
 ## Prerequisites
 
-```bash
-# Install pup CLI
-go install github.com/DataDog/pup@latest
-export PATH="$HOME/go/bin:$PATH"
-
-# Authenticate
-pup auth login
-```
+See [Setup Pup](https://github.com/datadog-labs/agent-skills/tree/main?tab=readme-ov-file#setup-pup) for installation and authentication.
 
 ## Quick Reference
 

@@ -16,11 +16,7 @@ Search, process, and archive logs with cost awareness.
 
 ## Prerequisites
 
-Datadog Pup (dd-pup/pup) should already be installed:
-
-```bash
-go install github.com/datadog-labs/pup@latest
-```
+Datadog Pup should already be installed. See [Setup Pup](https://github.com/datadog-labs/agent-skills/tree/main?tab=readme-ov-file#setup-pup) if not.
 
 ## Quick Start
 
