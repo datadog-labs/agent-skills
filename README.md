@@ -1,6 +1,6 @@
 # Datadog Skills for AI Agents
 
-5 essential Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCode, and other AI agents.
+Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCode, and other AI agents.
 
 ## Skills
 
