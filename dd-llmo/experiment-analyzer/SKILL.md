@@ -1,282 +1,257 @@
 ---
-name: experiment-analzyer
-description: Analyze LLM experiment results. Use when user says "analyze experiment", "experiment analysis", "evaluate experiment", "check experiment metrics", or provides an experiment ID for analysis. Requires experiment_id as argument.
+name: experiment-analyzer
+description: Analyze LLM experiment results. Handles single or comparative experiments, exploratory or Q&A modes. Use when user says "analyze experiment", "compare experiments", "analyze against baseline", or provides one or two experiment IDs for analysis.
 ---
 
-# Experiment Analyzer
+# Unified Experiment Analyzer
 
-Analyze LLM experiment results to identify performance issues and recommend improvements.
+Analyzes one or two LLM experiments. Supports four modes based on inputs:
+
+| Inputs | Mode |
+|--------|------|
+| 2 IDs, no question | Comparative Exploratory |
+| 2 IDs + question | Comparative Q&A |
+| 1 ID, no question | Single Exploratory |
+| 1 ID + question | Single Q&A |
 
 ## Usage
 
 ```
-/analyze-experiment <experiment_id>
+/experiment-analyzer <experiment_id_1> [experiment_id_2] [question text] [--output agent|file|notebook]
 ```
 
-The experiment_id is: $ARGUMENTS
+Arguments: $ARGUMENTS
 
 ## Available Tools
 
-Use these MCP tools for analysis:
-
 | Tool | Purpose |
 |------|---------|
-| `search_llmobs_spans` | Search for LLM Observability spans matching filters (entry point for trace analysis) |
-| `search_datadog_llmobs_spans` | Retrieve and analyze LLM Observability spans with custom attributes |
-| `get_llmobs_trace` | Get full structure of a trace as a span hierarchy tree |
-| `get_llmobs_span_details` | Get detailed metadata for one or more spans (timing, LLM info, content_info) |
-| `get_llmobs_span_content` | Retrieve actual content of a specific field from a span (input, output, messages, etc.) |
-| `expand_llmobs_spans` | Load children of specific spans in a trace for progressive tree exploration |
-| `find_llmobs_error_spans` | Find all error spans in a trace with propagation context |
-| `get_llmobs_agent_loop` | Get chronological view of an agent's execution loop (decisions, tool calls, LLM calls) |
-| `get_llmobs_experiment_summary` | Get high-level summary of an experiment with pre-computed metric stats |
-| `list_llmobs_experiment_events` | List experiment events with filters, sorting, and pagination |
-| `get_llmobs_experiment_event` | Get full details for a single experiment event (input, output, metrics, dimensions) |
-| `get_llmobs_experiment_metric_values` | Get statistical analysis for a metric, optionally segmented by dimension |
-| `get_llmobs_experiment_dimension_values` | Get unique values for a dimension with counts |
-
-
-## Analysis Workflow
-
-Before each action, reason about what you've learned and what to investigate next. This makes the analysis adaptive and transparent.
-
-### Reasoning Pattern
-
-For each phase, follow this pattern:
-
-**Thought**: What do I know? What's surprising? What should I investigate next?
-**Action**: Call the appropriate tool
-**Observation**: What did it return? What does it mean?
-
-Continue until you have enough evidence to write the final report.
+| `mcp__datadog-llmo-mcp__get_llmobs_experiment_summary` | Get total events, error count, metrics stats, available dimensions |
+| `mcp__datadog-llmo-mcp__list_llmobs_experiment_events` | Query events with filters, sorting, pagination |
+| `mcp__datadog-llmo-mcp__get_llmobs_experiment_event` | Get full event details (input, output, expected_output, metrics) |
+| `mcp__datadog-llmo-mcp__get_llmobs_experiment_metric_values` | Get metric stats overall and segmented by dimension |
+| `mcp__datadog-llmo-mcp__get_llmobs_experiment_dimension_values` | List unique values for a dimension with counts |
+| `mcp__datadog-mcp-core__create_datadog_notebook` | Export report as a Datadog notebook |
 
 ---
 
-### Phase 1: Orient
+## Phase 0 — Mode & Output Resolution
 
-**Thought**: I need to understand the experiment's structure before diving in. What metrics exist? What dimensions can I segment by? How many events are there?
+Parse $ARGUMENTS:
+1. Extract one or two UUID-format strings as experiment IDs (first = baseline/primary, second = candidate).
+2. Extract `--output agent|file|notebook` flag if present.
+3. The remaining text (after IDs and flags) is the question, if any.
 
-**Action**: Call `get_experiment_summary(experiment_id)`
+**Mode determination:**
+- 2 IDs + question → Comparative Q&A
+- 2 IDs, no question → Comparative Exploratory
+- 1 ID + question → Single Q&A
+- 1 ID, no question → Single Exploratory
 
-**Observation**: Note:
-- Total events and error count
-- List of available metrics (classify as exact-match vs rubric/quality)
-- List of available dimensions
-- Any immediate red flags (high error rate, missing metrics)
+**Output mode determination:**
 
-**Decision point**:
-- If error_count is high relative to total_events, investigate errors first
-- If only 1-2 metrics exist, analysis will be simpler
-- If many dimensions exist, prioritize the most meaningful ones
+If `--output` was provided in arguments, use that mode and skip asking.
 
----
+Otherwise, ask **one combined clarification message** before proceeding. Cover only what is genuinely unclear:
 
-### Phase 2: Measure Overall Performance
+- If mode is ambiguous (e.g., user asked a question but only provided IDs in surrounding context), ask in plain language: "Did you have a specific question in mind, or would you like an exploratory analysis?"
+- Always ask about output destination if not specified: "Would you like me to save this to a file, export it to a Datadog notebook, or is displaying it here in chat fine?"
 
-**Thought**: Now I need baseline metrics. Which metrics are most important? Are there obvious failures?
+Never ask multiple rounds of clarifications. One message covers everything unresolved.
 
-**Action**: For each metric, call `get_metric_values(experiment_id, metric_label)`
+**Output modes:**
+1. **Agent (default):** Display the full report in the conversation.
+2. **File:** Before starting, propose a path:
+   `evals/reports/YYYY-MM-DD-<experiment-slug>-analysis.md`
+   Present it to the user and let them confirm or adjust. Then proceed.
+3. **Notebook:** Use `mcp__datadog-mcp-core__create_datadog_notebook` at the end.
+   If the tool is unavailable, output these setup instructions instead of failing:
+   ```
+   To enable Datadog notebook export, add the MCP server:
+     claude mcp add --transport http datadog-mcp https://mcp.datadoghq.com/api/unstable/mcp-server
+   See: https://docs.datadoghq.com/bits_ai/mcp_server/setup/
+   ```
+   Then ask: "Would you like to fall back to file or agent output instead?"
 
-**Observation**: For each metric, record:
-- For boolean metrics: True/False/Empty counts -> calculate pass rate
-- For numeric metrics: mean, min, max, distribution shape
-- Flag any metric with pass rate < 90% or high variance
-
-**Decision point**:
-- If all metrics show >95% pass rate -> analysis may be brief, focus on edge cases
-- If a metric has <70% pass rate -> this is a primary investigation target
-- If metrics conflict (one good, one bad) -> investigate the relationship
-
----
-
-### Phase 3: Segment and Discover Patterns
-
-**Thought**: Overall metrics hide segment-level problems. Which dimensions might explain failures? Let me check each dimension's distribution first, then segment the worst-performing metric by each dimension.
-
-**Action**: For each dimension:
-1. `get_unique_dimension_values(experiment_id, dimension_key)` -> see distribution
-2. `get_metric_values(experiment_id, metric_label, segment_by_dimension=dimension_key)` -> see performance by segment
-
-**Observation**: For each dimension, note:
-- Number of unique values and their frequencies
-- Which segments perform worse than overall average
-- Any segments with surprisingly good or bad performance
-
-**Decision point**:
-- If a segment has <50% of overall pass rate -> high priority deep dive
-- If segment has high impact (many events) AND low performance -> highest priority
-- If dimension has only 1-2 values -> may not be useful for segmentation
-- Rank segments by: Priority = (1 - segment_pass_rate) x segment_count
+After resolving mode and output, proceed fully automatically through Phases 1–5 with no further user interaction.
 
 ---
 
-### Phase 4: Deep Dive into Problem Segments
+## Phase 1 — Orient
 
-**Thought**: I've identified the worst segments. Now I need to understand WHY they fail. Let me pull specific failing events and examine them.
+**Comparative:** Call `get_llmobs_experiment_summary` for both experiments. Produce a side-by-side comparison:
+- Scale: total events and error rate for each
+- Metrics: which metrics exist in each; which are shared
+- Dimensions: which dimensions exist in each; which are shared
+- Immediate red flags (high error rate, missing metrics, sparse data)
+- Obvious improvements or regressions visible at the summary level
 
-For each top problem segment (limit to top 3-5):
-
-**Action**:
-1. `get_events(experiment_id, filter_dimension_key=X, filter_dimension_value=Y, filter_metric_label=Z, filter_metric_value=false, limit=5)` -> get failing event IDs
-2. `get_event_by_id(experiment_id, event_id)` -> examine 2-3 failures in detail
-
-**Observation**: For each failing event, note:
-- What was the input/context?
-- What did the model output?
-- What was expected?
-- What specifically went wrong? (schema error, wrong value, missing field, logic error)
-
-**Thought**: Looking across these failures, what's the pattern? Is this:
-- **Prompt ambiguity**: Instructions are unclear or contradictory
-- **Schema compliance**: Output format doesn't match requirements
-- **Tool issue**: Tool calling or parsing problems
-- **Evaluator mismatch**: Gold labels may be wrong or inconsistent
-- **Data quality**: Input data has issues
-- **Logic error**: Model reasoning is systematically flawed
-
-**Decision point**:
-- If pattern is clear -> formulate specific fix recommendation
-- If pattern is unclear -> pull more examples or check a different angle
-- If failures seem random -> may be noise or evaluator issues
+**Single:** Call `get_llmobs_experiment_summary` for the experiment. Determine:
+- Total events, error count, error rate
+- Available metrics (classify as exact-match vs. rubric/quality)
+- Available dimensions for segmentation
+- Any immediate red flags
 
 ---
 
-### Phase 5: Synthesize and Recommend
+## Phase 2 — Signal Discovery + UI Links
 
-**Thought**: I now have evidence for the main issues. Let me formulate actionable recommendations with specific fixes.
+**Comparative:** Using only shared metrics and dimensions, identify:
+- Segments where the candidate outperforms the baseline
+- Segments where the candidate regresses
+- Error types present in one but rare in the other
+- Distribution shifts or coverage gaps
+- Tradeoffs (e.g., higher recall, lower precision)
 
-For each issue:
-1. State the problem clearly with evidence
-2. Propose a specific fix (with actual prompt/code snippet if applicable)
-3. Explain why it should help (tied to evidence)
-4. List validation steps
-5. Note risks/tradeoffs
+Generate Datadog comparison UI links:
+- Base URL: `https://app.datadoghq.com/llm/experiment-comparison`
+- Required params: `baselineExperimentId`, `experimentIds` (candidate%2Cbaseline), `tableView=all`
+- Optional (include if discoverable): `project`, `compareDatasetId`, `selectedEvaluation`
+- `selectedEvaluation` priority: overall/overall_score/rubric metric → primary metric → first shared metric
+- Generate 2–4 links: primary comparison, regression view, calibration view (if applicable), worst-segment view (only if supported — never fabricate filters)
 
-**Thought**: What follow-up experiments would validate these fixes? Prioritize by expected impact.
+**Single:** Measure per-metric performance across all dimensions. Identify:
+- Worst-performing segments (by metric × dimension)
+- Any segments with surprising pass rates
+- Overall pass rates and variance
 
----
-
-### Phase 6: Compile Report
-
-**Thought**: Time to compile findings into the structured report format. Make sure to:
-- Include specific numbers and event IDs
-- Show the reasoning chain that led to conclusions
-- Prioritize issues by severity x impact
-
-Write the report following the Output Format template below.
-
----
-
-### Phase 7: Offer to Save
-
-After presenting the report, ask:
-> "Would you like me to save this report to a markdown file?"
-
-If yes:
-- Filename: `experiment-analysis-{experiment_id_first_8_chars}-{YYYY-MM-DD}.md`
-- Location: current working directory
+Generate Datadog experiment UI link:
+- `https://app.datadoghq.com/llm/experiments/{experiment_id}`
 
 ---
 
-## Output Format
+## Phase 3 — Deep Dives
 
-Structure your analysis report as follows:
+Run all necessary deep dives automatically. Do not ask for approval or pause.
+
+**Q&A modes:** Focus deep dives on what is needed to answer the question directly. Pull specific events, segment by relevant dimensions, inspect examples.
+
+**Exploratory modes:** Investigate the most interesting signals broadly:
+- Per-segment and per-class delta analysis (comparative) or pass-rate analysis (single)
+- Error overlap vs. unique failure mode analysis
+- Sampling and qualitative inspection of representative failures (2–5 per issue)
+- Clustered error theme analysis
+
+Rules:
+- Prefer cheap, high-signal analyses first; do not stop early.
+- Mask or redact PII in all outputs.
+- Avoid destructive actions.
+
+For each sampled event, generate a direct span link:
+`https://app.datadoghq.com/llm/experiments/{experiment_id}?selectedTab=overview&sp=[{"p":{"experimentId":"{experiment_id}","spanId":"{span_id}"},"i":"experiment-details"}]&spanId={span_id}`
+
+---
+
+## Phase 4 — Synthesis
+
+**Comparative Exploratory:**
+- Clear wins where the candidate improves on the baseline
+- Clear regressions or risks the candidate introduces
+- Neutral or unchanged areas
+- Root-cause hypotheses (1–4), tied to evidence
+- Prioritized recommendations: ship as-is / block / gate by segment / combine behaviors
+
+**Comparative Q&A:**
+- Direct answer to the question with a clear verdict
+- Supporting evidence (metrics, percentages, event examples)
+- Relevant context (e.g., caveats, data limitations)
+
+**Single Exploratory:**
+- Overall performance assessment
+- Worst-performing segments and root causes
+- Hypotheses for why failures occur
+- Recommended next experiments
+
+**Single Q&A:**
+- Direct answer to the question with a clear verdict
+- Supporting evidence from the experiment data
+
+All modes: use quantified deltas/rates wherever possible. Redact PII.
+
+---
+
+## Phase 5 — Output Delivery
+
+**Agent:** Present the full report in the conversation using the report format below.
+
+**File:** Write the report to the pre-confirmed path. Confirm with: "Report saved to `<path>`."
+
+**Notebook:** Call `mcp__datadog-mcp-core__create_datadog_notebook` with the report content structured as notebook cells. Return the notebook URL.
+
+---
+
+## Phase 6 — Conversational Follow-up
+
+After delivering the report, append a follow-up section:
+
+```
+---
+## Want to explore further?
+
+Here are a few directions based on the findings:
+
+1. [Specific question derived from actual findings — e.g., "Want me to dig deeper into why the SQL scenarios regressed in the candidate?"]
+2. [Another specific follow-up — e.g., "Should I compare error patterns between the two failing clusters?"]
+3. [A third option if relevant]
+
+Do you have any other questions about this analysis?
+```
+
+Stay active after the report. Answer follow-up questions using the same MCP tools, referencing findings already gathered. Do not re-run analyses you've already performed unless new questions require it.
+
+---
+
+## Report Format
 
 ```markdown
 # Experiment Analysis Report
+## [Mode: Comparative Exploratory | Comparative Q&A | Single Exploratory | Single Q&A]
 
-[2-3 sentence executive summary including: experiment purpose, model used, total events, and key finding with specific numbers. Example: "Overall, **classification is strong** (~84% exact match), but **regression labeling is weak** (~59% exact match overall and only **25%** on cases where the model itself says it's a regression)."]
+[2–3 sentence executive summary: experiment(s) purpose, scale, and key finding with specific numbers.]
 
-## Overall Performance Summary
+## Orientation
 
-**Link to experiment**: https://app.datadoghq.com/llm/experiments/{experiment_id}
+[Side-by-side table for comparative; summary table for single. Include: events, error rate, metrics, dimensions.]
 
-**Events**: [count] (model: `[model_name]`)
+## [Signals | Answer to Question]
 
-### Exact-match metrics (decision-critical)
+[For exploratory: ranked table of signals/segments with metric deltas and impact counts.]
+[For Q&A: direct answer with verdict, then supporting evidence.]
 
-- **[metric_name]**:
-  - True: [count]
-  - False: [count]
-  - Empty: [count]
-  -> **Pass rate**: [count]/[total] = **[percentage]%**
+## Deep Dive Findings
 
-[Repeat for each exact-match metric]
+### [Issue/Finding Title]
 
-### Quality/rubric scores
+**Segment**: `[dimension=value]` | **Impact**: N events | **Severity**: metric pass rate = X%
 
-- **[metric_name]**: [count] unique values / [total] events ([variance note])
-  - For [specific slice]: mean **[value]**, p50 **[value]**
-
-## Worst Segments
-
-| Segment | Severity (key metric) | Impact | Notes |
-|---------|----------------------:|-------:|-------|
-| `[dimension=value]` | **[metric] pass rate = [X]% ([n]/[total])** | [count] | [Brief explanation] |
-
-## Issue Deep Dives
-
-### Issue 1 - [Descriptive Title]
-
-**Segment**: `[dimension=value]` (impact: **[X] events**)
-**Severity**: **[metric] pass rate = [X]%**
-
-**What's happening**:
-[Detailed explanation of the failure pattern - what the model is doing wrong and why it matters. 3-5 sentences with specific observations.]
+**What's happening**: [3–5 sentences with specific observations]
 
 **Representative examples**:
+- [Span link]: [input → output → expected, what went wrong]
 
-- [Span X](https://app.datadoghq.com/llm/experiments/{experiment_id}?selectedTab=overview&sp=%5B%7B%22p%22%3A%7B%22experimentId%22%3A%22{experiment_id}%22%2C%22spanId%22%3A%22X%22%7D%2C%22i%22%3A%22experiment-details%22%7D%5D&spanId=X): 
-[input → output → expected, what went wrong]
-- [Span Y](https://app.datadoghq.com/llm/experiments/{experiment_id}?selectedTab=overview&sp=%5B%7B%22p%22%3A%7B%22experimentId%22%3A%22{experiment_id}%22%2C%22spanId%22%3A%22Y%22%7D%2C%22i%22%3A%22experiment-details%22%7D%5D&spanId=Y): [input → output → expected, what went wrong]
+**Root cause hypothesis**: [Category]: [Explanation tied to evidence]
 
-**IMPORTANT**: Replace `{experiment_id}` with the actual experiment ID from the data, and replace `X` and `Y` with the actual span IDs from your analysis. Each span link should be clickable and point to the specific span in the Datadog UI.
+**Recommendation**: [Specific, actionable next step]
 
-**Root cause hypothesis** (categorized):
-- **[Category]**: [Detailed explanation of why this is happening, tied to specific evidence from the examples above.]
+---
+[Repeat for each major issue]
 
-**Recommended fix**:
+## Summary & Recommendations
 
-- **What to change**: [Description of the fix]
+[Wins, regressions, neutral areas, prioritized actions. For Q&A: verdict + rationale.]
 
-  ```text
-  [Actual prompt snippet, schema definition, or code to add/modify]
-  ```
+## UI Links
 
-- **Why it should help**:
-  - [Point 1 tied to specific evidence]
-  - [Point 2 tied to specific events]
-
-- **Validation**:
-  1. [Specific test step]
-  2. [Metric to track]
-  3. [Events to re-evaluate]
-
-- **Risks/tradeoffs**:
-  - [Potential downside 1]
-  - [Mitigation approach]
+[All generated Datadog UI links with labels]
+```
 
 ---
 
-[Repeat for each major issue]
-
-## Next Experiments
-
-1. **[Experiment name]** (highest priority): [What to change]. Track [metric] on [segment/events].
-2. **[Experiment name]**: [What to change]. [Expected impact].
-3. **[Experiment name]**: [What to change]. [Rationale].
-
-[Optional: Offer to pull specific event sets for further analysis]
-```
-
 ## Operating Rules
 
-- Be explicit when data is missing or ambiguous; don't guess
-- Ground conclusions in specific event evidence with IDs
-- Show your math: include counts and percentages, not just rates
-- Describe aggregation logic clearly when computing metrics
-- Focus on fixes that generalize, not one-off hacks
-- Prioritize issues by severity x impact
-- Include actual prompt/code snippets in recommendations
-- Categorize root causes to help identify patterns across issues
-- Always offer to save the report at the end
+- Do not assume anything about the experiment (model, task, metrics, schema, dimensions). Infer everything by inspecting the data.
+- Ground all conclusions in specific evidence: event IDs, counts, percentages.
+- Show math: include counts and rates, not just qualitative claims.
+- Avoid speculative explanations not supported by observed evidence.
+- Mask or redact PII in all user-visible output.
+- Never show internal tool calls, schemas, or implementation details to the user.

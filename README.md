@@ -57,21 +57,34 @@ npx skills add datadog-labs/agent-skills \
 
 ### LLM Observability (LLMO)
 
-For LLMO skills, copy the relevant skill directories from `dd-llmo` to their local home. 
-E.g.: for Claude Code `cp -r dd-llmo/experiment-analyzer ~/.claude/skills`
+The `dd-llmo` directory contains the `experiment-analyzer` skill, which handles single and comparative experiment analysis in both exploratory and Q&A modes.
 
-These have a dependency on the LLMO toolset in the Datadog MCP server. The easiest way to add it is:
+Copy it to your agent's skills directory:
+
+```bash
+# Claude Code
+cp -r dd-llmo/experiment-analyzer ~/.claude/skills
+```
+
+The skill requires the LLMO toolset from the Datadog MCP server:
 
 ```bash
 claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'
 ```
 
-This will add it as an independent MCP server from the core datadog MCP tools. 
-
-If you'd like the ability to export results to a Datadog notebook, also install the core MCP tools. 
+To also enable notebook export, add the core MCP tools:
 
 ```bash
 claude mcp add --scope user --transport http "datadog-mcp-core" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=core'
+```
+
+#### Usage
+
+```
+/experiment-analyzer <experiment_id>                          # single experiment
+/experiment-analyzer <baseline_id> <candidate_id>            # compare two experiments
+/experiment-analyzer <id(s)> <question>                      # ask a specific question
+/experiment-analyzer <id(s)> [question] --output notebook    # export to Datadog notebook
 ```
 
 ## Quick Reference
