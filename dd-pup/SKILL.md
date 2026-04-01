@@ -1,8 +1,8 @@
 ---
 name: dd-pup
-description: Datadog CLI (Go). OAuth2 auth with token refresh.
+description: Datadog CLI (Rust). OAuth2 auth with token refresh.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,cli,dd-pup,pup
@@ -17,23 +17,34 @@ Pup CLI for Datadog API operations. Supports OAuth2 and API key auth.
 
 | Task | Command |
 |------|---------|
-| Search error logs | `pup logs search --query "status:error" --duration 1h` |
+| Search error logs | `pup logs search --query "status:error" --from 1h` |
 | List monitors | `pup monitors list` |
-| Mute a monitor | `pup monitors mute --id 123 --duration 1h` |
-| Find slow traces | `pup apm traces list --service api --min-duration 500ms` |
-| List active incidents | `pup incidents list --status active` |
-| Create incident | `pup incidents create --title "Issue" --severity SEV-2` |
+| Schedule monitor downtime | `pup downtime create --file downtime.json` |
+| Find recent slow traces for a service (last 1h) | `pup traces search --query "service:<service-name> @duration:>500ms" --from 1h` |
+| List incidents | `pup incidents list --limit 50` |
+| Import incident payload | `pup incidents import --file incident.json` |
 | Query metrics | `pup metrics query --query "avg:system.cpu.user{*}"` |
-| List hosts | `pup hosts list` |
+| List hosts | `pup infrastructure hosts list --count 50` |
 | Check SLOs | `pup slos list` |
-| Who's on call | `pup on-call who --team my-team` |
-| Security signals | `pup security signals list --severity critical` |
+| On-call teams | `pup on-call teams list` |
+| Triage open critical security signals (last 1h) | `pup security signals list --query "status:open severity:critical" --from 1h --limit 100` |
 | Check auth | `pup auth status` |
+| Token expiry (time left) | `pup auth status` |
 | Refresh token | `pup auth refresh` |
 
 ## Prerequisites
 
 Install pup using the [setup instructions](https://github.com/datadog-labs/agent-skills/tree/main?tab=readme-ov-file#setup-pup).
+
+## Required Input Resolution
+
+For commands that need specific scope values (`<env>`, `<service-name>`, `<team-id>`, resource IDs), use this order:
+
+1. Check context first (conversation history, prior command output, saved variables).
+2. If missing, run a discovery command first (list/search) to get valid values.
+3. If still missing or ambiguous, ask the user to confirm the exact value.
+4. Then run the target command.
+5. Never run commands with unresolved placeholders like `<env>` or `<monitor-id>`.
 
 ## Auth
 
@@ -51,6 +62,9 @@ pup auth refresh        # Try refresh first
 pup auth login          # If refresh fails, full re-auth
 ```
 
+If Chrome opens the wrong profile/window, use the one-time OAuth URL printed by `pup auth login`
+(`If the browser doesn't open, visit: ...`) and open that link manually in the correct account session.
+
 ### Headless/CI (no browser)
 
 ```bash
@@ -65,127 +79,188 @@ export DD_SITE=datadoghq.com    # or datadoghq.eu, etc.
 ### Monitors
 ```bash
 pup monitors list --limit 10
-pup monitors list --tags "env:prod"
-pup monitors get --id 12345
-pup monitors mute --id 12345 --duration 1h
-pup monitors unmute --id 12345
-pup monitors create --name "High CPU" --type "metric alert" \
-  --query "avg(last_5m):avg:system.cpu.user{*} > 80" \
-  --message "CPU high @slack-ops"
+pup monitors list --tags "env:<env>"
+pup monitors get <monitor-id>
+pup monitors search --query "<monitor-name>"
+pup monitors create --file monitor.json
+pup monitors update <monitor-id> --file monitor.json
+pup monitors delete <monitor-id>
+# No pup monitors mute/unmute commands; use downtime payloads instead.
+pup downtime create --file downtime.json
 ```
 
 ### Logs
 ```bash
-pup logs search --query "status:error" --duration 1h
-pup logs search --query "service:payment-api" --duration 1h --limit 100
-pup logs search --query "@http.status_code:5*" --duration 24h
-pup logs search --query "env:prod level:error" --duration 1h --json
+pup logs search --query "status:error" --from 1h
+pup logs search --query "service:<service-name>" --from 1h --limit 100
+pup logs search --query "@http.status_code:5*" --from 24h
+pup logs search --query "env:<env> level:error" --from 1h
+pup logs aggregate --query "service:<service-name>" --compute count --from 1h
 ```
 
 ### Metrics
 ```bash
-pup metrics query --query "avg:system.cpu.user{*}" --duration 1h
-pup metrics query --query "sum:trace.express.request.hits{service:api}" --duration 1h
+pup metrics query --query "avg:system.cpu.user{*}" --from 1h --to now
+pup metrics query --query "sum:trace.express.request.hits{service:<service-name>}" --from 1h --to now
 pup metrics list --filter "system.*"
 ```
 
 ### APM / Traces
 ```bash
-pup apm services list
-pup apm traces list --service my-service --duration 1h
-pup apm traces list --service api --min-duration 500ms --duration 1h
-pup apm traces list --service api --status error --duration 1h
-pup apm traces get abc123def456
+# Confirm env tag with the user first (do not assume production/prod/prd).
+pup apm services list --env <env> --from 1h --to now
+pup traces search --query "service:<service-name>" --from 1h
+pup traces search --query "service:<service-name> @duration:>500ms" --from 1h
+pup traces search --query "service:<service-name> status:error" --from 1h
 ```
 
 ### Incidents
 ```bash
-pup incidents list --status active
-pup incidents list --status resolved --duration 7d
-pup incidents create --title "API Degradation" --severity SEV-2
-pup incidents update --id abc-123 --status stable
-pup incidents resolve --id abc-123
+pup incidents list --limit 50
+pup incidents get <incident-id>
+pup incidents import --file incident.json
 ```
 
 ### Dashboards
 ```bash
 pup dashboards list
-pup dashboards list --tags "team:platform"
-pup dashboards get --id abc-123
-pup dashboards create --title "My Dashboard" --description "..." --widgets '[...]'
+pup dashboards get <dashboard-id>
+pup dashboards create --file dashboard.json
+pup dashboards update <dashboard-id> --file dashboard.json
+pup dashboards delete <dashboard-id>
 ```
 
 ### SLOs
 ```bash
 pup slos list
-pup slos get --id slo-123
-pup slos history --id slo-123 --duration 30d
+pup slos get <slo-id>
+pup slos status <slo-id> --from 30d --to now
+pup slos create --file slo.json
 ```
 
 ### Synthetics
 ```bash
-pup synthetics list
-pup synthetics results --test-id abc-123
-pup synthetics trigger --test-id abc-123
+pup synthetics tests list
+pup synthetics tests get <test-id>
+pup synthetics tests search --text "login"
+pup synthetics locations list
 ```
 
 ### On-Call
 ```bash
 pup on-call teams list
-pup on-call schedules list
-pup on-call who --team platform-team
+# Pick a real team id from `pup on-call teams list` output.
+pup on-call teams get <team-id>
+pup on-call teams memberships list <team-id>
 ```
 
 ### Hosts / Infrastructure
 ```bash
-pup hosts list --limit 50
-pup hosts list --filter "env:prod"
-pup hosts mute --hostname web-01 --duration 1h
-pup hosts get --hostname web-01
+pup infrastructure hosts list --count 50
+pup infrastructure hosts list --filter "env:<env>"
+pup infrastructure hosts get <host-name>
 ```
 
 ### Events
 ```bash
-pup events list --duration 24h
+pup events list --from 24h
 pup events list --tags "source:deploy"
-pup events post --title "Deploy started" --text "v1.2.3" --tags "env:prod"
+pup events search --query "deploy" --from 24h --limit 50
+pup events get <event-id>
 ```
 
 ### Downtimes
 ```bash
 pup downtime list
-pup downtime create --scope "env:staging" --duration 2h --message "Maintenance"
-pup downtime cancel --id 12345
+pup downtime create --file downtime.json
+pup downtime cancel <downtime-id>
 ```
 
 ### Users / Teams
 ```bash
 pup users list
-pup teams list
+pup users get <user-id>
 ```
 
 ### Security
 ```bash
-pup security signals list --duration 24h
-pup security signals list --severity critical
+pup security signals list --query "*" --from 1h --limit 100
+pup security signals list --query "status:open severity:critical" --from 1h --limit 100
+# Broader lookback for historical triage
+pup security signals list --query "severity:critical" --from 24h --limit 100
 ```
 
 ### Service Catalog
 ```bash
-pup services list
-pup services get --name payment-api
+pup service-catalog list
+pup service-catalog get <service-name>
 ```
 
 ### Notebooks
 ```bash
 pup notebooks list
-pup notebooks get --id 12345
+pup notebooks get <notebook-id>
 ```
 
 ### Workflows
 ```bash
-pup workflows list
-pup workflows trigger --id workflow-123 --input '{"key": "value"}'
+pup workflows get <workflow-id>
+pup workflows run <workflow-id> --payload '{"key":"value"}'
+pup workflows instances list <workflow-id>
+```
+
+### Observability Pipelines
+```bash
+pup obs-pipelines list --limit 50
+pup obs-pipelines get <pipeline-id>
+pup obs-pipelines create --file pipeline.json
+pup obs-pipelines update <pipeline-id> --file pipeline.json
+pup obs-pipelines delete <pipeline-id>
+pup obs-pipelines validate --file pipeline.json
+```
+
+### LLM Observability
+```bash
+pup llm-obs projects list
+pup llm-obs projects create --file project.json
+pup llm-obs experiments list
+pup llm-obs experiments list --filter-project-id <project-id>
+pup llm-obs experiments list --filter-dataset-id <dataset-id>
+pup llm-obs experiments create --file experiment.json
+pup llm-obs experiments update <experiment-id> --file experiment.json
+pup llm-obs experiments delete --file delete-request.json
+pup llm-obs datasets list --project-id <project-id>
+pup llm-obs datasets create --project-id <project-id> --file dataset.json
+pup llm-obs spans search --ml-app <ml-app-name> --from 1h --limit 20
+```
+
+### Reference Tables
+```bash
+pup reference-tables list --limit 50
+pup reference-tables get <table-id>
+pup reference-tables create --file table.json
+pup reference-tables batch-query --file query.json
+```
+
+### Cost Cloud Configs
+```bash
+# AWS CUR configs
+pup cost aws-config list
+pup cost aws-config get <account-id>
+pup cost aws-config create --file config.json
+pup cost aws-config delete <account-id>
+
+# Azure UC configs
+pup cost azure-config list
+pup cost azure-config get <account-id>
+pup cost azure-config create --file config.json
+pup cost azure-config delete <account-id>
+
+# GCP usage cost configs
+pup cost gcp-config list
+pup cost gcp-config get <account-id>
+pup cost gcp-config create --file config.json
+pup cost gcp-config delete <account-id>
 ```
 
 ## Subcommand Discovery
@@ -224,5 +299,5 @@ pup --version
 | US5 | `us5.datadoghq.com` |
 | EU1 | `datadoghq.eu` |
 | AP1 | `ap1.datadoghq.com` |
+| AP2 | `ap2.datadoghq.com` |
 | US1-FED | `ddog-gov.com` |
-

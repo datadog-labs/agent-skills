@@ -1,8 +1,8 @@
 ---
 name: dd-logs
-description: Log management - search, pipelines, archives, and cost control.
+description: Log management - search, archives, metrics, and cost control.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,logs,logging,search,dd-logs
@@ -17,6 +17,16 @@ Search, process, and archive logs with cost awareness.
 ## Prerequisites
 
 Datadog Pup should already be installed. See [Setup Pup](https://github.com/datadog-labs/agent-skills/tree/main?tab=readme-ov-file#setup-pup) if not.
+
+## Command Execution Order (Token-Efficient)
+
+For scoped commands, use this order:
+
+1. Check context first (prior outputs, conversation, saved values).
+2. If a required value is missing, run a discovery command first.
+3. If still ambiguous, ask the user to confirm.
+4. Then run the target command.
+5. Avoid speculative commands likely to fail.
 
 ## Quick Start
 
@@ -34,7 +44,7 @@ pup logs search --query="status:error" --from="1h"
 pup logs search --query="service:api status:error" --from="1h" --limit 100
 
 # JSON output
-pup logs search --query="@http.status_code:>=500" --from="1h" --json
+pup logs search --query="@http.status_code:>=500" --from="1h"
 ```
 
 ### Search Syntax
@@ -48,16 +58,19 @@ pup logs search --query="@http.status_code:>=500" --from="1h" --json
 | `service:api AND env:prod` | Boolean |
 | `@message:*timeout*` | Wildcard |
 
-## Pipelines
+## Configuration APIs
 
-Process logs before indexing:
+Available log configuration commands in pup 0.42.0:
 
 ```bash
-# List pipelines
-pup logs pipelines list
+# List log archives
+pup logs archives list
 
-# Create pipeline (JSON)
-pup logs pipelines create --json @pipeline.json
+# List log restriction queries
+pup logs restriction-queries list
+
+# List custom log destinations
+pup logs custom-destinations list
 ```
 
 ### Common Processors
@@ -104,7 +117,7 @@ pup logs pipelines create --json @pipeline.json
 
 ```bash
 # Find noisiest log sources
-pup logs search --query="*" --from="1h" --json | jq 'group_by(.service) | map({service: .[0].service, count: length}) | sort_by(-.count)[:10]'
+pup logs search --query="*" --from="1h" | jq 'group_by(.service) | map({service: .[0].service, count: length}) | sort_by(-.count)[:10]'
 ```
 
 | Exclude | Query |
@@ -138,12 +151,8 @@ pup logs archives list
 ### Rehydrate (Restore)
 
 ```bash
-# Rehydrate archived logs
-pup logs rehydrate create \
-  --archive-id abc123 \
-  --from "2024-01-01T00:00:00Z" \
-  --to "2024-01-02T00:00:00Z" \
-  --query "service:api status:error"
+# No `pup logs rehydrate` command in pup 0.42.0.
+# Use Datadog UI/API for rehydration workflows.
 ```
 
 ## Log-Based Metrics
@@ -151,11 +160,11 @@ pup logs rehydrate create \
 Create metrics from logs (cheaper than indexing):
 
 ```bash
-# Count errors per service
-pup logs metrics create \
-  --name "api.errors.count" \
-  --query "service:api status:error" \
-  --group-by "endpoint"
+# List log-based metrics
+pup logs metrics list
+
+# Get one metric by ID
+pup logs metrics get api.errors.count
 ```
 
 **⚠️ Cardinality warning:** Group by bounded values only.
@@ -201,4 +210,3 @@ def sanitize_log(message: str) -> str:
 - [Pipelines](https://docs.datadoghq.com/logs/log_configuration/pipelines/)
 - [Exclusion Filters](https://docs.datadoghq.com/logs/indexes/#exclusion-filters)
 - [Archives](https://docs.datadoghq.com/logs/archives/)
-

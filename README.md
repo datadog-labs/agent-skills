@@ -91,26 +91,34 @@ experiment-analyzer <id(s)> [question] --output notebook    # export to Datadog 
 
 | Task | Command |
 |------|---------|
-| Search error logs | `pup logs search --query "status:error" --duration 1h` |
+| Search error logs | `pup logs search --query "status:error" --from 1h` |
 | List monitors | `pup monitors list` |
-| Mute a monitor | `pup monitors mute --id 123 --duration 1h` |
-| Find slow traces | `pup apm traces list --service api --min-duration 500ms` |
+| Schedule monitor downtime | `pup downtime create --file downtime.json` |
+| Find slow traces | `pup traces search --query "service:api @duration:>500ms" --from 1h` |
 | Query metrics | `pup metrics query --query "avg:system.cpu.user{*}"` |
-| List services | `pup apm services list` |
+| List services for an env (required) | `pup apm services list --env <env> --from 1h --to now` |
 | Check auth | `pup auth status` |
 | Refresh token | `pup auth refresh` |
 
-More commands for `pup` are found in the [official pup docs](https://github.com/datadog-labs/pup/blob/main/docs/COMMANDS.md). 
+More commands for `pup` are found in the [official pup docs](https://github.com/datadog-labs/pup/blob/main/docs/COMMANDS.md).
 
 ## Auth
 
 ```bash
-pup auth login      # OAuth2 browser flow
-pup auth status     # Check token
-pup auth refresh    # Refresh expired token
+# Check auth first (includes token time remaining)
+pup auth status
+
+# If commands fail with 401/403, try refresh first
+pup auth refresh
+
+# If refresh fails or no session exists, do full OAuth login
+pup auth login
+
+# Non-default site/org
+pup auth login --site datadoghq.eu --org <org>
 ```
 
-Tokens expire (~1 hour). Run `pup auth refresh` if you get 401/403 errors.
+If the browser opens the wrong profile/window, use the one-time URL printed by `pup auth login` and open it manually in the correct session.
 
 ## More Skills
 
@@ -124,4 +132,3 @@ npx skills add datadog-labs/agent-skills --list --full-depth
 ## License
 
 MIT
-

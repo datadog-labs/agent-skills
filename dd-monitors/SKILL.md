@@ -1,8 +1,8 @@
 ---
 name: dd-monitors
-description: Monitor management - create, update, mute, and alerting best practices.
+description: Monitor management - list, search, file-based create, and alerting best practices.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,monitors,alerting,alerts,dd-monitors
@@ -18,6 +18,16 @@ Create, manage, and maintain monitors for alerting.
 ## Prerequisites
 This requires pup in your path. See [Setup Pup](https://github.com/datadog-labs/agent-skills/tree/main?tab=readme-ov-file#setup-pup).
 
+## Command Execution Order (Token-Efficient)
+
+For scoped commands, use this order:
+
+1. Check context first (prior outputs, conversation, saved values).
+2. If a required value is missing, run a discovery command first.
+3. If still ambiguous, ask the user to confirm.
+4. Then run the target command.
+5. Avoid speculative commands likely to fail.
+
 
 ## Quick Start
 
@@ -32,36 +42,27 @@ pup auth login
 ```bash
 pup monitors list
 pup monitors list --tags "team:platform"
-pup monitors list --status "Alert"
 ```
 
 ### Get Monitor
 
 ```bash
-pup monitors get <id> --json
+pup monitors get <id>
 ```
 
 ### Create Monitor
 
 ```bash
-pup monitors create \
-  --name "High CPU on web servers" \
-  --type "metric alert" \
-  --query "avg(last_5m):avg:system.cpu.user{env:prod} > 80" \
-  --message "CPU above 80% @slack-ops"
+pup monitors create --file monitor.json
 ```
 
-### Mute/Unmute
+### Silence Alerts (Downtime)
 
 ```bash
-# Mute with duration
-pup monitors mute --id 12345 --duration 1h
-
-# Or mute with specific end time
-pup monitors mute --id 12345 --end "2024-01-15T18:00:00Z"
-
-# Unmute
-pup monitors unmute --id 12345
+# No pup monitors mute/unmute commands.
+# Use downtime payloads to silence monitor notifications.
+pup downtime create --file downtime.json
+pup downtime cancel <downtime_id>
 ```
 
 ## ⚠️ Monitor Creation Best Practices
@@ -164,26 +165,22 @@ def safe_mark_monitor_for_deletion(monitor_id: str, client) -> bool:
 
 ```bash
 # Find monitors without owners
-pup monitors list --json | jq '.[] | select(.tags | contains(["team:"]) | not) | {id, name}'
+pup monitors list | jq '.[] | select(.tags | contains(["team:"]) | not) | {id, name}'
 
 # Find noisy monitors (high alert count)
-pup monitors list --json | jq 'sort_by(.overall_state_modified) | .[:10] | .[] | {id, name, status: .overall_state}'
+pup monitors list | jq 'sort_by(.overall_state_modified) | .[:10] | .[] | {id, name, status: .overall_state}'
 ```
 
 ## Downtime vs Muting
 
 | Use | When |
 |-----|------|
-| **Mute monitor** | Quick one-off, < 1 hour |
-| **Downtime** | Scheduled maintenance, recurring |
+| **Downtime** | Any planned silence window |
+| **Monitor edit** | Query/threshold behavior changes |
 
 ```bash
 # Downtime (preferred)
-pup downtime create \
-  --scope "env:prod" \
-  --monitor-tags "team:platform" \
-  --start "2024-01-15T02:00:00Z" \
-  --end "2024-01-15T06:00:00Z"
+pup downtime create --file downtime.json
 ```
 
 ## Failure Handling
@@ -200,4 +197,3 @@ pup downtime create \
 - [Monitor Types](https://docs.datadoghq.com/monitors/types/)
 - [Alerting Best Practices](https://docs.datadoghq.com/monitors/guide/)
 - [SLO Monitors](https://docs.datadoghq.com/service_management/service_level_objectives/)
-

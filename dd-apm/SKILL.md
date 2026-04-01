@@ -2,7 +2,7 @@
 name: dd-apm
 description: APM - traces, services, dependencies, performance analysis.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,tracing,performance,distributed-tracing,dd-apm
@@ -18,12 +18,23 @@ Distributed tracing, service maps, and performance analysis.
 
 Datadog Labs Pup should be installed. See [Setup Pup](https://github.com/datadog-labs/agent-skills/tree/main?tab=readme-ov-file#setup-pup) if not.
 
+## Command Execution Order (Token-Efficient)
+
+For scoped commands, use this order:
+
+1. Check context first (prior outputs, conversation, saved values).
+2. If a required value is missing, run a discovery command first.
+3. If still ambiguous, ask the user to confirm.
+4. Then run the target command.
+5. Avoid speculative commands likely to fail.
+
 ## Quick Start
 
 ```bash
 pup auth login
-pup apm services list
-pup apm traces list --service api-gateway --duration 1h
+# Confirm env tag with the user first (do not assume production/prod/prd).
+pup apm services list --env <env> --from 1h --to now
+pup traces search --query "service:api-gateway" --from 1h
 ```
 
 ## Services
@@ -31,21 +42,21 @@ pup apm traces list --service api-gateway --duration 1h
 ### List Services
 
 ```bash
-pup apm services list
-pup apm services list --env production
+pup apm services list --env <env> --from 1h --to now
+pup apm services stats --env <env> --from 1h --to now
 ```
 
-### Service Details
+### Service Stats
 
 ```bash
-pup apm services get api-gateway --json
+pup apm services stats --env <env> --from 1h --to now
 ```
 
 ### Service Map
 
 ```bash
 # View dependencies
-pup apm service-map --service api-gateway --json
+pup apm flow-map --query "service:api-gateway&from=$(($(date +%s)-3600))000&to=$(date +%s)000" --env <env> --limit 10
 ```
 
 ## Traces
@@ -54,22 +65,24 @@ pup apm service-map --service api-gateway --json
 
 ```bash
 # By service
-pup apm traces list --service api-gateway --duration 1h
+pup traces search --query "service:api-gateway" --from 1h
 
 # Errors only
-pup apm traces list --service api-gateway --status error
+pup traces search --query "service:api-gateway status:error" --from 1h
 
 # Slow traces (>1s)
-pup apm traces list --service api-gateway --min-duration 1000ms
+pup traces search --query "service:api-gateway @duration:>1000ms" --from 1h
 
 # With specific tag
-pup apm traces list --query "@http.url:/api/users"
+pup traces search --query "service:api-gateway @http.url:/api/users" --from 1h
 ```
 
-### Get Trace Detail
+### Trace Detail
 
 ```bash
-pup apm traces get <trace_id> --json
+# No direct get command for a single trace ID.
+# Use traces search with a narrow query and time window.
+pup traces search --query "trace_id:<trace_id>" --from 1h
 ```
 
 ## Key Metrics
@@ -81,41 +94,12 @@ pup apm traces get <trace_id> --json
 | `trace.http.request.errors` | Error count |
 | `trace.http.request.apdex` | User satisfaction |
 
-## ⚠️ Trace Sampling
-
-**Not all traces are kept.** Understand sampling:
-
-| Mode | What's Kept |
-|------|-------------|
-| **Head-based** | Random % at start |
-| **Error/Slow** | All errors, slow traces |
-| **Retention** | What's indexed (billed) |
-
-```bash
-# Check retention filters
-pup apm retention-filters list
-```
-
-### Trace Retention Costs
-
-| Retention | Cost |
-|-----------|------|
-| Indexed spans | $$$ per million |
-| Ingested spans | $ per million |
-
-**Best practice:** Only index what you need for search.
-
 ## Service Level Objectives
 
 Link APM to SLOs:
 
 ```bash
-pup slos create \
-  --name "API Latency p99 < 200ms" \
-  --type metric \
-  --numerator "sum:trace.http.request.hits{service:api,@duration:<200000000}" \
-  --denominator "sum:trace.http.request.hits{service:api}" \
-  --target 99.0
+pup slos create --file slo.json
 ```
 
 ## Common Queries
@@ -139,5 +123,3 @@ pup slos create \
 
 - [APM Setup](https://docs.datadoghq.com/tracing/)
 - [Trace Search](https://docs.datadoghq.com/tracing/trace_explorer/)
-- [Retention Filters](https://docs.datadoghq.com/tracing/trace_pipeline/trace_retention/)
-

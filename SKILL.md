@@ -2,7 +2,7 @@
 name: agent-skills
 description: Datadog skills for AI agents. Essential monitoring, logging, tracing and observability.
 metadata:
-  version: "1.0.1"
+  version: "1.0.2"
 ---
 
 # Datadog Skills
@@ -37,14 +37,24 @@ npx skills add datadog-labs/agent-skills \
 
 See [Setup Pup](https://github.com/datadog-labs/agent-skills/tree/main?tab=readme-ov-file#setup-pup) for installation and authentication.
 
+## Command Execution Policy
+
+Use this order for scoped commands:
+
+1. Check context first (conversation, prior outputs, known values).
+2. Run discovery commands when required values are missing.
+3. Ask the user only when values remain ambiguous.
+4. Run the target command after required inputs are known.
+5. Avoid speculative commands likely to fail.
+
 ## Quick Reference
 
 | Task | Command |
 |------|---------|
-| Search error logs | `pup logs search --query "status:error" --duration 1h` |
+| Search error logs | `pup logs search --query "status:error" --from 1h` |
 | List monitors | `pup monitors list` |
-| Mute a monitor | `pup monitors mute --id 123 --duration 1h` |
-| Find slow traces | `pup apm traces list --service api --min-duration 500ms` |
+| Schedule monitor downtime | `pup downtime create --file downtime.json` |
+| Find slow traces | `pup traces search --query "service:api @duration:>500ms" --from 1h` |
 | Query metrics | `pup metrics query --query "avg:system.cpu.user{*}"` |
 | Check auth | `pup auth status` |
 | Refresh token | `pup auth refresh` |
