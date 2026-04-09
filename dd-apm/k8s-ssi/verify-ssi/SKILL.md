@@ -51,7 +51,7 @@ brew install pup
 
 Check auth:
 ```bash
-pup auth status
+pup auth status --site <DD_SITE>
 ```
 
 If not authenticated:
@@ -59,7 +59,7 @@ If not authenticated:
 ### What you need to do in a terminal
 
 ```bash
-pup auth login
+pup auth login --site <DD_SITE>
 ```
 
 Confirm with `pup auth status`.
@@ -84,12 +84,13 @@ Confirm with `pup auth status`.
 ### Claude runs
 
 ```bash
-pup fleet instrumented-pods list <CLUSTER_NAME>
+kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> \
+  -o jsonpath='{.items[0].spec.initContainers[*].name}'
 ```
 
-✅ Target pods appear with injected SDK language and version.
+✅ Output includes `datadog-lib-<language>-init` and `datadog-init-apm-inject` — SSI init containers injected.
 
-❌ Expected pod missing — go to `troubleshoot-ssi`. Common causes: pod in Agent namespace, namespace targeting filtering it out, pod not restarted after SSI enabled.
+❌ Init containers missing — pod was not restarted after SSI was enabled, or namespace targeting is not matching. Restart the pod and recheck.
 
 ---
 
@@ -98,20 +99,24 @@ pup fleet instrumented-pods list <CLUSTER_NAME>
 ### Claude runs
 
 ```bash
-pup fleet tracers list --filter "env:<ENV>"
+DD_SITE=<DD_SITE> pup apm services list --env <ENV> --from 1h
 ```
 
-✅ One or more tracer entries visible with service name, language, SDK version, and active status.
+✅ `<SERVICE_NAME>` appears in the services list with `isTraced: true`.
 
-❌ Service missing — tracer may still be initializing. Wait and retry:
+❌ Service missing — send some traffic to the app first, then retry:
 
 ### Claude runs
 
 ```bash
-sleep 120 && pup fleet tracers list --filter "env:<ENV>"
+# Port-forward and send test traffic
+kubectl port-forward deployment/<DEPLOYMENT_NAME> 8099:8000 -n <APP_NAMESPACE> &
+sleep 2 && for i in $(seq 1 10); do curl -s -o /dev/null http://localhost:8099/; done
+sleep 30 && kill %1 2>/dev/null
+DD_SITE=<DD_SITE> pup apm services list --env <ENV> --from 10m
 ```
 
-❌ Still missing after retry — go to `troubleshoot-ssi`.
+❌ Still missing after traffic — check the agent's trace receiver: `kubectl exec -n <AGENT_NAMESPACE> <AGENT_POD> -c agent -- agent status | grep -A 10 "Receiver (previous minute)"`. If receiver shows 0 traces, go to `troubleshoot-ssi`.
 
 ---
 

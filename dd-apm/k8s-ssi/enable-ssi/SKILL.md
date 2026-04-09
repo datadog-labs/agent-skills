@@ -29,6 +29,8 @@ Do NOT invoke this skill if:
 
 ## Prerequisites
 
+> **These are not a reading exercise — actively verify each one before proceeding.**
+
 **Environment**
 - [ ] Datadog Agent is installed and healthy — `agent-install` complete
 - [ ] Kubernetes v1.20+
@@ -37,7 +39,18 @@ Do NOT invoke this skill if:
 - [ ] Not a hardened SELinux environment — unsupported
 - [ ] Not a very small VM instance (e.g. t2.micro) — SSI can hit init timeouts
 - [ ] No PodSecurity baseline or restricted policy enforced
-- [ ] Application container is **not Alpine Linux** — SSI requires glibc; Alpine uses musl libc which is ABI-incompatible. Use `python:3.x-slim`, `node:x-bookworm`, or any Debian/Ubuntu-based image
+
+**Base image — verify before proceeding:**
+
+### Claude runs
+
+```bash
+kubectl exec -n <APP_NAMESPACE> -l app=<APP_LABEL> -- ldd --version 2>&1 | head -1
+```
+
+✅ Output contains `glibc` or `GLIBC` or `GNU libc` — proceed.
+
+❌ Output contains `musl` — **stop**. SSI's injector requires glibc and is ABI-incompatible with musl libc. The injector will load but silently abort injection, and no traces will be sent. Switch the base image to a glibc-based equivalent (e.g. `python:X-slim`, `node:X-bookworm-slim`, any Debian/Ubuntu/UBI image), then rebuild, reload, restart the pod, and rerun this check before continuing.
 
 **Language and runtime**
 - [ ] Application language is one of: Java, Python, Ruby, Node.js, .NET, PHP
@@ -45,9 +58,21 @@ Do NOT invoke this skill if:
 - [ ] Node.js app is not using ESM — SSI does not support ESM
 - [ ] Java app is not already using a `-javaagent` JVM flag
 
-**Existing instrumentation**
-- [ ] Application has no existing `ddtrace` imports, OTel SDK calls, or custom `tracer.trace()` calls — SSI silently disables itself when detected; complete Step 0 first
-- [ ] `ddtrace` is not listed in the app's dependency manifest (`requirements.txt`, `package.json`, `Gemfile`, etc.) — SSI installs the tracer automatically
+**Existing instrumentation — verify before proceeding:**
+
+### Claude runs
+
+```bash
+# Check source files for manual tracer imports
+grep -r "import ddtrace\|from ddtrace\|require 'ddtrace'\|require(\"dd-trace\")\|opentelemetry\|tracer\.trace(" <SOURCE_DIR> 2>/dev/null || echo "No manual instrumentation found"
+
+# Check dependency manifests
+grep -rE "ddtrace|dd-trace|opentelemetry" requirements.txt package.json Gemfile go.mod pom.xml 2>/dev/null || echo "No tracer dependency found"
+```
+
+❌ Any match found — remove the import/package before continuing (see Step 0). SSI silently disables itself when existing instrumentation is detected.
+
+✅ No matches — proceed.
 
 ---
 
@@ -78,14 +103,19 @@ If found — remove the import/package, then rebuild and reload:
 docker build -f <DOCKERFILE_PATH> -t <IMAGE_NAME> <BUILD_CONTEXT>
 ```
 
-[DECISION: cluster type]
-- kind (local): load the image into the cluster
+[DECISION: how does this cluster get local images?]
 
-### Claude runs
+Check the repo's setup script (e.g. `create.sh`, `Makefile`, `justfile`) for how images are loaded — do not guess from the cluster name or context. Common patterns:
 
-```bash
-kind load docker-image <IMAGE_NAME> --name <CLUSTER_NAME>
-```
+| What you find in the setup script | Load command |
+|---|---|
+| `minikube image load` or `minikube cache add` | `minikube -p <PROFILE> image load <IMAGE_NAME>` — profile is the `-p` flag value in the script, NOT necessarily the kubectl context name |
+| `kind load docker-image` | `kind load docker-image <IMAGE_NAME> --name <CLUSTER_NAME>` |
+| `docker push` to a registry | Push the new image; the cluster will pull on restart — skip local load |
+| `k3d image import` | `k3d image import <IMAGE_NAME> -c <CLUSTER_NAME>` |
+| No image load step (cloud cluster, always pulls from registry) | Skip — image will be pulled on next deployment |
+
+If the setup script is ambiguous, run the load command it uses exactly as written.
 
 - Registry-based: skip — image will be pulled on next deployment
 

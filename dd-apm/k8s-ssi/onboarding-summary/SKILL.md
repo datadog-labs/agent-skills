@@ -41,7 +41,7 @@ Do NOT invoke this skill if any verification or troubleshooting check is still f
 ### Claude runs
 
 ```bash
-pup auth status
+pup auth status --site <DD_SITE>
 ```
 
 ✅ Valid token — proceed.
@@ -51,10 +51,10 @@ pup auth status
 ### What you need to do in a terminal
 
 ```bash
-pup auth login
+pup auth login --site <DD_SITE>
 ```
 
-Confirm with `pup auth status` before continuing.
+Confirm with `pup auth status --site <DD_SITE>` before continuing.
 
 ---
 
@@ -78,17 +78,15 @@ kubectl get datadogagent datadog -n <AGENT_NAMESPACE> \
 kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> \
   -o jsonpath='{.items[0].spec.initContainers[*].name}'
 
-# Pod confirmed in Datadog's instrumented-pods list
-pup fleet instrumented-pods list <CLUSTER_NAME>
+# Pod confirmed instrumented — init containers in pod spec
+kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> \
+  -o jsonpath='{.items[0].spec.initContainers[*].name}'
 
-# Tracer active and reporting
-pup fleet tracers list --filter "service:<SERVICE_NAME>"
-
-# Service visible in APM
-pup apm services list --env <ENV>
+# Service visible and traced in APM
+DD_SITE=<DD_SITE> pup apm services list --env <ENV> --from 1h
 
 # Traces arriving in the last hour
-pup traces search --query "service:<SERVICE_NAME>" --from 1h --limit 5
+DD_SITE=<DD_SITE> pup traces search --query "service:<SERVICE_NAME>" --from 1h --limit 5
 ```
 
 ---
