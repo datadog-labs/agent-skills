@@ -92,6 +92,53 @@ Additional filters combine with space (AND): `@evaluations.custom.<name>:* @stat
 
 ### Phase 0: Resolve Inputs
 
+**First: check for classification context.** Scan the conversation for a `# Session Classification Summary` header OR three or more `## Trace:` / `## Session:` blocks each containing a `**Verdict:**` line. If found → **"from classifications" path**: enter Step 0S below and skip steps 1–5.
+
+#### Step 0S — Extract Failure Bucket from Classification Output
+
+For each `## Trace: <id>` or `## Session: <id>` block in the conversation, extract:
+
+| Field | Source line |
+|-------|-------------|
+| `trace_id` | `## Trace: <trace_id>` header, or `**Trace ID:**` line |
+| `span_id` | `**Span ID:**` or `**Agent span ID:**` line |
+| `verdict` | `**Verdict:**` line |
+| `failure_mode` | `**Failure mode:**` line |
+| `reasoning_text` | `**Failure mode detail:**` line (construct as "verdict=no, failure_mode=X" if absent) |
+| `app_type` | `**App type:**` line (if present; default to `LLM` if absent) |
+
+**Failure bucket** = all traces/sessions where verdict is `no` or `partial` (exclude `yes` and `error`).
+
+If failure bucket has < 5 entries → note low confidence, proceed anyway.
+If failure bucket is empty → report "No failures found in the provided classification output" and stop.
+
+Synthesize and present this overview before continuing:
+
+```
+## Classification Overview (from eval-session-classify)
+
+**Source**: eval-session-classify  |  **ml_app**: <from summary header if present>
+**Traces/sessions classified**: N  |  **Failures (no+partial)**: F  |  **Pass rate**: X%
+
+Failure modes in failure bucket:
+| Mode | Count |
+...
+
+Proceeding to Phase 2 (open coding) using F failure traces as the corpus.
+No eval judge configured — classification verdict is the signal.
+```
+
+After presenting, **skip Phase 1 entirely and jump to Phase 2.**
+
+Carry forward:
+- **For Phase 2**: failure bucket = `[(trace_id, span_id, reasoning_text)]` tuples — identical structure to Step 1b output.
+- **For Phase 4**: evaluated span is the root span. If `app_type: Agent` is visible in any trace block, use `get_agent_loop` + child-span investigation; otherwise treat as `llm` span.
+- **Phases 2–7**: all run unchanged — the failure bucket structure is the same regardless of origin.
+
+---
+
+**Standard resolution (no classification context):**
+
 1. If neither `ml_app` nor `eval_name` provided → ask the user.
 2. If `timeframe` not provided → default to `now-24h`.
 3. **ml_app entry point**: If `ml_app` provided without `eval_name`, call `list_llmobs_evals(ml_app)` to discover all configured evals. Then call `get_llmobs_eval_aggregate_stats` for each eval (in parallel) to get a quick health snapshot. Present the overview to the user and proceed to analyze ALL evals with issues (don't ask the user to pick one).
@@ -101,6 +148,8 @@ Additional filters combine with space (AND): `@evaluations.custom.<name>:* @stat
 ---
 
 ### Phase 1: Gather Context & Collect Evidence
+
+> **Skip this entire phase if entering from the "from classifications" path (Step 0S).** Jump directly to Phase 2.
 
 **Goal**: Get the big picture, sample failure spans, and determine the app profile.
 
@@ -367,6 +416,21 @@ Write the full report following the Output Format below. **This is the primary d
 | Eval | Type | Total | Pass Rate | Status |
 |------|------|------:|:---------:|--------|
 | ... | ... | ... | ... | ... |
+}
+
+{If from classifications (Step 0S path):
+## Classification Signal Summary
+
+**Source**: eval-session-classify output (not eval judges)
+
+| Metric | Value |
+|--------|-------|
+| Traces/sessions classified | N |
+| Failures in RCA corpus (no+partial) | F |
+| Failure modes present | list |
+| Classification signal | content-only / content+evals / trace+rum |
+
+Note: Root cause analysis is based on per-trace classification verdicts, not automated eval judge reasoning.
 }
 
 {If custom eval:

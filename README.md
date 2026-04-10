@@ -57,35 +57,41 @@ npx skills add datadog-labs/agent-skills \
 
 ### LLM Observability (LLMO)
 
-The `dd-llmo` directory contains three skills for working with LLM Observability data:
+The `dd-llmo` directory contains five skills for working with LLM Observability data:
 
 | Skill | Purpose |
 |-------|---------|
 | `experiment-analyzer` | Analyze and compare offline LLM experiments |
-| `eval-trace-rca` | Root-cause production failures using eval judge signal |
-| `eval-bootstrap` | Generate evaluator code from traces, optionally seeded by RCA output |
+| `eval-session-classify` | Label production traces with pass/fail verdicts and failure modes |
+| `eval-trace-rca` | Root-cause production failures using eval signal (or classification output) |
+| `eval-bootstrap` | Generate evaluator code or a JSON spec from traces, optionally seeded by RCA |
+| `eval-pipeline` | End-to-end: classify traces → RCA → bootstrap, starting from just an ml_app |
 
 **Eval pipeline flow:**
 
 ```
-eval-trace-rca → eval-bootstrap
- (diagnose why)   (build evals)
+eval-session-classify → eval-trace-rca → eval-bootstrap
+  (label traces)         (diagnose why)   (build evals)
 ```
 
-Run `eval-trace-rca` to understand why an app is failing by analyzing eval judge verdicts across production traces. Then run `eval-bootstrap` to generate evaluator code that captures those failure patterns. Pass the RCA output directly to `eval-bootstrap` to seed it with the discovered failure taxonomy.
+Run `eval-session-classify` to label a sample of production traces with verdicts. That output feeds directly into `eval-trace-rca` for root cause analysis. Then `eval-bootstrap` turns the RCA output into evaluator code. Or run `eval-pipeline` to do all three in one guided flow.
+
+No pre-existing evaluators or labeled datasets required — the pipeline bootstraps from raw traces.
 
 #### Install
 
 ```bash
 # Claude Code — copy any or all skills
 cp -r dd-llmo/experiment-analyzer ~/.claude/skills
+cp -r dd-llmo/eval-session-classify ~/.claude/skills
 cp -r dd-llmo/eval-trace-rca ~/.claude/skills
 cp -r dd-llmo/eval-bootstrap ~/.claude/skills
+cp -r dd-llmo/eval-pipeline ~/.claude/skills
 ```
 
 #### MCP Requirements
 
-All three skills require the LLMO toolset:
+All skills require the LLMO toolset:
 
 ```bash
 claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'
@@ -106,7 +112,13 @@ experiment-analyzer <baseline_id> <candidate_id>            # compare two experi
 experiment-analyzer <id(s)> <question>                      # ask a specific question
 experiment-analyzer <id(s)> [question] --output notebook    # export to Datadog notebook
 
-# Root-cause why an app is failing
+# Full pipeline: raw traces → evaluator suite
+/eval-pipeline <ml_app>                                     # guided end-to-end
+/eval-pipeline <ml_app> --data-only                         # output JSON spec instead of Python
+
+# Or run steps individually:
+/eval-session-classify <ml_app>                             # label traces
+# (eval-trace-rca detects classify output automatically)
 What's wrong with <ml_app> based on its evals over the last 24h
 Analyze eval failures for <eval_name> over the last week
 
