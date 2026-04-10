@@ -11,7 +11,7 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 | **dd-logs** | Search logs |
 | **dd-apm** | Traces, services, performance |
 | **dd-docs** | Search Datadog documentation |
-| **dd-llmo** | LLM Observability: experiments, session classification, eval pipeline |
+| **dd-llmo** | LLM Observability: experiments, eval RCA, evaluator generation |
 
 ## Install
 
@@ -57,43 +57,41 @@ npx skills add datadog-labs/agent-skills \
 
 ### LLM Observability (LLMO)
 
-The `dd-llmo` directory contains four skills for working with LLM Observability data. Three of them form a sequential eval pipeline:
+The `dd-llmo` directory contains three skills for working with LLM Observability data:
 
 | Skill | Purpose |
 |-------|---------|
 | `experiment-analyzer` | Analyze and compare offline LLM experiments |
-| `eval-session-classify` | Classify session satisfaction from RUM + LLMObs data (step 1) |
-| `eval-trace-rca` | Root-cause production failures using eval signal (step 2) |
-| `eval-bootstrap` | Generate evaluator code from traces, optionally seeded by RCA output (step 3) |
+| `eval-trace-rca` | Root-cause production failures using eval judge signal |
+| `eval-bootstrap` | Generate evaluator code from traces, optionally seeded by RCA output |
 
 **Eval pipeline flow:**
 
 ```
-eval-session-classify → eval-trace-rca → eval-bootstrap
-  (generate signal)      (diagnose why)   (build evals)
+eval-trace-rca → eval-bootstrap
+ (diagnose why)   (build evals)
 ```
 
-Run `eval-session-classify` to classify sessions as satisfied/partial/not-satisfied. Pass that output to `eval-trace-rca` to understand why failures occur. Then run `eval-bootstrap` to generate evaluator code that captures those failure patterns.
+Run `eval-trace-rca` to understand why an app is failing by analyzing eval judge verdicts across production traces. Then run `eval-bootstrap` to generate evaluator code that captures those failure patterns. Pass the RCA output directly to `eval-bootstrap` to seed it with the discovered failure taxonomy.
 
 #### Install
 
 ```bash
 # Claude Code — copy any or all skills
 cp -r dd-llmo/experiment-analyzer ~/.claude/skills
-cp -r dd-llmo/eval-session-classify ~/.claude/skills
 cp -r dd-llmo/eval-trace-rca ~/.claude/skills
 cp -r dd-llmo/eval-bootstrap ~/.claude/skills
 ```
 
 #### MCP Requirements
 
-All four skills require the LLMO toolset:
+All three skills require the LLMO toolset:
 
 ```bash
 claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'
 ```
 
-`eval-session-classify` also requires the core toolset (for RUM queries). `experiment-analyzer` uses it optionally for notebook export:
+`experiment-analyzer` optionally uses the core toolset for notebook export:
 
 ```bash
 claude mcp add --scope user --transport http "datadog-mcp-core" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=core'
@@ -108,16 +106,14 @@ experiment-analyzer <baseline_id> <candidate_id>            # compare two experi
 experiment-analyzer <id(s)> <question>                      # ask a specific question
 experiment-analyzer <id(s)> [question] --output notebook    # export to Datadog notebook
 
-# Classify a session (produces yes/partial/no verdict)
-eval-session-classify <session_id>
-
 # Root-cause why an app is failing
 What's wrong with <ml_app> based on its evals over the last 24h
 Analyze eval failures for <eval_name> over the last week
 
 # Generate evaluator code from production traces
-Bootstrap evaluators for <ml_app>
-Bootstrap evaluators for <ml_app> [paste eval-trace-rca output here]
+/eval-bootstrap <ml_app>                                    # cold start
+/eval-bootstrap <ml_app> [paste eval-trace-rca output here] # seeded from RCA
+/eval-bootstrap <ml_app> --data-only                        # emit JSON spec instead of Python SDK code
 ```
 
 ## Quick Reference

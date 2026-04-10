@@ -10,8 +10,10 @@ Given a sample of production LLM traces, analyze input/output patterns and quali
 ## Usage
 
 ```
-Bootstrap evaluators for <ml_app> [over the last <timeframe>]
+/eval-bootstrap <ml_app> [--timeframe <window>] [--data-only]
 ```
+
+Arguments: $ARGUMENTS
 
 ### Inputs
 
@@ -20,6 +22,7 @@ Bootstrap evaluators for <ml_app> [over the last <timeframe>]
 | `ml_app` | Yes | — | ML application to scope traces |
 | `timeframe` | No | `now-7d` | How far back to look |
 | `rca_report` | No | — | Failure taxonomy from `eval-trace-rca` skill, or a free-text failure hypothesis |
+| `--data-only` | No | off | Emit a self-contained JSON spec file instead of Python SDK code |
 
 If `ml_app` is missing, ask the user before proceeding.
 
@@ -64,6 +67,8 @@ To find spans with a specific eval: `@evaluations.custom.<eval_name>:*` — you 
 ---
 
 ## Evaluator SDK Reference
+
+> **Applies to `sdk_code` mode only.** In `data_only` mode, use this section as domain context when writing rubric prompts — no SDK classes are emitted.
 
 ### Imports
 
@@ -272,6 +277,8 @@ If you have access to dd-trace-py locally, verify the API surface by reading:
 | **Cold Start** | Only `ml_app` provided (no RCA, no hypothesis) | Full open discovery — understand what the app does, identify quality dimensions worth measuring, propose evals for coverage |
 | **From RCA** | Conversation contains an RCA report or user provides a failure hypothesis | Skip open discovery — use existing failure taxonomy as eval targets |
 
+**Parse arguments**: Extract `ml_app` (first non-flag argument), `--timeframe` (default `now-7d`), and `--data-only` flag. Set `output_mode = data_only` if the flag is present; otherwise `output_mode = sdk_code`.
+
 **Resolution steps:**
 
 1. If `ml_app` not provided → ask the user.
@@ -280,7 +287,7 @@ If you have access to dd-trace-py locally, verify the API surface by reading:
    - If the user provides a free-text failure hypothesis (e.g., "the system prompt lacks grounding") → `from_rca`. Use the hypothesis as the starting eval target.
    - Otherwise → `cold_start`.
 3. If `timeframe` not provided → default to `now-7d`.
-4. **Map existing eval coverage**: Call `list_llmobs_evals(ml_app=<ml_app>)`. Then, for each eval with `source=custom`, call `get_llmobs_eval_config` to inspect its prompt and infer which quality dimension it covers. Issue all config calls in a **single message** (parallelize). Skip `source=ootb` evals — their names are self-describing.
+4. **Map existing eval coverage** — **skip if `output_mode = data_only`** (there is no Datadog eval project to check coverage against): Call `list_llmobs_evals(ml_app=<ml_app>)`. Then, for each eval with `source=custom`, call `get_llmobs_eval_config` to inspect its prompt and infer which quality dimension it covers. Issue all config calls in a **single message** (parallelize). Skip `source=ootb` evals — their names are self-describing.
 
    By the end of this step you have a complete coverage map: `{eval_name → source, enabled, dimension}`. Carry this into Phase 2 for deduplication.
 
@@ -342,6 +349,8 @@ Order proposals from broadest signal to most granular:
 
 #### Deduplication Against Existing Coverage
 
+**In `data_only` mode**: skip this section entirely (coverage map was not built in Phase 0). Proceed directly to the proposal table.
+
 Before building the proposal, apply the coverage map from Phase 0:
 
 1. **Enabled eval (OOTB or custom)**: Do NOT propose a new evaluator for the same quality dimension. That dimension is already covered — skip it.
@@ -386,13 +395,21 @@ For each evaluator:
   - Evidence: [Trace {id_short}](https://app.datadoghq.com/llm/traces?query=trace_id:{full_id})
 ```
 
-**Which evaluators should I generate?** (Accept all, remove some, rename, add custom, or change provider/model.)
+**Which evaluators should I generate?** (Accept all, remove some, or rename. In `sdk_code` mode you may also add custom evaluators or change provider/model.)
 
 Do NOT proceed to code generation until the user confirms.
 
 ---
 
-### Phase 3: Generate & Write Evaluator Code
+### Phase 3: Generate Output
+
+Branch on `output_mode`:
+- `sdk_code` → **Phase 3A** below
+- `data_only` → skip to **Phase 3B**
+
+---
+
+### Phase 3A: Generate & Write Evaluator Code
 
 **Goal**: Generate the final `.py` file and write it to disk.
 
@@ -502,6 +519,108 @@ evaluators = [
 ```
 
 Only include section comments (Outcome/Format/Safety) for categories that have evaluators.
+
+---
+
+### Phase 3B: Generate & Write Eval Spec JSON
+
+**Goal**: Serialize the confirmed evaluator suite and representative trace samples to a single self-contained JSON file — zero SDK dependencies.
+
+**Output path**: `./evals/{ml_app}_eval_spec.json`
+
+#### JSON Schema
+
+```json
+{
+  "schema_version": "1",
+  "generated_at": "<ISO 8601 UTC>",
+  "generated_by": "eval-bootstrap",
+  "app": {
+    "ml_app": "<string>",
+    "app_type": "LLM | RAG | Agent | Multi-agent",
+    "trace_window": "<timeframe param, e.g. now-7d>",
+    "trace_count": "<integer>"
+  },
+  "evaluators": [
+    {
+      "name": "snake_case_name",
+      "category": "outcome | format | safety",
+      "type": "llm_judge | code_check",
+      "description": "<1-2 sentence plain-language description>",
+      "target_span": "<which span: root, llm sub-span, etc.>",
+      "scoring": {
+        "scale": "boolean | score_1_10 | categorical",
+        "categories": ["<only present when scale=categorical>"],
+        "pass_criteria": "<human-readable: true, >= 7, in [correct], etc.>"
+      },
+      "rubric": "<full prompt text for llm_judge; null for code_check>",
+      "implementation_hints": {
+        "type_if_code_check": "json_valid | regex | contains | length_words | null",
+        "pattern_if_code_check": "<pattern string or null>",
+        "notes": "<optional framework-agnostic implementation guidance>"
+      },
+      "evidence": [
+        {
+          "trace_id": "<32-char hex>",
+          "span_id": "<16-char hex>",
+          "url": "https://app.datadoghq.com/llm/traces?query=trace_id:<trace_id>",
+          "observation": "<why this trace illustrates the evaluator>"
+        }
+      ]
+    }
+  ],
+  "sample_records": [
+    {
+      "trace_id": "<string>",
+      "span_id": "<string>",
+      "input": {},
+      "output": "<string>",
+      "suggested_labels": {
+        "<evaluator_name>": "pass | fail | <score>"
+      }
+    }
+  ]
+}
+```
+
+#### Field Notes
+
+- **`evaluators[].type`**: `"llm_judge"` for semantic evaluators; `"code_check"` for deterministic checks (regex, length, JSON validity, etc.).
+- **`evaluators[].rubric`**: For `llm_judge` — full prompt text grounded in observed trace patterns. Use `{{input}}` and `{{output}}` as generic placeholders (not `{{input_data}}` — that's ddeval-specific). For `code_check` — null.
+- **`evaluators[].implementation_hints.notes`**: Optional framework-agnostic guidance, e.g. "For OpenAI Evals, use `rubric` as a model-graded criterion. For Braintrust, use as an LLM scorer. For Promptfoo, use as an `llm-rubric` assertion."
+- **`sample_records`**: 10–20 representative traces from Phase 1. `suggested_labels` are Claude's best-read from trace inspection — not ground truth. The field name communicates this explicitly.
+- **PII rule**: Strip emails, names, and sensitive data from all `input`, `output`, and `evidence[].observation` fields before writing (same as Phase 3A).
+
+#### Writing Instructions
+
+1. Assemble the JSON object in memory following the schema above.
+2. Populate `sample_records` from traces already fetched in Phase 1. Fetch additional traces (up to 20 total) if fewer than 10 were read.
+3. Anonymize PII in all `input`, `output`, and `evidence[].observation` fields.
+4. Write the file with 2-space indentation using the Write tool.
+5. Display a completion summary:
+
+```
+## Generated Eval Spec
+
+Wrote `./evals/{ml_app}_eval_spec.json`:
+
+- **{N} evaluators** ({outcome_count} outcome, {format_count} format, {safety_count} safety)
+- **{M} sample records** with suggested labels
+
+| # | Name | Category | Type | Pass Criteria |
+|---|------|----------|------|---------------|
+| 1 | ... | ... | ... | ... |
+
+### Next Steps
+
+1. **Review**: Open `./evals/{ml_app}_eval_spec.json` and verify the rubrics match your expectations
+2. **Implement**: Use the `rubric` field to configure evaluators in your framework of choice:
+   - OpenAI Evals: use `rubric` as a model-graded criterion
+   - Braintrust: create an LLM scorer with the rubric text
+   - Promptfoo: use as an `llm-rubric` assertion
+   - Custom code: call your LLM API with the rubric and parse the structured output
+3. **Label**: `suggested_labels` are Claude's best guesses from trace inspection — verify against ground truth before using as training data
+```
 
 ---
 
