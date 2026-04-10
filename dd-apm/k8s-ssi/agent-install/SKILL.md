@@ -26,12 +26,39 @@ Do NOT invoke this skill if:
 
 ---
 
+## Phase 0: Load Credentials
+
+### Claude runs
+
+```bash
+[ -f environment ] && source environment && echo "Loaded credentials from ./environment file" || echo "No environment file found"
+echo "DD_API_KEY set: $([ -n "${DD_API_KEY:-}" ] && echo yes || echo no)"
+echo "DD_SITE: ${DD_SITE:-not set}"
+```
+
+**If `DD_API_KEY` is already set** — proceed to Prerequisites.
+
+**If `DD_API_KEY` is not set** — ask the user to create an `environment` file in this directory:
+
+```bash
+# environment  (this file is git-ignored — never commit it)
+export DD_API_KEY='your-api-key-here'
+export DD_SITE='datadoghq.com'   # change to your site
+```
+
+Tell the user: *"Create an `environment` file in this directory with your credentials (see above), then type `! source environment` to load it into our shared session. I'll wait."*
+
+Once created, run `source environment` and verify `DD_API_KEY` is set before continuing.
+
+> **Why a file?** Claude's shell session is separate from your terminal — `export` commands in your terminal don't reach here. The `environment` file is the persistent, session-safe way to pass credentials. It is git-ignored so it will never be committed.
+
+---
+
 ## Prerequisites
 
 - [ ] Kubernetes v1.20+ — `kubectl version`
 - [ ] helm v3+ — `helm version`
 - [ ] kubectl configured to target cluster — `kubectl config current-context`
-- [ ] User has a Datadog API key for the correct org and site
 - [ ] pup-cli installed — check with `pup --version`; if missing, install with `brew tap datadog-labs/pack && brew install pup`
 
 ---
