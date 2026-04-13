@@ -43,15 +43,19 @@ If not found:
 
 ```bash
 brew tap datadog-labs/pack
-brew install pup
+brew install datadog-labs/pack/pup
 ```
 
-Check auth:
+**Auth — check in this order:**
+
+1. Check OAuth status:
 ```bash
 pup auth status --site <DD_SITE>
 ```
 
-If not authenticated:
+✅ Authenticated — proceed directly to Step 1.
+
+❌ Not authenticated — ask the user to log in:
 
 ### What you need to do in a terminal
 
@@ -59,19 +63,31 @@ If not authenticated:
 pup auth login --site <DD_SITE>
 ```
 
+2. If OAuth login is not possible (e.g., no browser access), fall back to API keys:
+```bash
+echo "DD_API_KEY set: $([ -n "${DD_API_KEY:-}" ] && echo yes || echo no)"
+echo "DD_APP_KEY set: $([ -n "${DD_APP_KEY:-}" ] && echo yes || echo no)"
+```
+
+If `DD_API_KEY` and `DD_APP_KEY` are both set — **proceed to Step 1**. pup will use them automatically even if `pup auth status` shows unauthenticated.
+
 ---
 
-## Context to resolve before acting
+## Context
 
-| Variable | How to resolve |
-|---|---|
-| `DD_HOSTNAME` | The hostname as Datadog sees it — from `datadog-agent status` output, or ask the user |
-| `SERVICE_NAME` | Ask the user — the service name as they expect it to appear in APM |
-| `ENV` | Ask the user — the environment tag |
-| `DD_SITE` | Ask the user, or `grep "^site:" /etc/datadog-agent/datadog.yaml` via SSH |
-| `SSH_KEY` | Path to SSH private key — from user or `/workspace/.ssh/id_ed25519` |
-| `SSH_USER` | SSH username — from user or `root` |
-| `SSH_HOST` | Hostname or IP of the target host |
+Use what the user already provided. Do not ask for missing context upfront — resolve variables lazily, only when a specific step needs them.
+
+| Variable | How to resolve | When needed |
+|---|---|---|
+| `DD_HOSTNAME` | From the user's message, or `datadog-agent status` via SSH | Step 1 — start here |
+| `SERVICE_NAME` | From the user's message | Step 1 — start here |
+| `ENV` | Ask the user only when a command requires it | Step 1 (`service-library-config get`), Step 3 |
+| `DD_SITE` | Ask the user, or `grep "^site:" /etc/datadog-agent/datadog.yaml` via SSH | Only if pup auth check fails |
+| `SSH_KEY` | From user or `/workspace/.ssh/id_ed25519` | Step 4 (SSH investigation) only |
+| `SSH_USER` | From user or default `root` | Step 4 (SSH investigation) only |
+| `SSH_HOST` | From user's message | Step 4 (SSH investigation) only |
+
+**If the user has already provided `DD_HOSTNAME` and `SERVICE_NAME`, go directly to Step 1. Do not ask for ENV or SSH details first.**
 
 ---
 
@@ -134,6 +150,13 @@ pup traces search --query "service:<SERVICE_NAME>" --from 15m --limit 5
 pup metrics query --query "sum:trace.*.request.hits{host:<DD_HOSTNAME>,service:<SERVICE_NAME>}.as_count()" --from 15m
 ```
 
+`ENV` is required for `service-library-config get`. If the user didn't provide it, ask for it before running that command.
+
+Key values to check in `service-library-config get` output:
+- `apm_enabled` — must be `true`. If `false`, the tracer won't send traces regardless of injection.
+- `trace_agent_url` — must point to `http://localhost:8126` or the correct agent socket. Wrong value = tracer can't reach the Agent.
+- `site` — must match your Datadog org's site.
+
 ---
 
 ## Step 2: State Your Hypotheses
@@ -191,6 +214,8 @@ pup apm troubleshooting list --hostname <DD_HOSTNAME> --timeframe 4h
 ---
 
 ## Step 4: Investigate via SSH (if pup didn't reveal the cause)
+
+**Before asking for SSH credentials, briefly explain what you need to check and why**, so the user understands the diagnostic plan before handing over access.
 
 **Is `/etc/ld.so.preload` set?**
 ```bash
