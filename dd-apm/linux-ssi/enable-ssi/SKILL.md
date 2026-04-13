@@ -1,5 +1,5 @@
 ---
-name: dd-apm-linux-enable-ssi
+name: enable-ssi
 description: Configure Unified Service Tags and verify Single Step Instrumentation (SSI) injection on Linux hosts — SSI automatically instruments applications for APM without code changes. Only use if the Datadog Agent is already installed.
 metadata:
   version: "1.0.0"

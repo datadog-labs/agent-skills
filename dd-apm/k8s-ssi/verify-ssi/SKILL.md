@@ -1,5 +1,5 @@
 ---
-name: dd-apm-k8s-verify-ssi
+name: verify-ssi
 description: Verify Single Step Instrumentation (SSI) is working end-to-end on Kubernetes — SSI automatically instruments applications for APM without code changes. Only use after enable-ssi has run.
 metadata:
   version: "1.0.0"

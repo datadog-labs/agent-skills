@@ -1,5 +1,5 @@
 ---
-name: dd-apm-k8s-enable-ssi
+name: enable-ssi
 description: Enable Single Step Instrumentation (SSI) on Kubernetes — automatically instruments applications for APM without code changes. Only use if the Datadog Agent is already running on the cluster — if not, use agent-install first.
 metadata:
   version: "1.0.0"

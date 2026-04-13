@@ -1,5 +1,5 @@
 ---
-name: dd-apm-linux-agent-install
+name: agent-install
 description: Install the Datadog Agent on Linux hosts via SSH with Single Step Instrumentation (SSI) enabled — SSI automatically instruments applications for APM without code changes. Only use if no agent is installed yet.
 metadata:
   version: "1.0.0"

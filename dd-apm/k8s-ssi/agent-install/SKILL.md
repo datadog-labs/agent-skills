@@ -1,5 +1,5 @@
 ---
-name: dd-apm-k8s-agent-install
+name: agent-install
 description: Install the Datadog Agent on Kubernetes using the Datadog Operator — required before enabling Single Step Instrumentation (SSI), which automatically instruments applications for APM without code changes. Only use if no Datadog Agent is deployed on the cluster yet.
 metadata:
   version: "1.0.0"

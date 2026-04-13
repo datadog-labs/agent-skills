@@ -1,5 +1,5 @@
 ---
-name: dd-apm-k8s-onboarding-summary
+name: onboarding-summary
 description: Generate a live Single Step Instrumentation (SSI) onboarding confirmation report — verifies APM instrumentation is working end-to-end with deep links into the Datadog UI. Only use after agent-install and enable-ssi have both completed successfully.
 metadata:
   version: "1.0.0"

@@ -1,5 +1,5 @@
 ---
-name: dd-apm-linux-troubleshoot-ssi
+name: troubleshoot-ssi
 description: Diagnose and fix Single Step Instrumentation (SSI) issues on Linux hosts — SSI automatically instruments applications for APM without code changes. Only use if the agent and SSI are configured but traces are missing or instrumentation is not working.
 metadata:
   version: "1.0.0"
