@@ -1,6 +1,6 @@
 ---
 name: dd-apm-linux-onboarding-summary
-description: Generate a live APM onboarding confirmation report for Linux hosts with deep links into the Datadog UI. Collects real data from the host and Datadog backend to confirm everything is working end-to-end.
+description: Generate a live Single Step Instrumentation (SSI) onboarding confirmation report for Linux hosts — verifies APM instrumentation is working end-to-end with deep links into the Datadog UI. Only use after agent-install and enable-ssi have both completed.
 metadata:
   version: "1.0.0"
   author: datadog-labs
@@ -45,9 +45,9 @@ Do NOT invoke this skill if any verification or troubleshooting check is still f
 pup auth status --site <DD_SITE>
 ```
 
-✅ Valid token — proceed.
+If valid token — proceed.
 
-❌ Not authenticated:
+ERROR: Not authenticated:
 
 ### What you need to do in a terminal
 
@@ -102,7 +102,7 @@ DD_SITE=<DD_SITE> pup traces search --query "service:<SERVICE_NAME>" --from 1h -
 
 ## Present the report
 
-Fill in every value from live command output. Do not leave any placeholder unfilled. If a value cannot be confirmed, mark that row ❌ and link to `troubleshoot-ssi`.
+Fill in every value from live command output. Do not leave any placeholder unfilled. If a value cannot be confirmed, mark that row as failed and link to `troubleshoot-ssi`.
 
 ---
 
@@ -110,13 +110,13 @@ Fill in every value from live command output. Do not leave any placeholder unfil
 
 | Check | Detail | Status |
 |---|---|---|
-| Datadog Agent | v`<VERSION>` running on `<HOSTNAME>`, API key valid | ✅ |
-| SSI armed | `/etc/ld.so.preload` contains launcher path | ✅ |
-| Process injected | launcher + language library in `/proc/<PID>/maps` for `<SERVICE_NAME>` | ✅ |
-| Unified Service Tags | `DD_SERVICE=<SERVICE_NAME>` `DD_ENV=<ENV>` `DD_VERSION=<VERSION>` | ✅ |
-| Agent receiving traces | `<N>` trace(s)/min in APM receiver | ✅ |
-| APM service visible | `<SERVICE_NAME>` in env `<ENV>` | ✅ |
-| Traces arriving | `<N>` trace(s) found in the last hour | ✅ |
+| Datadog Agent | v`<VERSION>` running on `<HOSTNAME>`, API key valid | OK |
+| SSI armed | `/etc/ld.so.preload` contains launcher path | OK |
+| Process injected | launcher + language library in `/proc/<PID>/maps` for `<SERVICE_NAME>` | OK |
+| Unified Service Tags | `DD_SERVICE=<SERVICE_NAME>` `DD_ENV=<ENV>` `DD_VERSION=<VERSION>` | OK |
+| Agent receiving traces | `<N>` trace(s)/min in APM receiver | OK |
+| APM service visible | `<SERVICE_NAME>` in env `<ENV>` | OK |
+| Traces arriving | `<N>` trace(s) found in the last hour | OK |
 
 ---
 

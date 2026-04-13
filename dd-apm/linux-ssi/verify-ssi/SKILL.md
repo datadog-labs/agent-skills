@@ -1,6 +1,6 @@
 ---
 name: dd-apm-linux-verify-ssi
-description: Verify APM SSI is working end-to-end on Linux hosts. Confirms /proc/maps injection, tracer telemetry, and Datadog backend visibility using pup commands and SSH process inspection.
+description: Verify Single Step Instrumentation (SSI) is working end-to-end on Linux hosts — SSI automatically instruments applications for APM without code changes. Only use after enable-ssi has run.
 metadata:
   version: "1.0.0"
   author: datadog-labs
@@ -63,8 +63,8 @@ pup auth login --site <DD_SITE>
 
 Confirm with `pup auth status --site <DD_SITE>`.
 
-✅ Valid token — proceed.
-❌ No browser available: `export DD_APP_KEY=<your-app-key>`
+If valid token — proceed.
+ERROR: No browser available: `export DD_APP_KEY=<your-app-key>`
 
 ---
 
@@ -100,9 +100,9 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo cat /proc/<PID>/maps | grep -E 'launcher|apm-library|datadog'"
 ```
 
-✅ Output includes both the launcher (e.g. `launcher.preload.so`) and a language library (e.g. `apm-library-python`) — injection succeeded for this process.
+If the output includes both the launcher (e.g. `launcher.preload.so`) and a language library (e.g. `apm-library-python`) — injection succeeded for this process.
 
-❌ Launcher present but no language library — launcher ran but couldn't inject. Check for injection errors:
+ERROR: Launcher present but no language library — launcher ran but couldn't inject. Check for injection errors:
 
 ### Claude runs
 
@@ -110,7 +110,7 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
 pup apm troubleshooting list --hostname <DD_HOSTNAME> --timeframe 1h
 ```
 
-❌ Neither present — process was not injected. Check `/etc/ld.so.preload`:
+ERROR: Neither present — process was not injected. Check `/etc/ld.so.preload`:
 
 ```bash
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> "cat /etc/ld.so.preload"
@@ -129,13 +129,13 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo datadog-agent status 2>&1 | grep -A 15 'APM Agent'"
 ```
 
-✅ Shows:
+Healthy output shows:
 - `feature_auto_instrumentation_enabled: true`
 - `Receiver (previous minute)` with `> 0` traces
 
-❌ `feature_auto_instrumentation_enabled: false` — SSI not active on the agent. Check `apm_config` in `/etc/datadog-agent/datadog.yaml`.
+ERROR: `feature_auto_instrumentation_enabled: false` — SSI not active on the agent. Check `apm_config` in `/etc/datadog-agent/datadog.yaml`.
 
-❌ `Receiver (previous minute): 0` — agent running but no traces yet. Generate traffic first (see Step 3), then recheck.
+ERROR: `Receiver (previous minute): 0` — agent running but no traces yet. Generate traffic first (see Step 3), then recheck.
 
 ---
 
@@ -147,11 +147,11 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
 DD_SITE=<DD_SITE> pup apm services list --env <ENV> --from 1h
 ```
 
-✅ `<SERVICE_NAME>` appears with `isTraced: true` — traces are reaching the Datadog backend.
+If `<SERVICE_NAME>` appears with `isTraced: true` — traces are reaching the Datadog backend.
 
-> **Flask / ddtrace v3 naming note:** With ddtrace ≥3.x, Flask spans are emitted as `service:flask` rather than `service:<DD_SERVICE>`. The `DD_SERVICE` value appears as `base_service` on the spans. If you set `DD_SERVICE=my-app`, search for `service:flask` in the APM UI — the service list will show `flask`, not `my-app`. Check the `base_service` tag to confirm it matches your `DD_SERVICE`.
+> **Flask / ddtrace v3 naming note:** With ddtrace >=3.x, Flask spans are emitted as `service:flask` rather than `service:<DD_SERVICE>`. The `DD_SERVICE` value appears as `base_service` on the spans. If you set `DD_SERVICE=my-app`, search for `service:flask` in the APM UI — the service list will show `flask`, not `my-app`. Check the `base_service` tag to confirm it matches your `DD_SERVICE`.
 
-❌ Service missing — generate traffic to trigger trace creation:
+ERROR: Service missing — generate traffic to trigger trace creation:
 
 ### Claude runs
 
@@ -172,7 +172,7 @@ DD_SITE=<DD_SITE> pup apm services list --env <ENV> --from 10m
 DD_SITE=<DD_SITE> pup traces search --query "service:<SERVICE_NAME>" --from 10m --limit 5
 ```
 
-❌ Still missing — check for injection errors and go to `troubleshoot-ssi`:
+ERROR: Still missing — check for injection errors and go to `troubleshoot-ssi`:
 ```bash
 pup apm troubleshooting list --hostname <DD_HOSTNAME> --timeframe 1h
 ```

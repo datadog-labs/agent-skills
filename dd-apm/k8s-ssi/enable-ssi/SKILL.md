@@ -1,6 +1,6 @@
 ---
 name: dd-apm-k8s-enable-ssi
-description: Enable APM on Kubernetes via Single Step Instrumentation (SSI). Configures the DatadogAgent CR, adds Unified Service Tags, restarts pods, and triggers verification.
+description: Enable Single Step Instrumentation (SSI) on Kubernetes — automatically instruments applications for APM without code changes. Only use if the Datadog Agent is already running on the cluster — if not, use agent-install first.
 metadata:
   version: "1.0.0"
   author: datadog-labs
@@ -48,9 +48,9 @@ Do NOT invoke this skill if:
 kubectl exec -n <APP_NAMESPACE> -l app=<APP_LABEL> -- ldd --version 2>&1 | head -1
 ```
 
-✅ Output contains `glibc` or `GLIBC` or `GNU libc` — proceed.
+If the output contains `glibc` or `GLIBC` or `GNU libc` — proceed.
 
-❌ Output contains `musl` — **stop**. SSI's injector requires glibc and is ABI-incompatible with musl libc. The injector will load but silently abort injection, and no traces will be sent. Switch the base image to a glibc-based equivalent (e.g. `python:X-slim`, `node:X-bookworm-slim`, any Debian/Ubuntu/UBI image), then rebuild, reload, restart the pod, and rerun this check before continuing.
+ERROR: Output contains `musl` — **stop**. SSI's injector requires glibc and is ABI-incompatible with musl libc. The injector will load but silently abort injection, and no traces will be sent. Switch the base image to a glibc-based equivalent (e.g. `python:X-slim`, `node:X-bookworm-slim`, any Debian/Ubuntu/UBI image), then rebuild, reload, restart the pod, and rerun this check before continuing.
 
 **Language and runtime**
 - [ ] Application language is one of: Java, Python, Ruby, Node.js, .NET, PHP
@@ -70,9 +70,9 @@ grep -r "import ddtrace\|from ddtrace\|require 'ddtrace'\|require(\"dd-trace\")\
 grep -rE "ddtrace|dd-trace|opentelemetry" requirements.txt package.json Gemfile go.mod pom.xml 2>/dev/null || echo "No tracer dependency found"
 ```
 
-❌ Any match found — remove the import/package before continuing (see Step 0). SSI silently disables itself when existing instrumentation is detected.
+ERROR: Any match found — remove the import/package before continuing (see Step 0). SSI silently disables itself when existing instrumentation is detected.
 
-✅ No matches — proceed.
+If no matches — proceed.
 
 ---
 
@@ -185,9 +185,9 @@ features:
 kubectl apply -f datadog-agent.yaml
 ```
 
-✅ `datadogagent.datadoghq.com/datadog configured`
+If `datadogagent.datadoghq.com/datadog configured` — continue to Step 2.
 
-❌ Validation error — check YAML. `enabledNamespaces` and `disabledNamespaces` cannot both be set.
+ERROR: Validation error — check YAML. `enabledNamespaces` and `disabledNamespaces` cannot both be set.
 
 ---
 
@@ -231,9 +231,9 @@ kubectl wait --for=condition=Ready pod \
   --timeout=120s
 ```
 
-✅ Pods restart cleanly. Init containers named `datadog-lib-<language>-init` visible in pod spec.
+If pods restart cleanly, init containers named `datadog-lib-<language>-init` will be visible in the pod spec.
 
-❌ Pods crash-looping — check for existing custom instrumentation. See `troubleshoot-ssi`.
+ERROR: Pods crash-looping — check for existing custom instrumentation. See `troubleshoot-ssi`.
 
 ---
 

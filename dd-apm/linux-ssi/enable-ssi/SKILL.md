@@ -1,6 +1,6 @@
 ---
 name: dd-apm-linux-enable-ssi
-description: Configure Unified Service Tags and verify SSI injection setup on Linux hosts where the agent is already installed. Handles systemd, supervisord, and pm2 service managers.
+description: Configure Unified Service Tags and verify Single Step Instrumentation (SSI) injection on Linux hosts — SSI automatically instruments applications for APM without code changes. Only use if the Datadog Agent is already installed.
 metadata:
   version: "1.0.0"
   author: datadog-labs
@@ -51,9 +51,9 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "cat /etc/ld.so.preload && ls /opt/datadog-packages/ | grep apm"
 ```
 
-✅ `/etc/ld.so.preload` contains a path to the launcher, and `/opt/datadog-packages/datadog-apm-inject` exists — SSI is armed.
+If `/etc/ld.so.preload` contains a path to the launcher, and `/opt/datadog-packages/datadog-apm-inject` exists — SSI is armed.
 
-❌ Either missing — run `agent-install` first.
+ERROR: Either missing — run `agent-install` first.
 
 **Check for existing manual instrumentation:**
 
@@ -65,7 +65,7 @@ grep -r 'import ddtrace\|from ddtrace\|require .dd-trace.\|opentelemetry' <SOURC
 "
 ```
 
-❌ Manual instrumentation found — SSI silently disables itself when it detects an existing tracer. Remove the manual import/package before proceeding.
+ERROR: Manual instrumentation found — SSI silently disables itself when it detects an existing tracer. Remove the manual import/package before proceeding.
 
 **Check base libc:**
 
@@ -76,7 +76,7 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "ldd --version 2>&1 | head -1"
 ```
 
-❌ musl — SSI requires glibc. No workaround; must use a glibc-based OS.
+ERROR: musl — SSI requires glibc. No workaround; must use a glibc-based OS.
 
 ---
 
@@ -146,7 +146,7 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo systemctl daemon-reload && sudo systemctl show <SYSTEMD_SERVICE_NAME> | grep -E 'DD_SERVICE|DD_ENV|DD_VERSION'"
 ```
 
-✅ UST vars appear in the output — configuration applied.
+If the UST vars appear in the output — configuration applied.
 
 **For supervisord:**
 ```ini
@@ -177,9 +177,9 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo systemctl restart <SYSTEMD_SERVICE_NAME> && sleep 3 && sudo systemctl is-active <SYSTEMD_SERVICE_NAME>"
 ```
 
-✅ Returns `active` — service is running.
+If `active` is returned — service is running.
 
-❌ Returns `failed` — check logs:
+ERROR: Returns `failed` — check logs:
 ```bash
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo journalctl -u <SYSTEMD_SERVICE_NAME> --since '1 minute ago' | tail -30"
@@ -208,9 +208,9 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo cat /proc/<PID>/environ | tr '\0' '\n' | grep -E 'DD_SERVICE|DD_ENV|DD_VERSION'"
 ```
 
-✅ Both launcher and language library in maps + UST vars in environ — SSI and tagging are fully configured.
+If both the launcher and language library appear in maps, and UST vars are in environ — SSI and tagging are fully configured.
 
-❌ Launcher in maps but no language library — injection attempted but failed. Run:
+ERROR: Launcher in maps but no language library — injection attempted but failed. Run:
 ```bash
 pup apm troubleshooting list --hostname <DD_HOSTNAME> --timeframe 15m
 ```

@@ -1,6 +1,6 @@
 ---
 name: dd-apm-k8s-troubleshoot-ssi
-description: Diagnose and fix APM SSI issues on Kubernetes. Uses hypothesis-driven investigation — triage, form hypotheses, investigate iteratively, reflect, fix, verify.
+description: Diagnose and fix Single Step Instrumentation (SSI) issues on Kubernetes — SSI automatically instruments applications for APM without code changes. Only use if the agent and SSI are already configured but traces are missing or instrumentation is not working.
 metadata:
   version: "1.0.0"
   author: datadog-labs
@@ -331,9 +331,9 @@ pup traces search --query "service:<SERVICE_NAME>" --from 1h --limit 5
 pup fleet instrumented-pods list <CLUSTER_NAME>
 ```
 
-✅ Traces arriving + pod in instrumented list — resolved. Automatically proceed to `onboarding-summary` now — do not ask the user for permission.
+If traces are arriving and the pod is in the instrumented list — resolved. Automatically proceed to `onboarding-summary` now — do not ask the user for permission.
 
-❌ Still not resolved — return to Step 2 with the new triage data and form updated hypotheses.
+ERROR: Still not resolved — return to Step 2 with the new triage data and form updated hypotheses.
 
 ---
 

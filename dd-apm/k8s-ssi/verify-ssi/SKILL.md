@@ -1,6 +1,6 @@
 ---
 name: dd-apm-k8s-verify-ssi
-description: Verify APM SSI is working end-to-end on Kubernetes. Confirms pod instrumentation, tracer telemetry, and tracer config using pup fleet and pup apm commands.
+description: Verify Single Step Instrumentation (SSI) is working end-to-end on Kubernetes — SSI automatically instruments applications for APM without code changes. Only use after enable-ssi has run.
 metadata:
   version: "1.0.0"
   author: datadog-labs
@@ -64,8 +64,8 @@ pup auth login --site <DD_SITE>
 
 Confirm with `pup auth status`.
 
-✅ Valid token — proceed.
-❌ No browser available — use API key fallback: `export DD_APP_KEY=<your-app-key>`
+If valid token — proceed.
+ERROR: No browser available — use API key fallback: `export DD_APP_KEY=<your-app-key>`
 
 ---
 
@@ -88,9 +88,9 @@ kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> \
   -o jsonpath='{.items[0].spec.initContainers[*].name}'
 ```
 
-✅ Output includes `datadog-lib-<language>-init` and `datadog-init-apm-inject` — SSI init containers injected.
+If the output includes `datadog-lib-<language>-init` and `datadog-init-apm-inject` — SSI init containers are injected.
 
-❌ Init containers missing — pod was not restarted after SSI was enabled, or namespace targeting is not matching. Restart the pod and recheck.
+ERROR: Init containers missing — pod was not restarted after SSI was enabled, or namespace targeting is not matching. Restart the pod and recheck.
 
 ---
 
@@ -102,9 +102,9 @@ kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> \
 DD_SITE=<DD_SITE> pup apm services list --env <ENV> --from 1h
 ```
 
-✅ `<SERVICE_NAME>` appears in the services list with `isTraced: true`.
+If `<SERVICE_NAME>` appears in the services list with `isTraced: true` — continue to Step 3.
 
-❌ Service missing — send some traffic to the app first, then retry:
+ERROR: Service missing — send some traffic to the app first, then retry:
 
 ### Claude runs
 
@@ -116,7 +116,7 @@ sleep 30 && kill %1 2>/dev/null
 DD_SITE=<DD_SITE> pup apm services list --env <ENV> --from 10m
 ```
 
-❌ Still missing after traffic — check the agent's trace receiver: `kubectl exec -n <AGENT_NAMESPACE> <AGENT_POD> -c agent -- agent status | grep -A 10 "Receiver (previous minute)"`. If receiver shows 0 traces, go to `troubleshoot-ssi`.
+ERROR: Still missing after traffic — check the agent's trace receiver: `kubectl exec -n <AGENT_NAMESPACE> <AGENT_POD> -c agent -- agent status | grep -A 10 "Receiver (previous minute)"`. If receiver shows 0 traces, go to `troubleshoot-ssi`.
 
 ---
 
@@ -132,11 +132,11 @@ pup apm service-library-config get \
   --env <ENV>
 ```
 
-✅ Output shows expected environment variables matching what was configured in `ddTraceConfigs`.
+If the output shows expected environment variables matching what was configured in `ddTraceConfigs` — done.
 
-✅ Empty output and `ddTraceConfigs` was not configured — expected, not a failure.
+If the output is empty and `ddTraceConfigs` was not configured — expected, not a failure.
 
-❌ Config missing but `ddTraceConfigs` was configured — check it is present in the `DatadogAgent` manifest under the correct target, and that pods were restarted after the config change.
+ERROR: Config missing but `ddTraceConfigs` was configured — check it is present in the `DatadogAgent` manifest under the correct target, and that pods were restarted after the config change.
 
 ---
 

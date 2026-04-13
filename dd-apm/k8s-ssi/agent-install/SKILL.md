@@ -1,30 +1,18 @@
 ---
 name: dd-apm-k8s-agent-install
-description: Install the Datadog Agent on Kubernetes using the Datadog Operator. Covers Operator install, API key setup, DatadogAgent CR deployment, and key verification.
+description: Install the Datadog Agent on Kubernetes using the Datadog Operator — required before enabling Single Step Instrumentation (SSI), which automatically instruments applications for APM without code changes. Only use if no Datadog Agent is deployed on the cluster yet.
 metadata:
   version: "1.0.0"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,kubernetes,agent,operator,install
   alwaysApply: "false"
+  tools: helm,kubectl,curl,pup
 ---
 
 # Install the Datadog Agent on Kubernetes
 
 > **Before doing anything else:** Fully resolve all variables in `## Context to resolve before acting`. Do not begin Step 1 until every variable has a concrete value.
-
-## Triggers
-
-Invoke this skill when the user expresses intent to:
-- Install or set up the Datadog Agent on a Kubernetes cluster
-- Deploy the Datadog Operator or a `DatadogAgent` custom resource
-- Get Datadog running on Kubernetes before enabling any product
-
-Do NOT invoke this skill if:
-- The Agent is already deployed — confirm with Step 1 first
-- The user only wants APM and the Agent is confirmed healthy — use `enable-ssi`
-
----
 
 ## Phase 0: Load Credentials
 
@@ -34,7 +22,19 @@ Do NOT invoke this skill if:
 [ -f environment ] && source environment && echo "Loaded credentials from ./environment file" || echo "No environment file found"
 echo "DD_API_KEY set: $([ -n "${DD_API_KEY:-}" ] && echo yes || echo no)"
 echo "DD_SITE: ${DD_SITE:-not set}"
+echo "helm: $(helm version --short 2>/dev/null || echo NOT FOUND)"
 ```
+
+**If `helm` is not found** — tell the user:
+
+> `helm` is required for this skill. Install it with:
+> ```bash
+> brew install helm        # macOS
+> # or see https://helm.sh/docs/intro/install/ for other platforms
+> ```
+> Once installed, let me know and I'll continue.
+
+Do not proceed until `helm` is available.
 
 **If `DD_API_KEY` is already set** — proceed to Prerequisites.
 
@@ -68,7 +68,7 @@ Once created, run `source environment` and verify `DD_API_KEY` is set before con
 | Variable | How to resolve |
 |---|---|
 | `CLUSTER_NAME` | Check repo IaC, scripts, or `kubectl config current-context` |
-| `DD_SITE` | Ask the user. Default: `datadoghq.com`. Options: `datadoghq.eu`, `us3.datadoghq.com`, `us5.datadoghq.com`, `ap1.datadoghq.com` |
+| `DD_SITE` | Ask the user. Default: `datadoghq.com`. Common options: `datadoghq.eu`, `us3.datadoghq.com`, `us5.datadoghq.com`, `ap1.datadoghq.com`. Full list: https://docs.datadoghq.com/getting_started/site/ |
 | `AGENT_NAMESPACE` | Use `datadog` unless the repo already uses `datadog-agent` consistently |
 | `CHART_VERSION` | Run `helm search repo datadog/datadog-operator --versions \| head -5` and use the latest stable |
 
@@ -82,9 +82,9 @@ Once created, run `source environment` and verify `DD_API_KEY` is set before con
 helm list -A | grep -i datadog
 ```
 
-✅ A release shows `deployed` — Agent already installed. Skip to Step 5 to confirm health, then exit.
+If a release shows `deployed` — Agent already installed. Skip to Step 5 to confirm health, then exit.
 
-✅ No output — no existing install. Continue to Step 2.
+If there is no output — no existing install. Continue to Step 2.
 
 ---
 
@@ -107,9 +107,9 @@ kubectl wait --for=condition=Ready pod \
   --timeout=120s
 ```
 
-✅ Operator pod is Running.
+If the Operator pod is Running — continue to Step 3.
 
-❌ Pod not ready after 120s — check image pull: `kubectl describe pod -l app.kubernetes.io/name=datadog-operator -n <AGENT_NAMESPACE>`.
+ERROR: Pod not ready after 120s — check image pull: `kubectl describe pod -l app.kubernetes.io/name=datadog-operator -n <AGENT_NAMESPACE>`.
 
 ---
 
@@ -125,9 +125,9 @@ kubectl create secret generic datadog-secret \
   --namespace <AGENT_NAMESPACE>
 ```
 
-✅ `secret/datadog-secret created`
+If `secret/datadog-secret created` — continue to Step 4.
 
-❌ `AlreadyExists` — confirm which key it holds via Step 5 before deciding whether to recreate.
+ERROR: `AlreadyExists` — confirm which key it holds via Step 5 before deciding whether to recreate.
 
 ---
 
@@ -195,21 +195,27 @@ kubectl logs -l app.kubernetes.io/component=agent \
   || echo "No authentication errors found"
 ```
 
-✅ `No authentication errors found` — key is accepted.
+If `No authentication errors found` — key is accepted.
 
-❌ Authentication errors found — validate the key directly:
+ERROR: Authentication errors found — validate credentials directly:
 
 ### Claude runs
 
 ```bash
-RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
-  -X GET "https://api.<DD_SITE>/api/v1/validate" \
-  -H "DD-API-KEY: $DD_API_KEY")
-
-if [ "$RESPONSE" = "200" ]; then
-  echo "✅ API key is valid for <DD_SITE>"
+# Prefer pup (OAuth) — fall back to curl with API key
+if pup auth status 2>/dev/null | grep -q "Logged in"; then
+  echo "pup OAuth authenticated"
+elif [ -n "${DD_API_KEY:-}" ]; then
+  RESPONSE=$(curl -s -o /dev/null -w "%{http_code}" \
+    -X GET "https://api.<DD_SITE>/api/v1/validate" \
+    -H "DD-API-KEY: $DD_API_KEY")
+  if [ "$RESPONSE" = "200" ]; then
+    echo "API key is valid for <DD_SITE>"
+  else
+    echo "ERROR: Validation failed (HTTP $RESPONSE) — check key and site alignment"
+  fi
 else
-  echo "❌ Validation failed (HTTP $RESPONSE) — check key and site alignment"
+  echo "ERROR: No credentials available — run 'pup auth login' or set DD_API_KEY"
 fi
 ```
 

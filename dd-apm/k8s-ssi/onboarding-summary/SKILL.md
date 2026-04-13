@@ -1,6 +1,6 @@
 ---
 name: dd-apm-k8s-onboarding-summary
-description: Generate a live APM onboarding confirmation report with deep links into the Datadog UI. Collects real data from the cluster and Datadog backend to confirm everything is working end-to-end.
+description: Generate a live Single Step Instrumentation (SSI) onboarding confirmation report — verifies APM instrumentation is working end-to-end with deep links into the Datadog UI. Only use after agent-install and enable-ssi have both completed successfully.
 metadata:
   version: "1.0.0"
   author: datadog-labs
@@ -44,9 +44,9 @@ Do NOT invoke this skill if any verification or troubleshooting check is still f
 pup auth status --site <DD_SITE>
 ```
 
-✅ Valid token — proceed.
+If valid token — proceed.
 
-❌ Not authenticated:
+ERROR: Not authenticated:
 
 ### What you need to do in a terminal
 
@@ -93,7 +93,7 @@ DD_SITE=<DD_SITE> pup traces search --query "service:<SERVICE_NAME>" --from 1h -
 
 ## Present the report
 
-Fill in every value from live command output. Do not leave any placeholder unfilled. If a value cannot be confirmed, mark that row ❌ and link to `troubleshoot-ssi`.
+Fill in every value from live command output. Do not leave any placeholder unfilled. If a value cannot be confirmed, mark that row as failed and link to `troubleshoot-ssi`.
 
 ---
 
@@ -101,13 +101,13 @@ Fill in every value from live command output. Do not leave any placeholder unfil
 
 | Check | Detail | Status |
 |---|---|---|
-| Datadog Agent | `<N>` pod(s) Running in `<AGENT_NAMESPACE>` | ✅ |
-| SSI enabled | Targeting namespace `<APP_NAMESPACE>`, language `<LANGUAGE>` v`<MAJOR_VERSION>` | ✅ |
-| Init container injected | `datadog-lib-<language>-init` present in pod spec | ✅ |
-| Pod instrumented | `<POD_NAME>` in `pup fleet instrumented-pods list` | ✅ |
-| Tracer reporting | Service `<SERVICE_NAME>`, `<LANGUAGE>`, tracer v`<TRACER_VERSION>` | ✅ |
-| APM service visible | `<SERVICE_NAME>` in env `<ENV>` | ✅ |
-| Traces arriving | `<N>` trace(s) found in the last hour | ✅ |
+| Datadog Agent | `<N>` pod(s) Running in `<AGENT_NAMESPACE>` | OK |
+| SSI enabled | Targeting namespace `<APP_NAMESPACE>`, language `<LANGUAGE>` v`<MAJOR_VERSION>` | OK |
+| Init container injected | `datadog-lib-<language>-init` present in pod spec | OK |
+| Pod instrumented | `<POD_NAME>` in `pup fleet instrumented-pods list` | OK |
+| Tracer reporting | Service `<SERVICE_NAME>`, `<LANGUAGE>`, tracer v`<TRACER_VERSION>` | OK |
+| APM service visible | `<SERVICE_NAME>` in env `<ENV>` | OK |
+| Traces arriving | `<N>` trace(s) found in the last hour | OK |
 
 ---
 

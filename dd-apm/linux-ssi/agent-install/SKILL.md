@@ -1,6 +1,6 @@
 ---
 name: dd-apm-linux-agent-install
-description: Install the Datadog Agent on Linux hosts via SSH. Gathers host list and SSH details, checks for existing installs, runs one-line install with SSI enabled, verifies agent is healthy.
+description: Install the Datadog Agent on Linux hosts via SSH with Single Step Instrumentation (SSI) enabled — SSI automatically instruments applications for APM without code changes. Only use if no agent is installed yet.
 metadata:
   version: "1.0.0"
   author: datadog-labs
@@ -72,8 +72,8 @@ Verify SSH works for each host before proceeding:
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> "hostname"
 ```
 
-✅ Returns a hostname — proceed.
-❌ Connection refused or timeout — resolve connectivity before continuing.
+If it returns a hostname — proceed.
+ERROR: Connection refused or timeout — resolve connectivity before continuing.
 
 Once SSH is confirmed, present a plan to the user before proceeding. For example:
 
@@ -102,9 +102,9 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "uname -m && cat /etc/os-release | grep -E '^(ID|VERSION_ID|PRETTY_NAME)='"
 ```
 
-✅ Architecture is `x86_64` or `aarch64`, OS is a supported distribution (Ubuntu 16.04+, Debian 9+, RHEL/CentOS 6–9, Amazon Linux 2/2023, SUSE 12+) — proceed.
+If architecture is `x86_64` or `aarch64`, and the OS is a supported distribution (Ubuntu 16.04+, Debian 9+, RHEL/CentOS 6-9, Amazon Linux 2/2023, SUSE 12+) — proceed.
 
-❌ Architecture is `armv7l` (32-bit ARM) or unsupported OS — stop. Datadog Agent 7 and SSI do not support this configuration.
+ERROR: Architecture is `armv7l` (32-bit ARM) or unsupported OS — stop. Datadog Agent 7 and SSI do not support this configuration.
 
 ---
 
@@ -134,17 +134,17 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
 
 `DD_APM_INSTRUMENTATION_ENABLED=host` causes the install script to also install `datadog-apm-inject` and language library packages under `/opt/datadog-packages/` in one pass.
 
-✅ Script completes without errors — proceed to Phase 2.
+If the script completes without errors — proceed to Phase 2.
 
-❌ `curl: command not found`:
+ERROR: `curl: command not found`:
 ```bash
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "apt-get install -y curl 2>/dev/null || yum install -y curl"
 ```
 
-❌ Permission error — ensure the SSH user has sudo access. The install script requires root.
+ERROR: Permission error — ensure the SSH user has sudo access. The install script requires root.
 
-❌ Script fails with GPG key error — retry; if it persists, check the host's DNS resolution for `keys.datadoghq.com`.
+ERROR: Script fails with GPG key error — retry; if it persists, check the host's DNS resolution for `keys.datadoghq.com`.
 
 ---
 
@@ -157,20 +157,20 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo datadog-agent status 2>&1 | head -40"
 ```
 
-✅ Shows:
+Healthy output shows:
 - `Agent (v7.XX.X)` with `Status: Running`
 - `API Keys status: API Key ending with XXXX: Valid`
 
-❌ `command not found` — installation did not complete. Re-run Phase 1.
+ERROR: `command not found` — installation did not complete. Re-run Phase 1.
 
-❌ `API key invalid` — update and restart:
+ERROR: `API key invalid` — update and restart:
 ```bash
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo sed -i 's/^api_key:.*/api_key: <NEW_API_KEY>/' /etc/datadog-agent/datadog.yaml && \
    (sudo systemctl restart datadog-agent 2>/dev/null || sudo service datadog-agent restart)"
 ```
 
-❌ Agent service not running:
+ERROR: Agent service not running:
 ```bash
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo systemctl start datadog-agent 2>/dev/null && sudo systemctl enable datadog-agent 2>/dev/null || sudo service datadog-agent start"
@@ -182,9 +182,9 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "ls /opt/datadog-packages/ && sudo datadog-installer status 2>/dev/null | grep apm | head -10"
 ```
 
-✅ `/opt/datadog-packages/datadog-apm-inject` exists — injection is available.
+If `/opt/datadog-packages/datadog-apm-inject` exists — injection is available.
 
-❌ Directory missing or empty — `datadog-installer status` may show the package as registered while its directory is actually empty (stale registration). Reinstall:
+ERROR: Directory missing or empty — `datadog-installer status` may show the package as registered while its directory is actually empty (stale registration). Reinstall:
 ```bash
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo datadog-installer remove datadog-apm-inject && \
@@ -198,9 +198,9 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo datadog-agent status 2>&1 | grep -iE '^\s+Hostname' | head -3"
 ```
 
-✅ `Hostname: <some-name>` — hostname resolved. Record this as `DD_HOSTNAME` for all subsequent steps.
+If `Hostname: <some-name>` is shown — hostname resolved. Record this as `DD_HOSTNAME` for all subsequent steps.
 
-❌ `Hostname: (none)` or any DNS resolution error — the agent can't resolve its own FQDN. Fix by setting the hostname explicitly in `datadog.yaml`:
+ERROR: `Hostname: (none)` or any DNS resolution error — the agent can't resolve its own FQDN. Fix by setting the hostname explicitly in `datadog.yaml`:
 
 ```bash
 # Read the actual system hostname

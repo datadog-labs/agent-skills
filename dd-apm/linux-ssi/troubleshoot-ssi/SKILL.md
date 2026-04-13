@@ -1,6 +1,6 @@
 ---
 name: dd-apm-linux-troubleshoot-ssi
-description: Diagnose and fix APM SSI issues on Linux hosts. Uses hypothesis-driven investigation — pup commands first, SSH second. Covers injection errors, tracer config, connectivity, and package remediation.
+description: Diagnose and fix Single Step Instrumentation (SSI) issues on Linux hosts — SSI automatically instruments applications for APM without code changes. Only use if the agent and SSI are configured but traces are missing or instrumentation is not working.
 metadata:
   version: "1.0.0"
   author: datadog-labs
@@ -53,9 +53,9 @@ brew install datadog-labs/pack/pup
 pup auth status --site <DD_SITE>
 ```
 
-✅ Authenticated — proceed directly to Step 1.
+If authenticated — proceed directly to Step 1.
 
-❌ Not authenticated — ask the user to log in:
+ERROR: Not authenticated — ask the user to log in:
 
 ### What you need to do in a terminal
 
@@ -221,8 +221,8 @@ pup apm troubleshooting list --hostname <DD_HOSTNAME> --timeframe 4h
 ```bash
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> "cat /etc/ld.so.preload"
 ```
-✅ Contains path ending in `launcher.preload.so` or `libdatadog-apm-inject.so` — launcher is armed for new processes.
-❌ Empty or missing — SSI was not fully set up. Re-run the install script with `DD_APM_INSTRUMENTATION_ENABLED=host`.
+If it contains a path ending in `launcher.preload.so` or `libdatadog-apm-inject.so` — launcher is armed for new processes.
+ERROR: Empty or missing — SSI was not fully set up. Re-run the install script with `DD_APM_INSTRUMENTATION_ENABLED=host`.
 
 **Is the tracer actually loaded into the running process?**
 
@@ -252,14 +252,14 @@ If process started before `/etc/ld.so.preload` was written, restart the service.
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "ldd --version 2>&1 | head -1 && cat /etc/os-release | grep PRETTY_NAME"
 ```
-❌ musl — SSI's launcher requires glibc. No workaround; must migrate to Debian/Ubuntu/RHEL/Amazon Linux.
+ERROR: musl — SSI's launcher requires glibc. No workaround; must migrate to Debian/Ubuntu/RHEL/Amazon Linux.
 
 **Is it a static binary?**
 ```bash
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "file /proc/<PID>/exe; ldd /proc/<PID>/exe 2>&1"
 ```
-❌ `statically linked` — SSI cannot instrument this binary. Manual instrumentation required.
+ERROR: `statically linked` — SSI cannot instrument this binary. Manual instrumentation required.
 
 **Are the APM packages actually present on disk?**
 
@@ -268,7 +268,7 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "ls /opt/datadog-packages/ && ls /opt/datadog-packages/datadog-apm-library-<LANG>/ | head -5"
 ```
-❌ Directory empty or missing — package is registered but broken on disk. Use the remediation flow.
+ERROR: Directory empty or missing — package is registered but broken on disk. Use the remediation flow.
 
 **Does the app have existing manual instrumentation?**
 ```bash
@@ -277,7 +277,7 @@ sudo cat /proc/<PID>/maps | grep -E 'ddtrace|opentelemetry|dd-trace'
 "
 ```
 Also check dependency manifests: `requirements.txt`, `package.json`, `Gemfile`, `pom.xml`.
-❌ Found — SSI silently disabled itself. Remove manual tracer, restart the service.
+ERROR: Found — SSI silently disabled itself. Remove manual tracer, restart the service.
 
 **Is the Agent APM receiver listening and receiving traces?**
 ```bash
@@ -292,7 +292,7 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo ss -tlnp 2>/dev/null | grep 8126 || sudo netstat -tlnp 2>/dev/null | grep 8126"
 ```
-❌ Port 8126 not listening — APM receiver disabled. Check `apm_config.enabled` in `/etc/datadog-agent/datadog.yaml`.
+ERROR: Port 8126 not listening — APM receiver disabled. Check `apm_config.enabled` in `/etc/datadog-agent/datadog.yaml`.
 
 **What service name did the tracer register?**
 
@@ -378,9 +378,9 @@ pup traces search --query "service:<SERVICE_NAME>" --from 15m --limit 5
 pup metrics query --query "sum:trace.*.request.hits{host:<DD_HOSTNAME>,service:<SERVICE_NAME>}.as_count()" --from 15m
 ```
 
-✅ No new injection errors + traces arriving — resolved. Automatically proceed to `onboarding-summary` now — do not ask the user for permission.
+If there are no new injection errors and traces are arriving — resolved. Automatically proceed to `onboarding-summary` now — do not ask the user for permission.
 
-❌ Still failing — return to Step 2 with updated hypotheses.
+ERROR: Still failing — return to Step 2 with updated hypotheses.
 
 ---
 
