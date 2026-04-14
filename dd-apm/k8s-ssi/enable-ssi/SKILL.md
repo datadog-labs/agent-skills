@@ -13,6 +13,26 @@ metadata:
 
 > **Before doing anything else:** Fully resolve all variables in `## Context to resolve before acting`. Do not begin Step 0 until every variable has a concrete value.
 
+---
+
+> **Silent failure — check this before any other step:**
+>
+> If the application has `ddtrace`, `dd-trace`, or any OpenTelemetry SDK in its **dependency manifest** (`requirements.txt`, `package.json`, `Gemfile`, `go.mod`, `pom.xml`) — even with no import statements in code — SSI will silently disable itself at runtime.
+>
+> The failure is invisible: init containers run and complete, the pod starts healthy, no errors appear in `kubectl` or `pup`, but no traces arrive. The injector detects the user-installed tracer and exits cleanly without logging anything.
+>
+> ### Claude runs
+>
+> ```bash
+> grep -rE "ddtrace|dd-trace|opentelemetry" \
+>   requirements.txt package.json Gemfile go.mod pom.xml 2>/dev/null \
+>   || echo "No tracer dependency found"
+> ```
+>
+> If any match — **stop**. Remove the package entirely (not just the import), rebuild the image, reload it into the cluster, and restart the pod before continuing. A package present in the manifest is enough to trigger this even if it is never imported.
+
+---
+
 ## Triggers
 
 Invoke this skill when the user expresses intent to:
@@ -58,21 +78,7 @@ ERROR: Output contains `musl` — **stop**. SSI's injector requires glibc and is
 - [ ] Node.js app is not using ESM — SSI does not support ESM
 - [ ] Java app is not already using a `-javaagent` JVM flag
 
-**Existing instrumentation — verify before proceeding:**
-
-### Claude runs
-
-```bash
-# Check source files for manual tracer imports
-grep -r "import ddtrace\|from ddtrace\|require 'ddtrace'\|require(\"dd-trace\")\|opentelemetry\|tracer\.trace(" <SOURCE_DIR> 2>/dev/null || echo "No manual instrumentation found"
-
-# Check dependency manifests
-grep -rE "ddtrace|dd-trace|opentelemetry" requirements.txt package.json Gemfile go.mod pom.xml 2>/dev/null || echo "No tracer dependency found"
-```
-
-ERROR: Any match found — remove the import/package before continuing (see Step 0). SSI silently disables itself when existing instrumentation is detected.
-
-If no matches — proceed.
+**Existing instrumentation** — confirmed clean by the check at the top of this skill. If you skipped that check, go back and run it now.
 
 ---
 
