@@ -100,7 +100,7 @@ claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.dat
 ```
 
 `experiment-analyzer` uses the core toolset for notebook export (optional). `eval-session-classify`
-requires it for RUM behavioral analysis:
+requires it for RUM behavioral analysis and efficient batched fetches of trace session spans:
 
 ```bash
 claude mcp add --scope user --transport http "datadog-mcp-core" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=core'
