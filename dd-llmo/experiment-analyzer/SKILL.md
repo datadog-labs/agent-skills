@@ -72,6 +72,7 @@ Never ask multiple rounds of clarifications. One message covers everything unres
    See: https://docs.datadoghq.com/bits_ai/mcp_server/setup/
    ```
    Then ask: "Would you like to fall back to file or agent output instead?"
+   See Phase 5 for full notebook call details.
 
 After resolving mode and output, proceed fully automatically through Phases 1–5 with no further user interaction.
 
@@ -140,6 +141,10 @@ Rules:
 For each sampled event, generate a direct span link:
 `https://app.datadoghq.com/llm/experiments/{experiment_id}?selectedTab=overview&sp=[{"p":{"experimentId":"{experiment_id}","spanId":"{span_id}"},"i":"experiment-details"}]&spanId={span_id}`
 
+For each Deep Dive segment, generate a direct link to view those events in the (candidate) experiment:
+`https://app.datadoghq.com/llm/experiments/{experiment_id}?selectedTab=overview&filter[{dimension}]={value}`
+If you are not confident the filter URL format works for this dimension, omit the filter params and link to the experiment root instead. Never fabricate filter URLs.
+
 ---
 
 ## Phase 4 — Synthesis
@@ -176,7 +181,23 @@ All modes: use quantified deltas/rates wherever possible. Redact PII.
 
 **File:** Write the report to the pre-confirmed path. Confirm with: "Report saved to `<path>`."
 
-**Notebook:** Call `mcp__datadog-mcp-core__create_datadog_notebook` with the report content structured as notebook cells. Return the notebook URL.
+**Notebook:** Call `mcp__datadog-mcp-core__create_datadog_notebook` with the following parameters:
+
+- **`name`** (by mode):
+  | Mode | Name |
+  |------|------|
+  | Comparative Exploratory | `Experiment Analysis: {baseline_short} (Baseline) vs {candidate_short} (Candidate) — YYYY-MM-DD` |
+  | Comparative Q&A | `Experiment Q&A: {baseline_short} vs {candidate_short} — YYYY-MM-DD` |
+  | Single Exploratory | `Experiment Analysis: {experiment_short} — YYYY-MM-DD` |
+  | Single Q&A | `Experiment Q&A: {experiment_short} — YYYY-MM-DD` |
+  where `short` = first 8 characters of the UUID.
+
+- **`cells`**: the full report as a single markdown cell — `[{ "type": "markdown", "text": "<full report markdown>" }]`. Omit the `# Experiment Analysis Report` top-level heading from the cell content — it is already shown as the notebook title.
+- **`time`**: `{ "live_span": "1h" }`
+
+After the notebook is created, output the URL in chat: `"Report exported to notebook: <url>"`
+
+If the tool is unavailable, follow the fallback instructions in Phase 0.
 
 ---
 
@@ -203,15 +224,36 @@ Stay active after the report. Answer follow-up questions using the same MCP tool
 
 ## Report Format
 
+Link rules:
+- **Experiment IDs**: Wherever a full experiment UUID appears, render it as a Markdown link to `https://app.datadoghq.com/llm/experiments/{full_uuid}`.
+- **Comparative table column headers**: In the Orientation table and in every subsequent table that has Baseline/Candidate columns, wrap the *entire* column header as a link — not just the short ID. Format: `[Baseline \`{short_id}\`]({baseline_url})` and `[Candidate \`{short_id}\`]({candidate_url})`. This makes the full header cell clickable, not just the ID portion.
+
 ```markdown
 # Experiment Analysis Report
-## [Mode: Comparative Exploratory | Comparative Q&A | Single Exploratory | Single Q&A]
 
-[2–3 sentence executive summary: experiment(s) purpose, scale, and key finding with specific numbers.]
+> **Question:** {original question text}
+> _(Q&A modes only — omit for Exploratory modes)_
+
+## Summary & Recommendations
+
+[Comparative: **Baseline**: [`{baseline_short}`]({baseline_url}) | **Candidate**: [`{candidate_short}`]({candidate_url}) | **Compare**: [`{baseline_short}-{candidate_short}`](https://app.datadoghq.com/llm/experiment-comparison?baselineExperimentId={baseline_id}&experimentIds={candidate_id}%2C{baseline_id}&tableView=all&selectedEvaluation=pass) — Single: **Experiment**: [`{experiment_short}`]({experiment_url}). Always the first line of this section.]
+
+[2–3 sentence executive summary directly below the links line. Open with "This is a **{Mode}** analysis..." where {Mode} is one of: Comparative Exploratory, Comparative Q&A, Single Exploratory, Single Q&A. Include experiment(s) purpose, scale, and key finding with specific numbers.]
+
+[If the report uses opaque dimension values (e.g. category labels like b1/b2/b3/bx), add a `### Dataset Categories` subsection here. Include: one sentence explaining where the categories come from (i.e. labels from the evaluation dataset grouping questions by required tools/data sources), then a bullet per value with its name bolded and a brief description. Infer descriptions from input question patterns, capability tags, and expected tool calls. Omit this subsection if all dimension values are self-explanatory.]
+
+[Wins, regressions, neutral areas, prioritized actions. For Q&A: verdict + rationale.]
 
 ## Orientation
 
-[Side-by-side table for comparative; summary table for single. Include: events, error rate, metrics, dimensions.]
+[Side-by-side table for comparative; summary table for single. Include: events, error rate, metrics, dimensions. Experiment IDs in column headers must be Markdown links.]
+
+
+## What Changed
+
+[Comparative modes only. Table of differences between baseline and candidate: model, toolset/skill profile,
+dataset, evaluator schema, and any other metadata differences detectable from the summary data.
+If no differences are detectable, write: "No configuration differences detected between experiments."]
 
 ## [Signals | Answer to Question]
 
@@ -222,9 +264,9 @@ Stay active after the report. Answer follow-up questions using the same MCP tool
 
 ### [Issue/Finding Title]
 
-**Segment**: `[dimension=value]` | **Impact**: N events | **Severity**: metric pass rate = X%
+**Segment**: `[dimension=value]` | **Impact**: N events | **Severity**: metric pass rate = X% | [View events](https://app.datadoghq.com/llm/experiments/{experiment_id}?selectedTab=overview&filter[{dimension}]={value})
 
-**What's happening**: [3–5 sentences with specific observations]
+**What's happening**: [1–2 sentences: key observation and metric impact only]
 
 **Representative examples**:
 - [Span link]: [input → output → expected, what went wrong]
@@ -235,10 +277,6 @@ Stay active after the report. Answer follow-up questions using the same MCP tool
 
 ---
 [Repeat for each major issue]
-
-## Summary & Recommendations
-
-[Wins, regressions, neutral areas, prioritized actions. For Q&A: verdict + rationale.]
 
 ## UI Links
 
