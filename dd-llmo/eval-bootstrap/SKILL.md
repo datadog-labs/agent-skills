@@ -291,6 +291,8 @@ If you have access to dd-trace-py locally, verify the API surface by reading:
 
    By the end of this step you have a complete coverage map: `{eval_name → source, enabled, dimension}`. Carry this into Phase 2 for deduplication.
 
+5. **Notebook context detection**: Scan the current conversation for a Datadog notebook URL that was produced by `/eval-trace-rca` (pattern: `https://app.datadoghq.com/notebook/{numeric-id}`). If found, store it as `rca_notebook_url` and extract the numeric ID as `rca_notebook_id`. This is used after Phase 3 to offer appending the evaluator suite to that notebook instead of creating a new one.
+
 ---
 
 ### Phase 1: Explore Traces & Identify Eval Targets
@@ -461,6 +463,55 @@ Wrote {N} evaluators to `{output_path}`:
 2. **Test offline**: Use `LLMObs.experiment(evaluators=evaluators)` to batch-evaluate against a labeled dataset and verify scores
 ```
 
+#### Notebook export (after summary)
+
+After displaying the summary, offer notebook export:
+
+- **If `rca_notebook_url` was detected in Phase 0**:
+  > An RCA notebook was created earlier in this session: `{rca_notebook_url}`
+  > Would you like to (a) append the evaluator suite summary to that notebook, or (b) create a new standalone notebook?
+
+  If **append**: call `mcp__datadog-mcp-core__edit_datadog_notebook` with `id={rca_notebook_id}`, `append_only=true`, and the evaluator suite summary cell (see Notebook cell content below).
+
+  If **new**: call `mcp__datadog-mcp-core__create_datadog_notebook` (see below).
+
+- **If no `rca_notebook_url`**:
+  > Would you like to export this evaluator suite summary to a Datadog notebook?
+
+  If yes: call `mcp__datadog-mcp-core__create_datadog_notebook` with:
+  - **`name`**: `Eval Bootstrap: {ml_app} — YYYY-MM-DD`
+  - **`type`**: `report`
+  - **`cells`**: single markdown cell with the evaluator suite summary
+  - **`time`**: `{ "live_span": "1h" }`
+
+After the notebook is created or updated, output the URL:
+`Evaluator suite exported to notebook: <url>`
+
+**Notebook cell content** — the markdown cell should contain:
+
+```markdown
+## Eval Bootstrap: {ml_app}
+
+**Generated**: YYYY-MM-DD | **App profile**: {LLM | RAG | Agent | Multi-agent} | **Entry mode**: {cold_start | from_rca}
+**Generated code**: `{output_path}`
+
+### Evaluator Suite
+
+| # | Name | Type | Measures | Pass Criteria |
+|---|------|------|----------|---------------|
+| 1 | ... | ... | ... | ... |
+
+### Evidence
+
+{For each evaluator: name — 1-line description — [Trace link]}
+
+### Next Steps
+
+1. Review generated prompts in `{output_path}`
+2. Run against a labeled dataset to validate scores
+3. Deploy to Datadog LLM Experiments
+```
+
 ---
 
 ## Output Format
@@ -621,6 +672,10 @@ Wrote `./evals/{ml_app}_eval_spec.json`:
    - Custom code: call your LLM API with the rubric and parse the structured output
 3. **Label**: `suggested_labels` are Claude's best guesses from trace inspection — verify against ground truth before using as training data
 ```
+
+#### Notebook export (after summary)
+
+Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_url` was detected, or create a new standalone notebook. Use the same notebook cell format as Phase 3A, substituting `output_path` with the JSON spec file path.
 
 ---
 

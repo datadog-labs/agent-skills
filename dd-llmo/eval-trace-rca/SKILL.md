@@ -3,9 +3,16 @@ name: eval-trace-rca
 description: Root cause analysis on production LLM traces using eval judge results as signal. Diagnoses why the user's application is failing. Use when user says "eval RCA", "root cause analysis", "analyze eval failures", "why is my eval failing", "why is my app failing", "failure analysis", "diagnose eval", "what's wrong with my app", or wants to understand production failure patterns. Works with ml_app or eval name.
 ---
 
-# Eval RCA — Root Cause Analysis from Production Eval Signal
+# Eval RCA — Root Cause Analysis from Production Trace Signal
 
-Perform structured root cause analysis on production LLM traces using LLM judge verdicts and reasoning. The goal is to diagnose **why the user's application is failing** — not to evaluate the judge itself. The judge is the signal; the app is the patient.
+Perform structured root cause analysis on production LLM traces. Supports two modes depending on what signal is available:
+
+| Mode | Signal used | When to use |
+|------|-------------|-------------|
+| **Eval Signal** | LLM judge verdicts and reasoning (pass/fail rates, scoring) | App has evaluators configured; goal is to understand *why* evals are failing |
+| **Error Signal** | Runtime errors in traces (`@status:error`, error types, stack traces) | No evals configured, or user explicitly wants to analyze crashes/exceptions/tool failures |
+
+If the mode cannot be inferred from context, ask **one clarifying question** before proceeding: "Would you like me to analyze eval pass/fail patterns, or look at runtime errors and exceptions in traces?"
 
 ## Methodology
 
@@ -16,14 +23,15 @@ Perform structured root cause analysis on production LLM traces using LLM judge 
 ```
 What's wrong with <ml_app> based on its evals over the last <timeframe>
 Analyze eval failures for <eval_name> over the last <timeframe>
+Look at the errors on <ml_app> over the last <timeframe>
 ```
 
 ### Inputs
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `ml_app` | One of these | — | The application to analyze. The skill discovers all configured evals via `list_llmobs_evals`. |
-| `eval_name` | One of these | — | A specific evaluator to focus on. Eval names are unique per org — each eval belongs to exactly one `ml_app`. |
+| `ml_app` | One of these | — | The application to analyze. |
+| `eval_name` | One of these | — | A specific evaluator to focus on (always Eval Signal mode). |
 | `timeframe` | No | `now-24h` | How far back to look |
 
 Either `ml_app` or `eval_name` must be provided. If neither is given, ask the user.
@@ -90,19 +98,37 @@ Additional filters combine with space (AND): `@evaluations.custom.<name>:* @stat
 
 ---
 
-### Phase 0: Resolve Inputs
+### Phase 0: Resolve Inputs & Mode
 
 1. If neither `ml_app` nor `eval_name` provided → ask the user.
 2. If `timeframe` not provided → default to `now-24h`.
-3. **ml_app entry point**: If `ml_app` provided without `eval_name`, call `list_llmobs_evals(ml_app)` to discover all configured evals. Then call `get_llmobs_eval_aggregate_stats` for each eval (in parallel) to get a quick health snapshot. Present the overview to the user and proceed to analyze ALL evals with issues (don't ask the user to pick one).
-4. **eval_name entry point**: Proceed directly to Phase 1 for the specified eval.
-5. Note any additional filters (tags, span_kind) for all subsequent queries.
+3. **Resolve mode**:
+   - `eval_name` provided → **Eval Signal**. Proceed to Phase 1 for the specified eval.
+   - User explicitly mentions errors, exceptions, crashes, runtime failures, or "look at errors" → **Error Signal**.
+   - `ml_app` provided, no explicit signal → call `list_llmobs_evals(ml_app)`:
+     - Evals exist → **Eval Signal** (default). Get aggregate stats for each eval in parallel.
+     - No evals configured → **Error Signal** automatically; inform the user.
+     - Evals exist but context is ambiguous → ask one question: "Would you like me to analyze eval pass/fail patterns, or look at runtime errors and exceptions in traces?"
+4. Note any additional filters (tags, span_kind) for all subsequent queries.
 
 ---
 
 ### Phase 1: Gather Context & Collect Evidence
 
 **Goal**: Get the big picture, sample failure spans, and determine the app profile.
+
+> **If mode = Error Signal**, replace Steps 1a–1b below with the Error Signal path:
+>
+> **Step 1a (Error Signal): Sample error spans**
+> Call `search_llmobs_spans(query="@ml_app:{ml_app} @status:error", from=timeframe, limit=50)`. Paginate until ≥ 30 error spans or no more pages. Group spans by `error_type` tag to build an initial frequency table. Report: `Found {N} error spans across {K} distinct error types: {type1} ({count}), {type2} ({count}), ...`
+>
+> **Step 1b (Error Signal): Fetch stack traces per error type**
+> For the top 3–4 error types, pick 2–3 representative trace IDs and call `find_llmobs_error_spans(trace_id)` in parallel. Extract the error message, stack trace, and the span kind/name where the error originated. Note whether errors propagate from children to parents (cascade vs. isolated).
+>
+> **Step 1c (Error Signal): Determine app profile**
+> Inspect span names, kinds, and tags from the error spans to understand the app structure (same as Eval Signal Step 1c). Then proceed to Phase 2 (Open Coding) treating each distinct error pattern as a failure category — the error_type + origin span + triggering condition is the "judge reasoning" equivalent.
+>
+> The Output Format for Error Signal mode uses the same structure but replaces **Eval Overview** / **Judge reasoning** fields with **Error type counts** / **Stack trace excerpts**.
 
 #### Step 1a: Eval overview (parallel)
 
@@ -344,91 +370,156 @@ Write the full report following the Output Format below. **This is the primary d
 1. Save the report to `eval-rca-{eval_name}-{date}.md`
 2. Apply fixes (if codebase is available)
 3. Deeper investigation of remaining categories
+4. Export the report to a Datadog notebook
+5. Run on an expanded time range (re-run the full analysis from Phase 1 with a wider `timeframe`, e.g. `now-7d` if the current window was `now-24h`)
+
+**If the user chooses option 4**, call `mcp__datadog-mcp-core__create_datadog_notebook` with:
+- **`name`**: `Eval RCA: {eval_name or ml_app} — YYYY-MM-DD`
+- **`type`**: `report`
+- **`time_span`**: `1w`
+- **`cells`**: **one cell per section** (see Notebook Cell Structure below) — do NOT put the entire report in a single cell
+
+After creation, output the URL on its own line:
+`RCA report exported to notebook: <url>`
+
+Print the URL prominently — if `/eval-bootstrap` runs next in the same session, it will detect this URL and offer to append the evaluator suite to the same notebook.
+
+#### Notebook Cell Structure
+
+Split the report into separate cells — one per major section. This renders far better than a single large cell.
+
+**Cell 1 — Overview**
+```
+**Date**: YYYY-MM-DD | **Timeframe**: {from} → {to} | **App**: {ml_app} | **Signal**: {Eval | Error}
+**App profile**: {description}
+
+{2-3 sentence executive summary}
+```
+
+**Cell 2 — Error/Eval Health Summary** (table)
+
+**Cell 3 — Failure Taxonomy** (table)
+
+**Cells 4…N — one cell per Failure Mode**
+
+**Cell N+1 — Prioritized Action Plan + Limitations**
+
+**Notebook formatting rules** (apply to every cell):
+- **No triple-backtick code blocks** — they render as separate plaintext blocks in Datadog notebooks. Use blockquotes (`>`) for prompts/rubrics, and inline code (`` ` ``) for short values.
+- **Evidence as tables** — not bullet lists. See Output Format.
+- **Tool inputs as tables** — Argument | Wrong value passed | Correct approach.
+- **Action plan as a table** — Priority | Action | Confidence | Impact.
 
 ---
 
 ## Output Format
 
-```markdown
-# Eval RCA Report: `{eval_name or ml_app}`
-
-**Date**: {YYYY-MM-DD}  |  **Timeframe**: {from} → {to}
-**App profile**: {LLM | RAG | Agent | Multi-agent}
-
-{If single eval:
-**Eval**: {Custom/OOTB}  |  **Metric**: {boolean/score/categorical}
-**Total spans**: {total_count}  |  **Pass rate**: {pass_rate}%
-**Sample**: {sample_size} ({pass_count} pass / {fail_count} fail)
-}
-
-{If multiple evals (ml_app entry):
-## Eval Health Summary
-
-| Eval | Type | Total | Pass Rate | Status |
-|------|------|------:|:---------:|--------|
-| ... | ... | ... | ... | ... |
-}
-
-{If custom eval:
-## Eval Definition
-**Measures**: {summary}  |  **Criteria**: {pass_when/threshold}
-}
-
-[2-3 sentence executive summary: overall health, most important finding with numbers.]
-
-## Failure Taxonomy
-
-| # | Failure Mode | Count | % | Severity | Root Cause |
-|---|-------------|------:|:-:|:--------:|-----------|
-| 1 | ... | ... | ... | ... | ... |
-
-## Detailed Analysis
-
-### Failure Mode 1: [Name]
-
-**Count**: {n} ({pct}%)  |  **Severity**: High  |  **Root Cause**: [Category]
-
-**What's happening**: [3-5 sentences. What goes wrong, when, what triggers it.]
-
-**Evidence**:
-- [Trace {id_short}](https://app.datadoghq.com/llm/traces?query=trace_id:{full_id}): [what happened]
-
-**Judge reasoning**: > "{quoted reasoning}"
-
-**Trace deep-dive**: [What the trace investigation revealed — system prompt content, tool calls, agent decisions, errors found, retrieved documents]
-
-**Root cause**: [WHY this happens, tied to trace evidence]
-
-**Recommendation**:
-- **Type**: [System Prompt Edit | Tool Gap | Routing Fix | Retrieval Fix | Evaluator Prompt Edit | Other]
-- **What to change**:
-  ```text
-  BEFORE: [actual text from trace]
-  AFTER: [proposed replacement]
-  ```
-
-- **Why**: [causal link]
-- **Impact**: ~{n} failures ({pct}%)
+The in-chat report (Phase 6) and the notebook export (Phase 7) use the same structure. Differences are noted inline.
 
 ---
 
-[Repeat for top 3-5 failure modes]
+### Header
 
-## Prioritized Action Plan
+```
+# Eval RCA Report: `{eval_name or ml_app}`
 
-1. **[Title]** ({pct}%) — [concrete change] — Confidence: High/Medium/Low
+**Date**: YYYY-MM-DD | **Timeframe**: {from} → {to} | **App**: {ml_app} | **Signal**: {Eval | Error}
+**App profile**: {LLM | RAG | Agent | Multi-agent, with brief description}
 
-## Remaining / Low-Confidence
+{2-3 sentence executive summary: overall health, most important finding with numbers.}
+```
 
-| Mode | Count | Notes |
-|------|------:|-------|
-| ... | ... | ... |
+---
 
-## Limitations & Follow-ups
+### Error / Eval Health Summary
 
-- [What needs more data]
-- [Suggested follow-ups]
+Table — one row per error type or eval:
 
+```
+| Error Type | Spans | Traces | Versions Affected | Status |
+|---|:---:|:---:|---|:---:|
+| `monitor_groups_search` 400 | ~21 | 4+ | All | ⚠️ Active |
+| `CancelledError` | ~25 | 12+ | All | ⚠️ Active |
+| `load_datadog_skill` | ~7 | 7 | v1.0–v1.3 only | ✅ Resolved |
+```
+
+---
+
+### Failure Taxonomy
+
+```
+| # | Failure Mode | Traces | % | Severity | Root Cause |
+|---|---|:---:|:---:|:---:|---|
+| 1 | Short description | 4+ | ~20% | **High** | Tool Misuse |
+```
+
+---
+
+### Failure Mode Sections (one per mode)
+
+```
+## Failure Mode N: [Name]
+
+**Count**: {n} spans, {t} traces | **Severity**: High/Medium/Low | **Root Cause**: [Category]
+
+[3-5 sentences: what goes wrong, when, what triggers it, causal chain.]
+
+**Evidence**
+
+| Trace | Behavior | Version |
+|---|---|---|
+| [69de86a7...](https://app.datadoghq.com/llm/traces?query=trace_id:{full_id}) | 7 parallel calls, all 400 | v107624932 |
+| [69de473f...](https://app.datadoghq.com/llm/traces?query=trace_id:{full_id}) | 7x 400 + CancelledError after 153s | v107574104 |
+
+{For tool misuse: add a tool inputs table}
+**Tool inputs (100% of sampled calls have this pattern)**
+
+| Argument | Value passed (wrong) | Correct approach |
+|---|---|---|
+| `query` | `"monitor_id:123 group_status:alert"` | `"monitor_id:123"` (name/tag only) |
+| `group_states` | *(not passed)* | `["alert"]` (separate param) |
+
+{For eval signal: add judge reasoning as a blockquote}
+> "{quoted judge reasoning}"
+
+**Root cause**: [WHY this happens, tied to trace evidence — specific span, parameter, or prompt.]
+
+**Fix**: [Concrete action. For schema/prompt changes, show before/after inline — no code blocks:
+  BEFORE: query: string  # "Search query"
+  AFTER: query: string  # Name/tag filters only — do not embed state filters here
+         group_states: array[enum]  # ["alert", "warn", "no data", "ignored", "ok"]
+]
+
+**Impact**: Eliminates ~{n} spans/timeframe{; also describe secondary effects if any}.
+```
+
+**Evidence table columns** — use the most informative subset:
+- **Error Signal**: Trace | Behavior | Version
+- **Eval Signal**: Trace | Judge verdict | What the trace revealed
+- Always omit columns that add no information for a given mode.
+
+---
+
+### Prioritized Action Plan
+
+Table — not a numbered list:
+
+```
+| Priority | Action | Confidence | Impact |
+|:---:|---|:---:|---|
+| 1 | Fix `monitor_groups_search` schema — add `group_states` param | High | Eliminates ~21 spans/7d |
+| 2 | Cap `max_retries` + handle `CancelledError` gracefully | High | Reduces retry storms |
+| 3 | Upgrade pydantic-ai for cross-task cancel scope fix | Medium | Fixes ~8 spans/7d |
+```
+
+---
+
+### Limitations & Follow-ups
+
+Bullet list — unchanged from before:
+
+```
+- **{Topic}** — {what needs more data or follow-up action}
 ```
 
 ## Operating Rules
