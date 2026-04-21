@@ -160,6 +160,9 @@ kubectl get pods -n <AGENT_NAMESPACE>
 ```
 
 **Were pods restarted after SSI was enabled?**
+
+> **Confirm with the user before restarting.** Tell the user: "Pods must be restarted for SSI to inject into them. I'll restart `<DEPLOYMENT_NAME>` in `<APP_NAMESPACE>`. Ready to proceed?" Wait for confirmation.
+
 ```bash
 kubectl rollout restart deployment/<DEPLOYMENT_NAME> -n <APP_NAMESPACE>
 kubectl wait --for=condition=Ready pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --timeout=120s
@@ -198,6 +201,13 @@ Fix: remove the annotation from the Deployment pod template, then apply and rest
 
 ```bash
 kubectl apply -f <your-app-deployment.yaml>
+```
+
+> **Confirm with the user before restarting.** Tell the user: "I need to restart `<DEPLOYMENT_NAME>` in `<APP_NAMESPACE>` for this change to take effect. Ready to proceed?" Wait for confirmation.
+
+### Claude runs
+
+```bash
 kubectl rollout restart deployment/<DEPLOYMENT_NAME> -n <APP_NAMESPACE>
 ```
 
@@ -310,6 +320,8 @@ kind load docker-image <IMAGE_NAME> --name <CLUSTER_NAME>
 ```
 
 - Registry-based: skip — image will be pulled on next deployment
+
+> **Confirm with the user before restarting.** Tell the user: "I need to restart `<DEPLOYMENT_NAME>` in `<APP_NAMESPACE>` to apply the fix. Ready to proceed?" Wait for confirmation.
 
 ### Claude runs
 

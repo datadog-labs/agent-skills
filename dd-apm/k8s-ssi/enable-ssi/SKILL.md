@@ -125,6 +125,8 @@ If the setup script is ambiguous, run the load command it uses exactly as writte
 
 - Registry-based: skip — image will be pulled on next deployment
 
+> **Confirm with the user before restarting.** Tell the user: "I need to restart `<DEPLOYMENT_NAME>` in `<APP_NAMESPACE>` to pick up the rebuilt image. Ready to proceed?" Wait for confirmation.
+
 ### Claude runs
 
 ```bash
@@ -225,6 +227,8 @@ kubectl apply -f <your-app-deployment.yaml>
 ---
 
 ## Step 3: Restart Application Pods
+
+> **Confirm with the user before restarting.** Tell the user: "I need to restart `<DEPLOYMENT_NAME>` in `<APP_NAMESPACE>` for SSI to inject into the pods. This will cause a brief outage. Ready to proceed?" Wait for confirmation.
 
 ### Claude runs
 
