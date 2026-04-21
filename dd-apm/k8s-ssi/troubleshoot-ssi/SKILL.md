@@ -164,10 +164,14 @@ kubectl get pods -n <AGENT_NAMESPACE>
 
 > **Confirm with the user before restarting.** Tell the user: "Pods must be restarted for SSI to inject into them. I'll restart `<DEPLOYMENT_NAME>` in `<APP_NAMESPACE>`. Ready to proceed?" Wait for confirmation.
 
+### Claude runs
+
 ```bash
 kubectl rollout restart deployment/<DEPLOYMENT_NAME> -n <APP_NAMESPACE>
 kubectl wait --for=condition=Ready pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --timeout=120s
 ```
+
+### Claude runs
 
 ```bash
 pup fleet instrumented-pods list <CLUSTER_NAME>

@@ -46,7 +46,7 @@ Do not proceed until `helm` is available.
 > ! export DD_SITE=datadoghq.com
 > ```
 
-Once set, re-run the check above to confirm before continuing.
+Wait for the user to run the commands, then re-run the check above before continuing.
 
 ---
 

@@ -46,7 +46,7 @@ echo "DD_SITE: ${DD_SITE:-not set}"
 > ! export DD_SITE=datadoghq.com
 > ```
 
-Once set, re-run the check above to confirm before continuing.
+Wait for the user to run the commands, then re-run the check above before continuing.
 
 ---
 
