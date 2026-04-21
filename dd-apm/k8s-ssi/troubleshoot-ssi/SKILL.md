@@ -53,13 +53,13 @@ pup auth status
 
 If not authenticated:
 
-### What you need to do in a terminal
+### Claude runs
 
 ```bash
 pup auth login
 ```
 
-Confirm with `pup auth status`. If no browser available: `export DD_APP_KEY=<your-app-key>`.
+If no browser available: `export DD_APP_KEY=<your-app-key>`.
 
 ---
 

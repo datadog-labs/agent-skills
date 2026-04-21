@@ -48,13 +48,11 @@ If valid token — proceed.
 
 ERROR: Not authenticated:
 
-### What you need to do in a terminal
+### Claude runs
 
 ```bash
 pup auth login --site <DD_SITE>
 ```
-
-Confirm with `pup auth status --site <DD_SITE>` before continuing.
 
 ---
 
