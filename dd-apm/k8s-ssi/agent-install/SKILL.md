@@ -16,6 +16,8 @@ metadata:
 
 ## Phase 0: Load Credentials
 
+> **NEVER ask the user to type `DD_API_KEY` or any secret in the conversation.** Credentials must come from the `environment` file only. If the key is missing, tell the user to create the file and source it — do not ask for the value in chat.
+
 ### Claude runs
 
 ```bash
@@ -27,7 +29,12 @@ echo "helm: $(helm version --short 2>/dev/null || echo NOT FOUND)"
 
 **If `helm` is not found** — tell the user:
 
-> `helm` is required. Install it with `brew install helm` (macOS) or see https://helm.sh/docs/intro/install/. Let me know when it's ready.
+> `helm` is required for this skill. Install it with:
+> ```bash
+> brew install helm        # macOS
+> # or see https://helm.sh/docs/intro/install/ for other platforms
+> ```
+> Once installed, let me know and I'll continue.
 
 Do not proceed until `helm` is available.
 
@@ -35,13 +42,16 @@ Do not proceed until `helm` is available.
 
 **If `DD_API_KEY` is not set** — tell the user:
 
-> Your `DD_API_KEY` is not set. To avoid exposing it in chat history, create a temporary credentials file:
-> 1. Copy `environment.template` to `environment` and fill in your API key and site
-> 2. Run `! source environment` — the `!` prefix loads it into this shell session
->
-> Once you've done that, I'll continue.
+> "Please create an `environment` file in this directory (it's git-ignored and never committed):
+> ```bash
+> export DD_API_KEY='your-api-key-here'
+> export DD_SITE='datadoghq.com'
+> ```
+> Then run `! source environment` in this chat to load it. I'll wait — do not paste the key here."
 
-Wait. Once the user runs `! source environment`, re-run the bash check above to confirm `DD_API_KEY` is now set, then proceed.
+Once sourced, re-run the check above and verify `DD_API_KEY` is set before continuing.
+
+> **Why a file?** Claude's shell session is separate from your terminal — `export` commands in your terminal don't reach here. The `environment` file is the persistent, session-safe way to pass credentials. It is git-ignored so it will never be committed.
 
 ---
 

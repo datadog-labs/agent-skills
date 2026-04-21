@@ -128,7 +128,9 @@ Construct each URL by substituting real values. Do not print placeholder URLs.
 |---|---|
 | Service overview | `https://app.<DD_SITE>/apm/services/<SERVICE_NAME>?env=<ENV>` |
 | Traces explorer | `https://app.<DD_SITE>/apm/traces?query=service:<SERVICE_NAME>%20env:<ENV>` |
+| Service map | `https://app.<DD_SITE>/apm/map?env=<ENV>&service=<SERVICE_NAME>` |
 | Infrastructure host | `https://app.<DD_SITE>/infrastructure?q=host:<HOSTNAME>` |
+| Agent fleet | `https://app.<DD_SITE>/fleet-automation` |
 
 ---
 
