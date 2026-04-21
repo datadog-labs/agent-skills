@@ -55,6 +55,8 @@ ERROR: Not authenticated:
 pup auth login --site <DD_SITE>
 ```
 
+> This opens a browser tab for OAuth. Complete the login there — Claude will continue once the command exits.
+
 ---
 
 ## Collect live confirmation data

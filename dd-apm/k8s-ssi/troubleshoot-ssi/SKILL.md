@@ -59,6 +59,8 @@ If not authenticated:
 pup auth login
 ```
 
+> This opens a browser tab for OAuth. Complete the login there — Claude will continue once the command exits.
+
 If no browser available: `export DD_APP_KEY=<your-app-key>`.
 
 ---
@@ -165,6 +167,9 @@ kubectl get pods -n <AGENT_NAMESPACE>
 ```bash
 kubectl rollout restart deployment/<DEPLOYMENT_NAME> -n <APP_NAMESPACE>
 kubectl wait --for=condition=Ready pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --timeout=120s
+```
+
+```bash
 pup fleet instrumented-pods list <CLUSTER_NAME>
 ```
 

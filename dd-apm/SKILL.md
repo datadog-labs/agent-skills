@@ -81,6 +81,8 @@ tags.datadoghq.com/version: "1.0.0"
 
 ### Step 4: Restart app pods and verify SSI init containers
 
+> **Confirm with the user before restarting.** Tell the user: "I need to restart `<name>` in `<namespace>` for SSI to inject into the pods. This will cause a brief outage. Ready to proceed?" Wait for confirmation.
+
 ```bash
 kubectl rollout restart deployment/<name> -n <namespace>
 kubectl get pods -A -o json | grep -o '"datadog-lib[^"]*"' | sort -u

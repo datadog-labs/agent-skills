@@ -63,6 +63,8 @@ ERROR: Not authenticated:
 pup auth login --site <DD_SITE>
 ```
 
+> This opens a browser tab for OAuth. Complete the login there — Claude will continue once the command exits.
+
 2. If OAuth login is not possible (e.g., no browser access), fall back to API keys:
 ```bash
 echo "DD_API_KEY set: $([ -n "${DD_API_KEY:-}" ] && echo yes || echo no)"

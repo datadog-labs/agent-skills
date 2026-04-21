@@ -102,7 +102,7 @@ ERROR: musl — SSI requires glibc. No workaround; must use a glibc-based OS.
 - Ruby: `gem uninstall ddtrace`, remove `require 'ddtrace'`
 - .NET: remove `Datadog.Trace` NuGet and profiler env vars
 
-After removing, restart the service. **Confirm with user before restarting.**
+After removing, restart the service. **Confirm with the user before restarting.** Tell the user: "I need to restart `<SYSTEMD_SERVICE_NAME>` to remove the old instrumentation. This will cause a brief outage. Ready to proceed?" Wait for confirmation.
 
 ---
 
@@ -166,9 +166,7 @@ Reload: `pm2 reload <app>`
 
 ## Step 2: Restart the Service
 
-**Confirm with the user before restarting.** Restarting a production service causes a brief outage.
-
-Once confirmed:
+**Confirm with the user before restarting.** Tell the user: "I need to restart `<SYSTEMD_SERVICE_NAME>` for SSI to inject into it. This will cause a brief outage. Ready to proceed?" Wait for confirmation.
 
 ### Claude runs
 
