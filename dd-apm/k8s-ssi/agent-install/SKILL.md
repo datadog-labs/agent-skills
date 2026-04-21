@@ -16,12 +16,10 @@ metadata:
 
 ## Phase 0: Load Credentials
 
-> **NEVER ask the user to type `DD_API_KEY` or any secret in the conversation.** Credentials must come from the `environment` file only. If the key is missing, tell the user to create the file and source it — do not ask for the value in chat.
-
 ### Claude runs
 
 ```bash
-[ -f environment ] && source environment && echo "Loaded credentials from ./environment file" || echo "No environment file found"
+[ -f environment ] && source environment
 echo "DD_API_KEY set: $([ -n "${DD_API_KEY:-}" ] && echo yes || echo no)"
 echo "DD_SITE: ${DD_SITE:-not set}"
 echo "helm: $(helm version --short 2>/dev/null || echo NOT FOUND)"
@@ -42,16 +40,13 @@ Do not proceed until `helm` is available.
 
 **If `DD_API_KEY` is not set** — tell the user:
 
-> "Please create an `environment` file in this directory (it's git-ignored and never committed):
-> ```bash
-> export DD_API_KEY='your-api-key-here'
-> export DD_SITE='datadoghq.com'
+> Please run the following in this chat to set your credentials (the `!` prefix executes it in this session):
 > ```
-> Then run `! source environment` in this chat to load it. I'll wait — do not paste the key here."
+> ! export DD_API_KEY=your-api-key-here
+> ! export DD_SITE=datadoghq.com
+> ```
 
-Once sourced, re-run the check above and verify `DD_API_KEY` is set before continuing.
-
-> **Why a file?** Claude's shell session is separate from your terminal — `export` commands in your terminal don't reach here. The `environment` file is the persistent, session-safe way to pass credentials. It is git-ignored so it will never be committed.
+Once set, re-run the check above to confirm before continuing.
 
 ---
 
