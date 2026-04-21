@@ -60,18 +60,6 @@ Do NOT invoke this skill if:
 - [ ] Not a very small VM instance (e.g. t2.micro) — SSI can hit init timeouts
 - [ ] No PodSecurity baseline or restricted policy enforced
 
-**Base image — verify before proceeding:**
-
-### Claude runs
-
-```bash
-kubectl exec -n <APP_NAMESPACE> -l app=<APP_LABEL> -- ldd --version 2>&1 | head -1
-```
-
-If the output contains `glibc` or `GLIBC` or `GNU libc` — proceed.
-
-ERROR: Output contains `musl` — **stop**. SSI's injector requires glibc and is ABI-incompatible with musl libc. The injector will load but silently abort injection, and no traces will be sent. Switch the base image to a glibc-based equivalent (e.g. `python:X-slim`, `node:X-bookworm-slim`, any Debian/Ubuntu/UBI image), then rebuild, reload, restart the pod, and rerun this check before continuing.
-
 **Language and runtime**
 - [ ] Application language is one of: Java, Python, Ruby, Node.js, .NET, PHP
 - [ ] Runtime version is within SSI's supported range — verify against the [SSI compatibility matrix](https://docs.datadoghq.com/tracing/trace_collection/automatic_instrumentation/single-step-apm/compatibility/)

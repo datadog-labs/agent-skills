@@ -99,7 +99,6 @@ Read this before investigating. It gives you the mental model to reason about no
 - `kubectl get pod -o jsonpath='{.spec.initContainers[*].name}'` includes `datadog-lib-<language>-init`
 
 **Known silent failures — SSI produces no error when these occur:**
-- **Alpine/musl libc** — `LD_PRELOAD` fails silently. SSI's `.so` is compiled against glibc; musl (Alpine Linux) is ABI-incompatible
 - **Existing ddtrace or OTel instrumentation** — SSI detects it and silently disables itself
 - **Unsupported runtime version** — silently skipped
 - **`admission.datadoghq.com/enabled: "false"` annotation** — webhook skips the pod entirely
@@ -138,7 +137,7 @@ Before investigating, explicitly state your ranked hypotheses based on triage ou
 | No traces + pod NOT in instrumented list + no init container | Injection never happened — investigate: namespace targeting, webhook, pod-selector, opt-out annotation, pod not restarted |
 | No traces + pod NOT in instrumented list + init container present | Injection attempted but failed — check `pup apm troubleshooting list` for injection errors |
 | No traces + pod in instrumented list + init container present | Tracer injected but not reporting — investigate: connectivity, DD_SITE, API key |
-| Pod events show CrashLoopBackOff or init container errors | Init container failure — check libc (Alpine/musl), existing ddtrace, runtime version |
+| Pod events show CrashLoopBackOff or init container errors | Init container failure — check existing ddtrace, runtime version |
 | Traces arriving but wrong service/env | UST labels missing or misconfigured on the Deployment |
 
 State your top 1-3 hypotheses explicitly: *"Based on triage, I think the most likely cause is X because Y."*
@@ -225,12 +224,7 @@ Also check dependency manifests: `requirements.txt`, `package.json`, `Gemfile`, 
 Fix: remove the import/package, rebuild image, reload into cluster, restart pod.
 
 **Is the base image Alpine (musl libc)?**
-SSI's injected library requires glibc. Alpine uses musl — ABI-incompatible, fails silently.
-```bash
-kubectl exec -n <APP_NAMESPACE> <POD_NAME> -- sh -c "ldd --version 2>&1 | head -1"
-kubectl exec -n <APP_NAMESPACE> <POD_NAME> -- sh -c "cat /etc/os-release | grep -i 'ID\|NAME' | head -3"
-```
-Fix: rebuild with a glibc-based image (`python:3.x-slim`, `node:x-bookworm`, `eclipse-temurin`).
+K8s SSI injects `LD_PRELOAD` as an environment variable into the pod — it does not rely on `/etc/ld.so.preload`, so musl/Alpine images are supported. This is not a blocker for Kubernetes SSI.
 
 **Is the runtime version supported?**
 ```bash
