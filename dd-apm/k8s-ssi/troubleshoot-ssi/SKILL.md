@@ -109,7 +109,7 @@ Read this before investigating. It gives you the mental model to reason about no
 
 **Reasoning shortcuts:**
 - No init container → webhook didn't fire → check: namespace targeting, pod-selector, opt-out annotation, webhook registration, pod not restarted
-- Init container present + no traces → injection attempted but failed or tracer not reporting → check: libc compatibility, existing ddtrace, runtime version, Agent connectivity, DD_SITE mismatch
+- Init container present + no traces → injection attempted but failed or tracer not reporting → check: existing ddtrace, runtime version, Agent connectivity, DD_SITE mismatch
 
 ---
 
