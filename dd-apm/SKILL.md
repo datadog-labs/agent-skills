@@ -96,6 +96,8 @@ For full details read: `.claude/skills/k8s-ssi/agent-install/SKILL.md` then `.cl
 
 **For Linux APM install/instrument tasks:** Read `.claude/skills/linux-ssi/agent-install/SKILL.md` then enable-ssi then verify-ssi.
 
+**For service remapping** (rename services, collapse inferred entities, clean up service names, normalize peer.service): Read `.claude/skills/service-remapping/SKILL.md`.
+
 **For trace search, service analysis, metrics:** Continue below.
 
 ## Requirements
