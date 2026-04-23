@@ -28,8 +28,6 @@ Do NOT invoke this skill if:
 
 ## Phase 0: Load Credentials
 
-### Claude runs
-
 ```bash
 [ -f environment ] && source environment
 echo "DD_API_KEY set: $([ -n "${DD_API_KEY:-}" ] && echo yes || echo no)"
