@@ -35,16 +35,17 @@ With preferences you can:
 - **Table name**: `k9_ownership_preferences` (exact name, must match)
 - **Effect delay**: Changes take effect within 24 hours of upload
 
-## Schema (11 columns, all STRING)
+## Schema (12 columns, all STRING)
 
 | Column | Used By | Required | Description |
 |---|---|---|---|
+| `id` | All | Yes | Unique row identifier (sequential integer) |
 | `preference_type` | All | Yes | Row discriminator: `tag_mapping`, `exclusion`, or `prompt_text` |
 | `tag_key` | tag_mapping | Yes | Tag key to match |
 | `tag_value` | tag_mapping | No | Tag value to match. Empty = matches any value for that key (wildcard) |
 | `owner` | tag_mapping | Yes | Owner handle to assign |
-| `owner_type` | tag_mapping | Yes | Owner type: `team`, `user`, or `service` |
 | `confidence` | tag_mapping | Yes | `high`, `medium`, or `low` |
+| `owner_type` | tag_mapping | Yes | Owner type: `team`, `user`, or `service` |
 | `handle` | exclusion | Yes | Owner handle to exclude |
 | `exclusion_type` | exclusion | No | Owner type filter. Empty = all types |
 | `exclusion_resource_type` | exclusion | No | Resource type filter. Empty = all resource types |
@@ -61,7 +62,7 @@ The agent checks cloud resource tags against your mappings. When a match is foun
 
 Tag mappings complement existing data sources — they do not override a direct ownership tag (like `dd-team`) already on the resource.
 
-**Columns**: `preference_type=tag_mapping`, `tag_key` (required), `tag_value` (optional, empty=wildcard), `owner` (required), `owner_type` (required: `team`/`user`/`service`), `confidence` (required: `high`/`medium`/`low`).
+**Columns**: `id` (required), `preference_type=tag_mapping`, `tag_key` (required), `tag_value` (optional, empty=wildcard), `owner` (required), `confidence` (required: `high`/`medium`/`low`), `owner_type` (required: `team`/`user`/`service`).
 
 **Owner type guidance:**
 | Value | When to use |
@@ -84,11 +85,11 @@ Tag mappings complement existing data sources — they do not override a direct 
 
 **Examples:**
 ```csv
-preference_type,tag_key,tag_value,owner,owner_type,confidence,handle,exclusion_type,exclusion_resource_type,prompt_text,priority
-tag_mapping,cost-center,CC-100,team-platform,team,high,,,,,
-tag_mapping,cost-center,CC-200,team-data-eng,team,high,,,,,
-tag_mapping,project,atlas,team-atlas,team,medium,,,,,
-tag_mapping,managed-by,,team-infra,team,low,,,,,
+id,preference_type,tag_key,tag_value,owner,confidence,owner_type,handle,exclusion_type,exclusion_resource_type,prompt_text,priority
+1,tag_mapping,cost-center,CC-100,team-platform,high,team,,,,,
+2,tag_mapping,cost-center,CC-200,team-data-eng,high,team,,,,,
+3,tag_mapping,project,atlas,team-atlas,medium,team,,,,,
+4,tag_mapping,managed-by,,team-infra,low,team,,,,,
 ```
 
 ### Exclusions
@@ -97,7 +98,7 @@ An exclusion says: _"Never assign this handle as a resource owner."_
 
 Bot accounts, CI runners, and shared service accounts often appear in cloud resource metadata. Exclusions remove these from ownership results.
 
-**Columns**: `preference_type=exclusion`, `handle` (required), `exclusion_type` (optional), `exclusion_resource_type` (optional).
+**Columns**: `id` (required), `preference_type=exclusion`, `handle` (required), `exclusion_type` (optional), `exclusion_resource_type` (optional).
 
 **Matching behavior:**
 - The `handle` is matched **case-insensitively**.
@@ -106,10 +107,10 @@ Bot accounts, CI runners, and shared service accounts often appear in cloud reso
 
 **Examples:**
 ```csv
-preference_type,tag_key,tag_value,owner,owner_type,confidence,handle,exclusion_type,exclusion_resource_type,prompt_text,priority
-exclusion,,,,,,deploy-bot,,,,
-exclusion,,,,,,ci-runner,service,,,
-exclusion,,,,,,k8s-node-controller,service,aws_ec2_instance,,
+id,preference_type,tag_key,tag_value,owner,confidence,owner_type,handle,exclusion_type,exclusion_resource_type,prompt_text,priority
+1,exclusion,,,,,,deploy-bot,,,,
+2,exclusion,,,,,,ci-runner,service,,,
+3,exclusion,,,,,,k8s-node-controller,service,aws_ec2_instance,,
 ```
 
 ### Custom Prompt Text
@@ -118,7 +119,7 @@ Custom prompt text provides free-form guidance to the AI inference engine. Use i
 
 Up to **3** entries, one per priority level (`high`, `medium`, `low`). Entries with the same priority are concatenated.
 
-**Columns**: `preference_type=prompt_text`, `prompt_text` (required, up to 4096 bytes), `priority` (optional, default: `low`).
+**Columns**: `id` (required), `preference_type=prompt_text`, `prompt_text` (required, up to 4096 bytes), `priority` (optional, default: `low`).
 
 **Tips for effective guidance:**
 - Be specific and actionable: "The cost-center tag is our most reliable ownership signal" > "Use tags"
@@ -127,10 +128,10 @@ Up to **3** entries, one per priority level (`high`, `medium`, `low`). Entries w
 
 **Examples:**
 ```csv
-preference_type,tag_key,tag_value,owner,owner_type,confidence,handle,exclusion_type,exclusion_resource_type,prompt_text,priority
-prompt_text,,,,,,,,Our organization assigns ownership by cost center. The cost-center tag is the primary ownership signal. Team identifiers always use the team- prefix.,high
-prompt_text,,,,,,,,Shared infrastructure accounts (deploy-bot ci-runner github-actions) are automation and should never be resource owners.,medium
-prompt_text,,,,,,,,For container images the repository owner in GitHub is a reliable secondary signal when cost-center tags are missing.,low
+id,preference_type,tag_key,tag_value,owner,confidence,owner_type,handle,exclusion_type,exclusion_resource_type,prompt_text,priority
+1,prompt_text,,,,,,,,,Our organization assigns ownership by cost center. The cost-center tag is the primary ownership signal. Team identifiers always use the team- prefix.,high
+2,prompt_text,,,,,,,,,Shared infrastructure accounts (deploy-bot ci-runner github-actions) are automation and should never be resource owners.,medium
+3,prompt_text,,,,,,,,,For container images the repository owner in GitHub is a reliable secondary signal when cost-center tags are missing.,low
 ```
 
 ## Validation Rules
@@ -174,13 +175,13 @@ Ask the customer:
 
 ### Step 2: Generate CSV
 
-Build a CSV with all 11 column headers:
+Build a CSV with all 12 column headers:
 
 ```csv
-preference_type,tag_key,tag_value,owner,owner_type,confidence,handle,exclusion_type,exclusion_resource_type,prompt_text,priority
+id,preference_type,tag_key,tag_value,owner,confidence,owner_type,handle,exclusion_type,exclusion_resource_type,prompt_text,priority
 ```
 
-Each row fills columns relevant to its `preference_type` and leaves the rest empty.
+Each row gets a unique sequential `id` and fills columns relevant to its `preference_type`, leaving the rest empty.
 
 ### Step 3: Upload Instructions
 
@@ -243,7 +244,7 @@ Changes take effect within 24 hours. To verify:
 | Problem | Likely cause | Fix |
 |---|---|---|
 | Preferences not taking effect after 24h | Table name is wrong | Must be exactly `k9_ownership_preferences` |
-| Preferences not taking effect after 24h | Missing column headers | All 11 columns must exist as CSV headers |
+| Preferences not taking effect after 24h | Missing column headers | All 12 columns must exist as CSV headers |
 | Preferences not taking effect after 24h | Feature not enabled for org | Contact support to enable ownership preferences |
 | All preferences rejected | Invalid characters | See Allowed Characters. No angle brackets, curly braces, or pipes |
 | All preferences rejected | Missing required field | Check required fields for each preference type |
@@ -257,19 +258,19 @@ Changes take effect within 24 hours. To verify:
 ## Complete Example
 
 ```csv
-preference_type,tag_key,tag_value,owner,owner_type,confidence,handle,exclusion_type,exclusion_resource_type,prompt_text,priority
-tag_mapping,cost-center,CC-100,team-platform,team,high,,,,,
-tag_mapping,cost-center,CC-200,team-data-eng,team,high,,,,,
-tag_mapping,cost-center,CC-300,team-security,team,high,,,,,
-tag_mapping,project,atlas,team-atlas,team,medium,,,,,
-tag_mapping,project,hermes,alice@example.com,user,medium,,,,,
-tag_mapping,env,production,sre-team,team,low,,,,,
-tag_mapping,managed-by,,team-infra,team,low,,,,,
-exclusion,,,,,,deploy-bot,,,,
-exclusion,,,,,,ci-runner,service,,,
-exclusion,,,,,,github-actions,service,,,
-exclusion,,,,,,legacy-ops,team,aws_ec2_instance,,
-prompt_text,,,,,,,,Our organization assigns ownership by cost center. The cost-center tag is the primary ownership signal for all cloud resources. Team identifiers always use the team- prefix followed by the team name (e.g. team-platform team-data-eng).,high
-prompt_text,,,,,,,,Shared infrastructure accounts (deploy-bot ci-runner github-actions) are automation accounts and should never be assigned as resource owners. Look for the human or team that configured the automation instead.,medium
-prompt_text,,,,,,,,For container images the repository owner in GitHub is a reliable secondary signal when cost-center tags are missing.,low
+id,preference_type,tag_key,tag_value,owner,confidence,owner_type,handle,exclusion_type,exclusion_resource_type,prompt_text,priority
+1,tag_mapping,cost-center,CC-100,team-platform,high,team,,,,,
+2,tag_mapping,cost-center,CC-200,team-data-eng,high,team,,,,,
+3,tag_mapping,cost-center,CC-300,team-security,high,team,,,,,
+4,tag_mapping,project,atlas,team-atlas,medium,team,,,,,
+5,tag_mapping,project,hermes,alice@example.com,medium,user,,,,,
+6,tag_mapping,env,production,sre-team,low,team,,,,,
+7,tag_mapping,managed-by,,team-infra,low,team,,,,,
+8,exclusion,,,,,,deploy-bot,,,,
+9,exclusion,,,,,,ci-runner,service,,,
+10,exclusion,,,,,,github-actions,service,,,
+11,exclusion,,,,,,legacy-ops,team,aws_ec2_instance,,
+12,prompt_text,,,,,,,,,Our organization assigns ownership by cost center. The cost-center tag is the primary ownership signal for all cloud resources. Team identifiers always use the team- prefix followed by the team name (e.g. team-platform team-data-eng).,high
+13,prompt_text,,,,,,,,,Shared infrastructure accounts (deploy-bot ci-runner github-actions) are automation accounts and should never be assigned as resource owners. Look for the human or team that configured the automation instead.,medium
+14,prompt_text,,,,,,,,,For container images the repository owner in GitHub is a reliable secondary signal when cost-center tags are missing.,low
 ```
