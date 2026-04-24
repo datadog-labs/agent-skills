@@ -13,6 +13,26 @@ metadata:
 
 > **Before doing anything else:** Fully resolve all variables in `## Context to resolve before acting`. Do not begin Step 0 until every variable has a concrete value.
 
+---
+
+> **Silent failure — check this before any other step:**
+>
+> If the application has `ddtrace`, `dd-trace`, or any OpenTelemetry SDK in its **dependency manifest** (`requirements.txt`, `package.json`, `Gemfile`, `go.mod`, `pom.xml`) — even with no import statements in code — SSI will silently disable itself at runtime.
+>
+> The failure is invisible: init containers run and complete, the pod starts healthy, no errors appear in `kubectl` or `pup`, but no traces arrive. The injector detects the user-installed tracer and exits cleanly without logging anything.
+>
+> ### Claude runs
+>
+> ```bash
+> grep -rE "ddtrace|dd-trace|opentelemetry" \
+>   requirements.txt package.json Gemfile go.mod pom.xml 2>/dev/null \
+>   || echo "No tracer dependency found"
+> ```
+>
+> If any match — **stop**. Remove the package entirely (not just the import), rebuild the image, reload it into the cluster, and restart the pod before continuing. A package present in the manifest is enough to trigger this even if it is never imported.
+
+---
+
 ## Triggers
 
 Invoke this skill when the user expresses intent to:
@@ -40,39 +60,13 @@ Do NOT invoke this skill if:
 - [ ] Not a very small VM instance (e.g. t2.micro) — SSI can hit init timeouts
 - [ ] No PodSecurity baseline or restricted policy enforced
 
-**Base image — verify before proceeding:**
-
-### Claude runs
-
-```bash
-kubectl exec -n <APP_NAMESPACE> -l app=<APP_LABEL> -- ldd --version 2>&1 | head -1
-```
-
-If the output contains `glibc` or `GLIBC` or `GNU libc` — proceed.
-
-ERROR: Output contains `musl` — **stop**. SSI's injector requires glibc and is ABI-incompatible with musl libc. The injector will load but silently abort injection, and no traces will be sent. Switch the base image to a glibc-based equivalent (e.g. `python:X-slim`, `node:X-bookworm-slim`, any Debian/Ubuntu/UBI image), then rebuild, reload, restart the pod, and rerun this check before continuing.
-
 **Language and runtime**
 - [ ] Application language is one of: Java, Python, Ruby, Node.js, .NET, PHP
 - [ ] Runtime version is within SSI's supported range — verify against the [SSI compatibility matrix](https://docs.datadoghq.com/tracing/trace_collection/automatic_instrumentation/single-step-apm/compatibility/)
 - [ ] Node.js app is not using ESM — SSI does not support ESM
 - [ ] Java app is not already using a `-javaagent` JVM flag
 
-**Existing instrumentation — verify before proceeding:**
-
-### Claude runs
-
-```bash
-# Check source files for manual tracer imports
-grep -r "import ddtrace\|from ddtrace\|require 'ddtrace'\|require(\"dd-trace\")\|opentelemetry\|tracer\.trace(" <SOURCE_DIR> 2>/dev/null || echo "No manual instrumentation found"
-
-# Check dependency manifests
-grep -rE "ddtrace|dd-trace|opentelemetry" requirements.txt package.json Gemfile go.mod pom.xml 2>/dev/null || echo "No tracer dependency found"
-```
-
-ERROR: Any match found — remove the import/package before continuing (see Step 0). SSI silently disables itself when existing instrumentation is detected.
-
-If no matches — proceed.
+**Existing instrumentation** — confirmed clean by the check at the top of this skill. If you skipped that check, go back and run it now.
 
 ---
 
@@ -118,6 +112,8 @@ Check the repo's setup script (e.g. `create.sh`, `Makefile`, `justfile`) for how
 If the setup script is ambiguous, run the load command it uses exactly as written.
 
 - Registry-based: skip — image will be pulled on next deployment
+
+> **Confirm with the user before restarting.** Tell the user: "I need to restart `<DEPLOYMENT_NAME>` in `<APP_NAMESPACE>` to pick up the rebuilt image. Ready to proceed?" Wait for confirmation.
 
 ### Claude runs
 
@@ -219,6 +215,8 @@ kubectl apply -f <your-app-deployment.yaml>
 ---
 
 ## Step 3: Restart Application Pods
+
+> **Confirm with the user before restarting.** Tell the user: "I need to restart `<DEPLOYMENT_NAME>` in `<APP_NAMESPACE>` for SSI to inject into the pods. This will cause a brief outage. Ready to proceed?" Wait for confirmation.
 
 ### Claude runs
 

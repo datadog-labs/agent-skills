@@ -53,13 +53,15 @@ pup auth status
 
 If not authenticated:
 
-### What you need to do in a terminal
+### Claude runs
 
 ```bash
 pup auth login
 ```
 
-Confirm with `pup auth status`. If no browser available: `export DD_APP_KEY=<your-app-key>`.
+> This opens a browser tab for OAuth. Complete the login there — Claude will continue once the command exits.
+
+If no browser available: `export DD_APP_KEY=<your-app-key>`.
 
 ---
 
@@ -99,7 +101,6 @@ Read this before investigating. It gives you the mental model to reason about no
 - `kubectl get pod -o jsonpath='{.spec.initContainers[*].name}'` includes `datadog-lib-<language>-init`
 
 **Known silent failures — SSI produces no error when these occur:**
-- **Alpine/musl libc** — `LD_PRELOAD` fails silently. SSI's `.so` is compiled against glibc; musl (Alpine Linux) is ABI-incompatible
 - **Existing ddtrace or OTel instrumentation** — SSI detects it and silently disables itself
 - **Unsupported runtime version** — silently skipped
 - **`admission.datadoghq.com/enabled: "false"` annotation** — webhook skips the pod entirely
@@ -108,7 +109,7 @@ Read this before investigating. It gives you the mental model to reason about no
 
 **Reasoning shortcuts:**
 - No init container → webhook didn't fire → check: namespace targeting, pod-selector, opt-out annotation, webhook registration, pod not restarted
-- Init container present + no traces → injection attempted but failed or tracer not reporting → check: libc compatibility, existing ddtrace, runtime version, Agent connectivity, DD_SITE mismatch
+- Init container present + no traces → injection attempted but failed or tracer not reporting → check: existing ddtrace, runtime version, Agent connectivity, DD_SITE mismatch
 
 ---
 
@@ -138,7 +139,7 @@ Before investigating, explicitly state your ranked hypotheses based on triage ou
 | No traces + pod NOT in instrumented list + no init container | Injection never happened — investigate: namespace targeting, webhook, pod-selector, opt-out annotation, pod not restarted |
 | No traces + pod NOT in instrumented list + init container present | Injection attempted but failed — check `pup apm troubleshooting list` for injection errors |
 | No traces + pod in instrumented list + init container present | Tracer injected but not reporting — investigate: connectivity, DD_SITE, API key |
-| Pod events show CrashLoopBackOff or init container errors | Init container failure — check libc (Alpine/musl), existing ddtrace, runtime version |
+| Pod events show CrashLoopBackOff or init container errors | Init container failure — check existing ddtrace, runtime version |
 | Traces arriving but wrong service/env | UST labels missing or misconfigured on the Deployment |
 
 State your top 1-3 hypotheses explicitly: *"Based on triage, I think the most likely cause is X because Y."*
@@ -160,9 +161,19 @@ kubectl get pods -n <AGENT_NAMESPACE>
 ```
 
 **Were pods restarted after SSI was enabled?**
+
+> **Confirm with the user before restarting.** Tell the user: "Pods must be restarted for SSI to inject into them. I'll restart `<DEPLOYMENT_NAME>` in `<APP_NAMESPACE>`. Ready to proceed?" Wait for confirmation.
+
+### Claude runs
+
 ```bash
 kubectl rollout restart deployment/<DEPLOYMENT_NAME> -n <APP_NAMESPACE>
 kubectl wait --for=condition=Ready pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --timeout=120s
+```
+
+### Claude runs
+
+```bash
 pup fleet instrumented-pods list <CLUSTER_NAME>
 ```
 
@@ -198,6 +209,13 @@ Fix: remove the annotation from the Deployment pod template, then apply and rest
 
 ```bash
 kubectl apply -f <your-app-deployment.yaml>
+```
+
+> **Confirm with the user before restarting.** Tell the user: "I need to restart `<DEPLOYMENT_NAME>` in `<APP_NAMESPACE>` for this change to take effect. Ready to proceed?" Wait for confirmation.
+
+### Claude runs
+
+```bash
 kubectl rollout restart deployment/<DEPLOYMENT_NAME> -n <APP_NAMESPACE>
 ```
 
@@ -215,12 +233,7 @@ Also check dependency manifests: `requirements.txt`, `package.json`, `Gemfile`, 
 Fix: remove the import/package, rebuild image, reload into cluster, restart pod.
 
 **Is the base image Alpine (musl libc)?**
-SSI's injected library requires glibc. Alpine uses musl — ABI-incompatible, fails silently.
-```bash
-kubectl exec -n <APP_NAMESPACE> <POD_NAME> -- sh -c "ldd --version 2>&1 | head -1"
-kubectl exec -n <APP_NAMESPACE> <POD_NAME> -- sh -c "cat /etc/os-release | grep -i 'ID\|NAME' | head -3"
-```
-Fix: rebuild with a glibc-based image (`python:3.x-slim`, `node:x-bookworm`, `eclipse-temurin`).
+K8s SSI injects `LD_PRELOAD` as an environment variable into the pod — it does not rely on `/etc/ld.so.preload`, so musl/Alpine images are supported. This is not a blocker for Kubernetes SSI.
 
 **Is the runtime version supported?**
 ```bash
@@ -310,6 +323,8 @@ kind load docker-image <IMAGE_NAME> --name <CLUSTER_NAME>
 ```
 
 - Registry-based: skip — image will be pulled on next deployment
+
+> **Confirm with the user before restarting.** Tell the user: "I need to restart `<DEPLOYMENT_NAME>` in `<APP_NAMESPACE>` to apply the fix. Ready to proceed?" Wait for confirmation.
 
 ### Claude runs
 

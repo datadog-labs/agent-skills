@@ -56,13 +56,13 @@ pup auth status --site <DD_SITE>
 
 If not authenticated:
 
-### What you need to do in a terminal
+### Claude runs
 
 ```bash
 pup auth login --site <DD_SITE>
 ```
 
-Confirm with `pup auth status`.
+> This opens a browser tab for OAuth. Complete the login there — Claude will continue once the command exits.
 
 If valid token — proceed.
 ERROR: No browser available — use API key fallback: `export DD_APP_KEY=<your-app-key>`

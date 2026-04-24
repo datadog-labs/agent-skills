@@ -55,13 +55,15 @@ pup auth status --site <DD_SITE>
 
 If authenticated — proceed directly to Step 1.
 
-ERROR: Not authenticated — ask the user to log in:
+ERROR: Not authenticated:
 
-### What you need to do in a terminal
+### Claude runs
 
 ```bash
 pup auth login --site <DD_SITE>
 ```
+
+> This opens a browser tab for OAuth. Complete the login there — Claude will continue once the command exits.
 
 2. If OAuth login is not possible (e.g., no browser access), fall back to API keys:
 ```bash
