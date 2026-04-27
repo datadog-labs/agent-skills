@@ -256,3 +256,4 @@ Automatically proceed to `verify-ssi` now — do not ask the user for permission
 - Exception: UST labels (`tags.datadoghq.com/*`) on application Deployments are required and intentional
 - Never run `kubectl delete` without user confirmation
 - `docker push` to a registry always requires user confirmation
+- **Never use `kubectl patch` to apply UST labels or any Deployment changes.** Always edit the Deployment YAML file and `kubectl apply -f`. Changes made with `kubectl patch` are transient and will be overwritten on the next rollout.
