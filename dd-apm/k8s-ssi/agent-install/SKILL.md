@@ -38,6 +38,12 @@ Do not proceed until `helm` is available.
 
 **If `DD_API_KEY` is not set** — tell the user:
 
+> I need two things to continue:
+>
+> **1. Datadog API Key** — used to authenticate the Agent with your Datadog account. You can find or create one at: https://app.datadoghq.com/organization-settings/api-keys
+>
+> **2. Datadog Site** — the region your Datadog account is on. Most accounts use `datadoghq.com`. Check your Datadog URL to confirm (e.g. `app.datadoghq.eu` → site is `datadoghq.eu`). Other options: `us3.datadoghq.com`, `us5.datadoghq.com`, `ap1.datadoghq.com`.
+>
 > Please run the following in this chat to set your credentials (the `!` prefix executes it in this session):
 > ```
 > ! export DD_API_KEY=your-api-key-here
@@ -53,7 +59,18 @@ Wait for the user to run the commands, then re-run the check above before contin
 - [ ] Kubernetes v1.20+ — `kubectl version`
 - [ ] helm v3+ — `helm version`
 - [ ] kubectl configured to target cluster — `kubectl config current-context`
-- [ ] pup-cli installed — check with `pup --version`; if missing, install with `brew tap datadog-labs/pack && brew install pup`
+- [ ] pup-cli installed — check with `pup --version`; if missing, install it now:
+  ```bash
+  if [[ "$(uname)" == "Darwin" ]]; then
+    brew tap datadog-labs/pack && brew install pup
+  else
+    PUP_VERSION=$(curl -s https://api.github.com/repos/datadog-labs/pup/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+    curl -L "https://github.com/datadog-labs/pup/releases/download/${PUP_VERSION}/pup_linux_amd64.tar.gz" | tar xz -C /usr/local/bin pup
+    chmod +x /usr/local/bin/pup
+  fi
+  pup --version
+  ```
+  Do not skip — proceed only once `pup --version` succeeds.
 
 ---
 
