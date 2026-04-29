@@ -7,7 +7,7 @@ metadata:
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,service-remapping,service-naming,inferred-services,peer-service
   alwaysApply: "false"
-  tools: pup,curl
+  tools: pup
 ---
 
 # APM Service Remapping
@@ -27,7 +27,27 @@ Read this before building any rule. It gives you the mental model to construct t
 | Entity type | `rule_type` integer | What it targets |
 |---|---|---|
 | **SERVICE** | `0` | Instrumented services — have spans with an explicit `service` tag set by a tracer |
-| **INFERRED_ENTITY** | `1` | Auto-detected from outbound calls — named from `peer.service`, `db.instance`, etc. |
+| **INFERRED_ENTITY** | `1` | Auto-detected from outbound calls — named from `peer.service`. **Requires `peer.service` to be set on outbound spans** (see prerequisite below). |
+
+**Prerequisite for inferred entity remapping — `peer.service` must be set:**
+
+Inferred entity remapping only works when the tracer sets `peer.service` on outbound spans. Without it, entities are keyed by `peer.hostname` and remapping rules will not apply.
+
+To enable this, set the following env var on the **instrumented service** (not the downstream dependency):
+
+```bash
+DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED=true
+```
+
+This makes the ddtrace tracer automatically propagate `peer.service` from `peer.hostname` on outbound HTTP, gRPC, and database calls. Without this, `pup traces search` will show spans with `peer.hostname` but no `peer.service`, and no service remapping rule will match.
+
+To verify `peer.service` is being set before building a rule:
+
+```bash
+pup traces search --query "@peer.service:<ENTITY_NAME>" --from 15m --limit 5
+```
+
+If zero results — the tracer is not setting `peer.service`. Ask the user to add `DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED=true` to their service's environment and redeploy before continuing.
 
 **Filter syntax** — a standard Datadog event-grammar query string:
 
@@ -116,9 +136,9 @@ pup auth login
 
 > This opens a browser tab for OAuth. Complete the login there — Claude will continue once the command exits.
 
-### Credentials for API calls
+### Credentials for write operations
 
-Service remapping rules are not yet supported by pup CLI — they require direct API calls. `DD_API_KEY`, `DD_APP_KEY`, and `DD_SITE` must be set.
+`pup apm service-remapping list` and `get` work with OAuth. Create, update, and delete require API keys (`DD_API_KEY`, `DD_APP_KEY`, `DD_SITE`) until `apm_service_renaming_write` is added to pup's OAuth scopes.
 
 ### Claude runs
 
@@ -128,7 +148,7 @@ echo "DD_APP_KEY set: $([ -n "${DD_APP_KEY:-}" ] && echo yes || echo no)"
 echo "DD_SITE: ${DD_SITE:-not set (defaulting to datadoghq.com)}"
 ```
 
-If any are missing:
+If any are missing and you need to create/update/delete rules:
 
 ### What you need to do in a terminal
 
@@ -181,6 +201,8 @@ Work through each component before writing any JSON.
 - Does the service appear because a tracer explicitly set its `service` tag? → `rule_type: 0` (SERVICE)
 - Does it appear in the service map from outbound calls (e.g. a database, queue, or external API)? → `rule_type: 1` (INFERRED_ENTITY)
 
+If the user wants to remap an inferred entity, verify `peer.service` is set before proceeding — see the prerequisite in Domain Knowledge. If it is not set, stop and ask the user to enable `DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED=true` first.
+
 ### 2. Filter
 
 Write a single event-grammar query string targeting the service(s) to remap. Use the filter syntax and pattern table in Domain Knowledge to pick the right form.
@@ -212,10 +234,11 @@ pup traces search --query "service:<ORIGINAL_SERVICE>" --from 15m --limit 5
 # Check for monitors referencing the old service name
 pup monitors list | grep -i "<ORIGINAL_SERVICE>"
 
+# Check for dashboards referencing the old service name
+pup dashboards list | grep -i "<ORIGINAL_SERVICE>"
+
 # List existing service remapping rules that may conflict
-curl -s "https://api.${DD_SITE:-datadoghq.com}/api/v2/service-naming-rules" \
-  -H "DD-API-KEY: ${DD_API_KEY}" \
-  -H "DD-APPLICATION-KEY: ${DD_APP_KEY}" | jq .
+pup apm service-remapping list
 ```
 
 Report to the user:
@@ -224,6 +247,7 @@ Report to the user:
 |---|---|
 | **Telemetry volume** | Non-zero spans confirm the filter will match real data. Zero = likely wrong service name or env. |
 | **Monitors** | Any monitor referencing the old service name will silently break after remapping. List them and offer to update. |
+| **Dashboards** | Any dashboard with the old service name in its title will have stale references after remapping. List them and offer to update. |
 | **Conflicting rules** | Existing rules targeting the same service may be overridden. Show conflicts and ask the user to confirm. |
 
 If monitors reference the old service name, ask:
@@ -231,97 +255,26 @@ If monitors reference the old service name, ask:
 
 ---
 
-## Step 3: Construct the Rule JSON
+## Step 3: Confirm the Rule
 
-Write the rule as `rule.json`. The `destination_tag_name` is always `"service"` for service remapping.
+Show the user the planned rule and confirm before creating:
 
-**1:1 rename — base service:**
-```json
-{
-  "name": "rename-old-auth-to-auth-service",
-  "filter": "service:old-auth-service",
-  "rule_type": 0,
-  "rewrite_tag_rules": [
-    {"destination_tag_name": "service", "value": "auth-service"}
-  ]
-}
-```
+> *"I'm going to create a service remapping rule named `<RULE_NAME>` with filter `<FILTER>` that maps `<ORIGINAL_SERVICE>` → `<TARGET_NAME>` (rule_type: `<TYPE>`). Ready to proceed?"*
 
-**N:1 group — inferred services (collapse all Shopify calls):**
-```json
-{
-  "name": "collapse-shopify-inferred-services",
-  "filter": "peer.service:*.shopify.com",
-  "rule_type": 1,
-  "rewrite_tag_rules": [
-    {"destination_tag_name": "service", "value": "shopify"}
-  ]
-}
-```
-
-**Strip suffix — base service with regex:**
-```json
-{
-  "name": "strip-tropos-suffix",
-  "filter": "service:*.tropos",
-  "rule_type": 0,
-  "rewrite_tag_rules": [
-    {"destination_tag_name": "service", "value": "{{service|^(.+?)\\..*$}}"}
-  ]
-}
-```
-
-**Env split — restrict to one environment:**
-```json
-{
-  "name": "env-split-my-service-prod",
-  "filter": "service:my-service AND env:prod",
-  "rule_type": 0,
-  "rewrite_tag_rules": [
-    {"destination_tag_name": "service", "value": "my-service-prod"}
-  ]
-}
-```
-
-**Prefix normalization:**
-```json
-{
-  "name": "prepend-env-to-payments",
-  "filter": "service:payments*",
-  "rule_type": 0,
-  "rewrite_tag_rules": [
-    {"destination_tag_name": "service", "value": "{{env}}-{{service}}"}
-  ]
-}
-```
-
-### Claude runs
-
-```bash
-cat > rule.json << 'EOF'
-<RULE_JSON>
-EOF
-cat rule.json
-```
+Wait for confirmation before continuing.
 
 ---
 
 ## Step 4: Create the Rule
 
-Show the user the rule and confirm before sending:
-
-> *"I'm going to create a service remapping rule named `<RULE_NAME>` that maps `<ORIGINAL_SERVICE>` → `<TARGET_NAME>`. Here's the rule: [show rule.json contents]. Ready to proceed?"*
-
-Wait for confirmation, then:
-
 ### Claude runs
 
 ```bash
-curl -s -X POST "https://api.${DD_SITE:-datadoghq.com}/api/v2/service-naming-rules" \
-  -H "DD-API-KEY: ${DD_API_KEY}" \
-  -H "DD-APPLICATION-KEY: ${DD_APP_KEY}" \
-  -H "Content-Type: application/json" \
-  -d @rule.json
+pup apm service-remapping create \
+  --name "<RULE_NAME>" \
+  --filter "<FILTER>" \
+  --rule-type <TYPE> \
+  --value "<TARGET_NAME>"
 ```
 
 If the response contains an `id` field — creation succeeded. Record the `id` and `version` values from the response.
@@ -356,6 +309,7 @@ ERROR: New name not appearing after 5 minutes:
 - Confirm old service is still sending traces: `pup traces search --query "service:<ORIGINAL_SERVICE>" --from 5m`
 - If old name still appears, propagation may still be in progress — wait 2 more minutes and retry
 - If neither name appears, recheck that the filter matches actual tag values in the traces (re-run Step 0)
+- For inferred entities: confirm `peer.service` is set on spans — `pup traces search --query "@peer.service:<ORIGINAL_SERVICE>" --from 5m`. If zero results, `DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED=true` is not set and the rule will never fire.
 
 ---
 
@@ -366,31 +320,52 @@ ERROR: New name not appearing after 5 minutes:
 ### Claude runs
 
 ```bash
-curl -s "https://api.${DD_SITE:-datadoghq.com}/api/v2/service-naming-rules" \
-  -H "DD-API-KEY: ${DD_API_KEY}" \
-  -H "DD-APPLICATION-KEY: ${DD_APP_KEY}" | jq .
+pup apm service-remapping list
 ```
 
-### Delete a rule
-
-Show the user the rule's name and filter first, then ask for confirmation. Delete requires both the rule `id` and `version` from the list response:
+### Get a single rule
 
 ### Claude runs
 
 ```bash
-curl -s -X DELETE "https://api.${DD_SITE:-datadoghq.com}/api/v2/service-naming-rules/<RULE_ID>/<RULE_VERSION>" \
-  -H "DD-API-KEY: ${DD_API_KEY}" \
-  -H "DD-APPLICATION-KEY: ${DD_APP_KEY}"
+pup apm service-remapping get <RULE_ID>
 ```
 
-ERROR: `409 Conflict` — the rule was modified since you fetched it. Re-list rules to get the current version and retry.
+### Update a rule
+
+Update requires the current `version` from list/get output. Show the proposed changes to the user and confirm before running:
+
+### Claude runs
+
+```bash
+pup apm service-remapping update <RULE_ID> \
+  --name "<RULE_NAME>" \
+  --filter "<FILTER>" \
+  --rule-type <TYPE> \
+  --value "<NEW_NAME>" \
+  --version <VERSION>
+```
+
+ERROR: `409 Conflict` — the rule was modified since you fetched it. Re-fetch with `get` to get the current version and retry.
+
+### Delete a rule
+
+Show the user the rule's name and filter first, then ask for confirmation. Delete requires both the rule `id` and `version` from the list/get output:
+
+### Claude runs
+
+```bash
+pup apm service-remapping delete <RULE_ID> <RULE_VERSION>
+```
+
+ERROR: `409 Conflict` — the rule was modified since you fetched it. Re-fetch with `get` to get the current version and retry.
 
 ---
 
 ## Done
 
 Exit when ALL of the following are true:
-- [ ] Rule JSON shown to user and confirmed before creation
+- [ ] Rule shown to user and confirmed before creation
 - [ ] Rule created and `id` returned in response
 - [ ] New service name visible in `pup apm services list`
 - [ ] Impacted monitors identified and offered for update
@@ -404,3 +379,4 @@ Exit when ALL of the following are true:
 - Never create or delete a rule without explicit user confirmation — show the full rule before creating
 - Never assume `prod` as the environment — always confirm with the user
 - Never run DELETE without showing the user the rule's name and filter first
+- Never enable `enabled_org_wide` without explicit user confirmation — it affects the entire org
