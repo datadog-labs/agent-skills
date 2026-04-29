@@ -291,7 +291,9 @@ ERROR: `403 Forbidden` — the API key lacks `apm_service_renaming_write` permis
 
 ## Step 5: Verify
 
-Allow 2–5 minutes for the rule to propagate, then confirm it is active:
+Allow 2–5 minutes for the rule to propagate, then confirm it is active.
+
+### For SERVICE rules (rule_type 0)
 
 ### Claude runs
 
@@ -303,13 +305,40 @@ pup apm services list --env <ENV> --from 5m
 pup traces search --query "service:<TARGET_NAME>" --from 5m --limit 5
 ```
 
-If `<TARGET_NAME>` appears — rule is active.
+If `<TARGET_NAME>` appears in either — rule is active.
+
+### For INFERRED_ENTITY rules (rule_type 1)
+
+Inferred entities don't produce their own spans, so they won't appear in `pup apm services list` or `pup traces search`. Verify in two steps:
+
+**Step 5a — confirm the rule is stored correctly:**
+
+### Claude runs
+
+```bash
+pup apm service-remapping get <RULE_ID>
+```
+
+Confirm the filter and value match what you intended.
+
+**Step 5b — confirm the entity name changed in the service map:**
+
+Ask the user to check the APM Service Map in the Datadog UI and look for `<TARGET_NAME>` where `<ORIGINAL_SERVICE>` used to appear. The service map is the authoritative view for inferred entity names.
+
+Alternatively, confirm new `peer.service` values are arriving on spans from the instrumented service:
+
+### Claude runs
+
+```bash
+pup traces search --query "service:<INSTRUMENTED_SERVICE> @peer.service:<TARGET_NAME>" --from 5m --limit 5
+```
+
+If spans appear with `peer.service:<TARGET_NAME>` — rule is active.
 
 ERROR: New name not appearing after 5 minutes:
-- Confirm old service is still sending traces: `pup traces search --query "service:<ORIGINAL_SERVICE>" --from 5m`
+- Confirm old service is still sending traces with the original `peer.service`: `pup traces search --query "@peer.service:<ORIGINAL_SERVICE>" --from 5m`
 - If old name still appears, propagation may still be in progress — wait 2 more minutes and retry
-- If neither name appears, recheck that the filter matches actual tag values in the traces (re-run Step 0)
-- For inferred entities: confirm `peer.service` is set on spans — `pup traces search --query "@peer.service:<ORIGINAL_SERVICE>" --from 5m`. If zero results, `DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED=true` is not set and the rule will never fire.
+- If neither name appears, confirm `DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED=true` is set on the instrumented service — without it `peer.service` is never set and the rule will never fire
 
 ---
 
