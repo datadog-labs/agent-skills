@@ -72,14 +72,19 @@ Do NOT invoke this skill if:
 
 ## Context to resolve before acting
 
+> **Discover from the cluster — do not ask the user for information you can find yourself.**
+
 | Variable | How to resolve |
 |---|---|
 | `AGENT_NAMESPACE` | Same namespace used in `agent-install` (e.g. `datadog`) |
-| `APP_NAMESPACE` | Ask the user which namespace their application runs in |
-| `TARGET_LANGUAGES` | Identify from repo — check Dockerfiles, package manifests, or ask the user |
-| `DEPLOYMENT_NAME` | Identify from repo or ask the user |
-| `APP_LABEL` | Check `spec.selector.matchLabels.app` in the Deployment manifest |
+| `APP_NAMESPACE` | Run `kubectl get namespaces --no-headers \| awk '{print $1}' \| grep -vE '^(kube-system\|kube-public\|kube-node-lease\|datadog\|local-path-storage)$'` — instrument all non-system namespaces, or use the namespace(s) the user mentioned |
+| `TARGET_LANGUAGES` | Run `kubectl get pods -A -o jsonpath='{.items[*].spec.containers[*].image}'` and infer language from image names, or check Dockerfiles/manifests in the workspace. If uncertain, enable all languages. |
+| `DEPLOYMENT_NAME` | Run `kubectl get deployments -A --no-headers` — identify application deployments (exclude system components) |
+| `APP_LABEL` | Check `spec.selector.matchLabels` in the Deployment manifest via `kubectl get deployment <DEPLOYMENT_NAME> -n <APP_NAMESPACE> -o yaml` |
 | `CLUSTER_NAME` | Check `spec.global.clusterName` in `datadog-agent.yaml`, or `kubectl config current-context` — needed for kind clusters in Step 0 |
+| `ENV` | Use `apm-evals` if running in an eval cluster (kind cluster names contain "evalya"). Otherwise use `production` unless the user specifies otherwise. |
+| `SERVICE_NAME` | Use the deployment name (e.g. `python-app` → service `python-app`). Do not ask the user. |
+| `VERSION` | Use `1.0.0` as the default. Do not ask the user. |
 
 ---
 
@@ -131,27 +136,22 @@ kubectl wait --for=condition=Ready pod \
 
 SSI is configured on the existing `DatadogAgent` resource — do not create a separate manifest.
 
-[DECISION: targeting scope — ask the user if unclear]
-- Cluster-wide: `enabled: true` with no `targets` or `enabledNamespaces`
-- Specific namespaces: `enabledNamespaces`
-- Specific pods: `targets` with `podSelector`
-- Excluding namespaces: `disabledNamespaces`
+**Choose targeting scope based on what the user asked for:**
+- User asked to instrument **all applications** or didn't specify scope → **use Option A (cluster-wide)**
+- User asked for specific namespaces only → use Option B
+- User asked to exclude namespaces from cluster-wide → use Option C
+- User asked for specific pods/workloads → use Option D
+
+> **Default is cluster-wide (Option A).** If the user said "all my applications", "my whole cluster", or didn't restrict scope, use Option A with no `enabledNamespaces` or `targets`.
 
 Recommended `ddTraceVersions`: `java: "1"`, `python: "2"`, `js: "5"`, `dotnet: "3"`, `ruby: "2"`, `php: "1"`
 
-**Option A — Target specific workloads (recommended for production):**
+**Option A — Cluster-wide (default):**
 ```yaml
 features:
   apm:
     instrumentation:
       enabled: true
-      targets:
-        - name: <TARGET_NAME>
-          namespaceSelector:
-            matchNames:
-              - <APP_NAMESPACE>
-          ddTraceVersions:
-            <LANGUAGE>: "<MAJOR_VERSION>"
 ```
 
 **Option B — Specific namespaces only:**
@@ -175,6 +175,23 @@ features:
         - kube-system
 ```
 
+**Option D — Target specific workloads:**
+```yaml
+features:
+  apm:
+    instrumentation:
+      enabled: true
+      targets:
+        - name: <TARGET_NAME>
+          namespaceSelector:
+            matchNames:
+              - <APP_NAMESPACE>
+          ddTraceVersions:
+            <LANGUAGE>: "<MAJOR_VERSION>"
+```
+
+> **Note:** `ddTraceVersions` only applies inside a `targets[]` entry (Option D). It is not valid alongside `enabledNamespaces` or at the `instrumentation` level directly.
+
 ### Claude runs
 
 ```bash
@@ -187,30 +204,20 @@ ERROR: Validation error — check YAML. `enabledNamespaces` and `disabledNamespa
 
 ---
 
-## Step 2: Configure Unified Service Tags on Application Workloads
+## Step 2: Inform the User About Unified Service Tags
 
-Add UST labels to the Deployment under both `metadata.labels` and `spec.template.metadata.labels`:
+> **Do NOT modify application Deployments without explicit user confirmation.** Applying labels to existing application workloads is a change to customer-managed resources.
+
+Inform the user that adding Unified Service Tags (UST) to their Deployments will enable proper service/env/version tagging in Datadog. This is optional for SSI to work but recommended for full observability:
 
 ```yaml
-metadata:
-  labels:
-    tags.datadoghq.com/env: "<ENV>"
-    tags.datadoghq.com/service: "<SERVICE_NAME>"
-    tags.datadoghq.com/version: "<VERSION>"
-spec:
-  template:
-    metadata:
-      labels:
-        tags.datadoghq.com/env: "<ENV>"
-        tags.datadoghq.com/service: "<SERVICE_NAME>"
-        tags.datadoghq.com/version: "<VERSION>"
+# Add to both metadata.labels and spec.template.metadata.labels
+tags.datadoghq.com/env: "<ENV>"
+tags.datadoghq.com/service: "<SERVICE_NAME>"
+tags.datadoghq.com/version: "<VERSION>"
 ```
 
-### Claude runs
-
-```bash
-kubectl apply -f <your-app-deployment.yaml>
-```
+If the user wants you to apply these, get their confirmation first. UST labels are not required for APM traces to flow — SSI works without them.
 
 ---
 
@@ -239,8 +246,8 @@ ERROR: Pods crash-looping — check for existing custom instrumentation. See `tr
 
 Exit when ALL of the following are true:
 - [ ] `features.apm.instrumentation` is present in the applied `DatadogAgent` manifest
-- [ ] Application pods have been restarted and are Running
-- [ ] UST labels are present on the Deployment and pod template
+- [ ] User has been informed that they need to restart their application pods
+- [ ] User has been informed about Unified Service Tags (UST) and how to apply them if desired
 - [ ] Scope confirmed: which workloads are instrumented, which were skipped and why
 
 Automatically proceed to `verify-ssi` now — do not ask the user for permission.
