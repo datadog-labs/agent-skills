@@ -19,6 +19,7 @@ Essential Datadog skills for AI agents.
 | **dd-apm** | Traces, services, performance analysis |
 | **dd-docs** | Search Datadog documentation |
 | **dd-llmo** | LLM Observability traces, experiments, evals |
+| **dd-browser-sdk** | Browser SDK setup, RUM, Logs, Session Replay, version migration |
 
 ## Install
 
