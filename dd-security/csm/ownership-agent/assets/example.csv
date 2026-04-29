@@ -1,0 +1,15 @@
+id,preference_type,tag_key,tag_value,owner,confidence,owner_type,handle,exclusion_type,exclusion_resource_type,prompt_text,priority
+1,tag_mapping,cost-center,CC-100,team-platform,high,team,,,,,
+2,tag_mapping,cost-center,CC-200,team-data-eng,high,team,,,,,
+3,tag_mapping,cost-center,CC-300,team-security,high,team,,,,,
+4,tag_mapping,project,atlas,team-atlas,medium,team,,,,,
+5,tag_mapping,project,hermes,alice@example.com,medium,user,,,,,
+6,tag_mapping,env,production,sre-team,low,team,,,,,
+7,tag_mapping,managed-by,,team-infra,low,team,,,,,
+8,exclusion,,,,,,deploy-bot,,,,
+9,exclusion,,,,,,ci-runner,service,,,
+10,exclusion,,,,,,github-actions,service,,,
+11,exclusion,,,,,,legacy-ops,team,aws_ec2_instance,,
+12,prompt_text,,,,,,,,,Our organization assigns ownership by cost center. The cost-center tag is the primary ownership signal for all cloud resources. Team identifiers always use the team- prefix followed by the team name (e.g. team-platform team-data-eng).,high
+13,prompt_text,,,,,,,,,Shared infrastructure accounts (deploy-bot ci-runner github-actions) are automation accounts and should never be assigned as resource owners. Look for the human or team that configured the automation instead.,medium
+14,prompt_text,,,,,,,,,For container images the repository owner in GitHub is a reliable secondary signal when cost-center tags are missing.,low

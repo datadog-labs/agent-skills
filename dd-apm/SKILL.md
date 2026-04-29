@@ -90,13 +90,11 @@ kubectl get pods -A -o json | grep -o '"datadog-lib[^"]*"' | sort -u
 
 Expected: `"datadog-lib-python-init"` (or the language-appropriate init container).
 
-For full details read: `.claude/skills/k8s-ssi/agent-install/SKILL.md` then `.claude/skills/k8s-ssi/enable-ssi/SKILL.md`
+**Immediately read** `.claude/skills/dd-apm/k8s-ssi/agent-install/SKILL.md` now, then `.claude/skills/dd-apm/k8s-ssi/enable-ssi/SKILL.md` — do not proceed from memory or the summary above.
 
 ---
 
-**For Linux APM install/instrument tasks:** Read `.claude/skills/linux-ssi/agent-install/SKILL.md` then enable-ssi then verify-ssi.
-
-**For service remapping** (rename services, collapse inferred entities, clean up service names, normalize peer.service): Read `.claude/skills/service-remapping/SKILL.md`.
+**For Linux APM install/instrument tasks:** **Immediately read** `.claude/skills/dd-apm/linux-ssi/agent-install/SKILL.md` now, then enable-ssi then verify-ssi — do not proceed from memory or the summary above.
 
 **For trace search, service analysis, metrics:** Continue below.
 
