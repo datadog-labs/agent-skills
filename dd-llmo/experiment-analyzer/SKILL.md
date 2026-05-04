@@ -293,3 +293,4 @@ If no differences are detectable, write: "No configuration differences detected 
 - Avoid speculative explanations not supported by observed evidence.
 - Mask or redact PII in all user-visible output.
 - Never show internal tool calls, schemas, or implementation details to the user.
+- **MCP result parsing safety**: Before writing any script (Python, jq, etc.) that iterates over or accesses fields in an MCP tool result, inspect the raw structure first — check `type(result)`, top-level keys, and whether the payload is nested inside a content block (e.g. `[{'type': 'text', 'text': '<json>'}]`). Extract and `json.loads()` the inner payload if needed before parsing. Never assume MCP results are bare dicts or lists.
