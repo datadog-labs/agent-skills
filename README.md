@@ -9,7 +9,7 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 | **dd-pup** | Primary CLI - commands, auth, PATH setup |
 | **dd-monitors** | Create, manage, mute monitors |
 | **dd-logs** | Search logs |
-| **dd-apm** | Traces, services, performance |
+| **dd-apm** | Traces, services, performance, Single-Step Instrumentation |
 | **dd-docs** | Search Datadog documentation |
 | **dd-llmo** | LLM Observability: experiments, eval RCA, evaluator generation, session classification |
 | **dd-browser-sdk** | Browser SDK: RUM, Logs, Session Replay, profiling, product analytics, error tracking, version migration |
