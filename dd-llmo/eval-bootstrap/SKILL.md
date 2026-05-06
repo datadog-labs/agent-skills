@@ -1,16 +1,22 @@
 ---
 name: eval-bootstrap
-description: Bootstrap SDK-based evaluators from production traces. Use when user says "bootstrap evaluators", "generate evaluators", "create evals from traces", "eval bootstrap", "write evaluators", "build eval suite", or wants to generate BaseEvaluator/LLMJudge code from production LLM trace data. Works with ml_app and optional RCA report or failure hypothesis.
+description: Bootstrap evaluators from production traces — offline experiment SDK code, framework-agnostic JSON specs, or in-product Datadog evaluator configs (span-scoped or trace-scoped, auto-decided per evaluator). Use when user says "bootstrap evaluators", "generate evaluators", "create evals from traces", "eval bootstrap", "write evaluators", "build eval suite", "create trace-level evaluations", "create span-level evaluations", or wants to generate evaluator artifacts from production LLM trace data. Works with ml_app and optional RCA report or failure hypothesis.
 ---
 
-# Eval Bootstrap — Generate Evaluator Code from Production Traces
+# Eval Bootstrap — Generate Evaluators from Production Traces
 
-Given a sample of production LLM traces, analyze input/output patterns and quality dimensions, then generate ready-to-use evaluator code using the Datadog Evals SDK. The output is a `.py` file containing `BaseEvaluator` subclasses and/or `LLMJudge` instances that the user can run in LLM Experiments.
+Given a sample of production LLM traces, analyze input/output patterns and quality dimensions, then emit evaluator artifacts in one of three output modes:
+
+- **`sdk_code`** (default) — Python `.py` file with `BaseEvaluator` subclasses and/or `LLMJudge` instances for offline `LLMObs.experiment()` runs.
+- **`data_only`** (`--data-only`) — framework-agnostic JSON eval spec, no SDK dependency.
+- **`in_product`** (`--in-product`) — Datadog **in-product evaluator configs** that run online against production traffic. The skill **auto-decides per evaluator** whether each one is **span-scoped** (one judgment per matching span, with `{{span_input}}` / `{{span_output}}` templating) or **trace-scoped** (one judgment per trace, with `{{spans...}}` templating). Output is a single JSON config file with mixed scopes plus a step-by-step UI walkthrough.
+
+In-product mode is the right choice when you want continuous evaluation of production traffic. Within it, span scope is the default; the skill promotes an evaluator to trace scope only when its judgment cannot be answered from one span alone (agent goal completion, tool-use correctness, RAG faithfulness).
 
 ## Usage
 
 ```
-/eval-bootstrap <ml_app> [--timeframe <window>] [--data-only]
+/eval-bootstrap <ml_app> [--timeframe <window>] [--data-only | --in-product]
 ```
 
 Arguments: $ARGUMENTS
@@ -23,6 +29,9 @@ Arguments: $ARGUMENTS
 | `timeframe` | No | `now-7d` | How far back to look |
 | `rca_report` | No | — | Failure taxonomy from `eval-trace-rca` skill, or a free-text failure hypothesis |
 | `--data-only` | No | off | Emit a self-contained JSON spec file instead of Python SDK code |
+| `--in-product` | No | off | Emit Datadog in-product evaluator configs (one JSON file + UI walkthrough) instead of offline experiment artifacts. The skill auto-classifies each evaluator as span-scoped or trace-scoped — the user does not pick the scope. |
+
+`--data-only` and `--in-product` are mutually exclusive — they target different surfaces (offline experiment vs. online production traffic). If both are passed, ask the user which one to use.
 
 If `ml_app` is missing, ask the user before proceeding.
 
@@ -254,6 +263,8 @@ RegexMatchEvaluator(pattern=r"\d{4}-\d{2}-\d{2}", match_mode="search", name=None
 | Classification into categories | `LLMJudge` + `CategoricalStructuredOutput` |
 | Multi-dimensional judgment (evaluate several aspects at once) | `LLMJudge` + custom JSON schema `dict` |
 | Complex domain logic combining multiple checks | `BaseEvaluator` subclass |
+| Single-span semantic judgment in production (per-span tone, helpfulness, format compliance) | **Span-scoped in-product evaluator** — `in_product` output mode (see Phase 3C) |
+| Quality requires reasoning across an entire trace (agent goal completion, tool-use chain, RAG faithfulness) | **Trace-scoped in-product evaluator** — `in_product` output mode (see Phase 3C) |
 
 ### Source Verification
 
@@ -374,6 +385,24 @@ For each proposed evaluator:
 - **Pass/fail criteria**: `pass_when=True`, `min_threshold=7`, `pass_values=["correct"]`, or "no automatic assessment" for custom JSON schema
 - **Template variables**: Which of `input_data`, `output_data`, `expected_output`, `metadata.*` it uses
 - **Evidence**: At least one trace where it would have caught a failure (or confirmed correct behavior)
+- **Scope (in_product mode only)**: Auto-classify each evaluator as `span` or `trace` per the rule below — do NOT ask the user to pick. Show your classification in the proposal so the user can override.
+
+#### Span vs. Trace Scope Classification (`in_product` mode)
+
+For each proposed evaluator, decide its scope using a two-question test:
+
+1. **Can the judgment be answered from one span's `meta.input.value` and `meta.output.value` alone?** If yes → **span scope**.
+2. **Does the judgment require correlating data across two or more spans** (e.g., "was the answer grounded in the documents this `retrieval` span returned", "did the agent call the right tools in the right order", "is the final response consistent with what the `tool` spans actually computed")? If yes → **trace scope**.
+
+If both conditions partly apply, **default to span scope on the LLM sub-span that has the richest signal**. Trace scope is more expensive (one judgment per completed trace, larger payloads) — only promote when span scope can't answer the question.
+
+Apply per-evaluator, then summarize the split in the proposal header so the user sees the recommendation at a glance:
+
+> Recommended scope split: 4 span-scoped, 1 trace-scoped (use `--in-product` to emit both).
+
+A short, explicit rationale in the per-evaluator block is what makes the recommendation auditable — write *why* this evaluator is span vs. trace, not just which:
+
+> `tool_use_correctness` — **trace scope**. Judgment requires comparing the agent's final response against the inputs/outputs of every `tool` span in the same trace; no single span has both. Span scope on the agent root would only see input → output without the tool chain.
 
 #### MANDATORY CHECKPOINT
 
@@ -384,20 +413,26 @@ For each proposed evaluator:
 
 **App profile**: {LLM | RAG | Agent | Multi-agent}
 **Entry mode**: {cold_start | from_rca}
+**Output mode**: {sdk_code | data_only | in_product}
+{Only when in_product:} **Recommended scope split**: {N} span-scoped, {M} trace-scoped
 
-| # | Name | Type | Measures | Pass Criteria |
-|---|------|------|----------|---------------|
-| 1 | task_completion | LLMJudge (Boolean) | Whether the task was completed | pass_when=True |
-| 2 | ... | ... | ... | ... |
+| # | Name | Type | Scope | Measures | Pass Criteria |
+|---|------|------|-------|----------|---------------|
+| 1 | task_completion | LLMJudge (Boolean) | span | Whether the task was completed | pass_when=True |
+| 2 | tool_use_correctness | LLMJudge (Categorical) | trace | Right tool, right args, in order | in [correct] |
+| 3 | ... | ... | ... | ... | ... |
+
+(Drop the **Scope** column when not in `in_product` mode.)
 
 For each evaluator:
 - **{name}**: {what it measures}
   - Target span: {which span's data it was designed for}
   - Rationale: {which quality dimension it covers and why}
+  - {Only when in_product:} Scope: {span | trace} — {one-sentence rationale: why this scope is the right one}
   - Evidence: [Trace {id_short}](https://app.datadoghq.com/llm/traces?query=trace_id:{full_id})
 ```
 
-**Which evaluators should I generate?** (Accept all, remove some, or rename. In `sdk_code` mode you may also add custom evaluators or change provider/model.)
+**Which evaluators should I generate?** (Accept all, remove some, or rename. In `sdk_code` mode you may also add custom evaluators or change provider/model. In `in_product` mode you may also override any scope classification you disagree with.)
 
 Do NOT proceed to code generation until the user confirms.
 
@@ -408,6 +443,7 @@ Do NOT proceed to code generation until the user confirms.
 Branch on `output_mode`:
 - `sdk_code` → **Phase 3A** below
 - `data_only` → skip to **Phase 3B**
+- `in_product` → skip to **Phase 3C**
 
 ---
 
@@ -676,6 +712,151 @@ Wrote `./evals/{ml_app}_eval_spec.json`:
 #### Notebook export (after summary)
 
 Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_url` was detected, or create a new standalone notebook. Use the same notebook cell format as Phase 3A, substituting `output_path` with the JSON spec file path.
+
+---
+
+### Phase 3C: Generate & Write In-Product Evaluator Configs
+
+**Goal**: Emit one Datadog in-product evaluator config per confirmed evaluator, at the scope assigned in Phase 2 (span or trace), ready to register through the Datadog UI or PUT to the custom-evaluator API. In-product evaluators run online against production traffic — they are not Python SDK code.
+
+**Output path**: `./evals/{ml_app}_in_product_evals.json`
+
+#### Templating per scope
+
+In-product evaluators do **not** use `EvaluatorContext` / `{{input_data}}` / `{{output_data}}`. The User message is templated against the matched span (span scope) or the whole trace (trace scope) at evaluation time. The System Prompt is **static** in both scopes — it does NOT resolve `{{ ... }}` placeholders. Put the rubric there; put data injections in the User message only.
+
+**Span scope** — one judgment per matching span. Use direct paths or aliases against the span's own JSON:
+
+| Pattern | What it resolves to |
+|---|---|
+| `{{span_input}}` | `meta.input.messages[*].content` for LLM spans, `meta.input.value` otherwise |
+| `{{span_output}}` | `meta.output.messages[*].content` for LLM spans, `meta.output.value` otherwise |
+| `{{name}}` | The span's name |
+| `{{meta.input.value}}` / `{{meta.output.value}}` | Direct field paths |
+| `{{meta.input.messages[0].content}}` | First message |
+| `{{meta.input.messages[*].content}}` | All messages, joined with newlines |
+| `{{meta.input.messages[0,2].content}}` | Inclusive range |
+| `{{*}}` | Entire span payload as JSON |
+
+**Trace scope** — one judgment per trace, with every span available under the `spans` array. The `{{span_input}}` / `{{span_output}}` aliases are **not** available in trace scope:
+
+| Pattern | What it resolves to |
+|---|---|
+| `{{spans}}` | JSON of every span in the trace |
+| `{{spans[N].meta.input.value}}` | Single span by index |
+| `{{spans[*].meta.output.value}}` | All spans' outputs, joined with newlines |
+| `{{spans[name:span_name].meta.input.value}}` | Filter by span name |
+| `{{spans[meta.span.kind:llm].meta.output.value}}` | Filter by span kind (`agent`, `llm`, `tool`, `retrieval`, `workflow`) |
+| `{{spans[meta.span.kind:tool]}}` | Whole tool spans as JSON, paired in/out |
+| `{{*}}` | Entire trace payload as JSON |
+
+The same `EvaluatorContext`-vs-span-data pitfall does not apply: there is no offline dataset, the data is the production span/trace itself.
+
+#### Output JSON Schema
+
+```json
+{
+  "schema_version": "1",
+  "generated_at": "<ISO 8601 UTC>",
+  "generated_by": "eval-bootstrap",
+  "ml_app": "<string>",
+  "evaluators": [
+    {
+      "name": "snake_case_name",
+      "category": "outcome | format | safety",
+      "evaluation_scope": "span | trace",
+      "scope_rationale": "<one-sentence why this scope>",
+      "description": "<1-2 sentence plain-language description>",
+      "filter_query": "<UI query string — see field notes per scope>",
+      "sampling_rate": 0.05,
+      "system_prompt": "<full text — static instructions, no placeholders>",
+      "user_prompt": "<full text with templating per scope>",
+      "structured_output": {
+        "format": "categorical | boolean | score | json",
+        "schema": { "<...raw JSON Schema, ready to paste into the UI...>": "" }
+      },
+      "assessment_criteria": {
+        "pass_when": "<true | false | null>",
+        "categories_pass": ["<only present when format=categorical>"],
+        "min_threshold": "<number or null>",
+        "max_threshold": "<number or null>"
+      },
+      "evidence": [
+        {
+          "trace_id": "<32-char hex>",
+          "span_id": "<the span this evaluator would target>",
+          "url": "https://app.datadoghq.com/llm/traces?query=trace_id:<trace_id>",
+          "observation": "<why this trace illustrates the evaluator>"
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Field Notes
+
+- **`evaluation_scope`**: Comes straight from the Phase 2 classification. The rest of the fields are populated according to scope.
+- **`scope_rationale`**: One-sentence justification carried over from Phase 2. The user already saw and confirmed it; copying it into the JSON keeps the artifact self-explanatory for whoever reviews the file later.
+- **`filter_query`** — depends on scope:
+  - **Span scope**: a query that selects the spans to evaluate, e.g. `@meta.span.kind:llm`, `@parent_id:undefined`, `@name:my_tool_call`. Match the narrowest set that still answers the question. Avoid org/env filters — the evaluator is already scoped.
+  - **Trace scope**: always include `@parent_id:undefined` so the evaluator only triggers on completed root spans. Add `@meta.span.kind:agent` (or whatever root kind the app emits) and application-specific narrowing observed in Phase 1.
+- **`sampling_rate`**: Default `0.05` (5%) for the first scale run. The walkthrough should remind the user to raise after a manual review of ~30 results validates judge accuracy.
+- **`system_prompt`**: Static instructions. If the rubric needs concrete examples, embed them as literal text — they will not be templated.
+- **`user_prompt`** — depends on scope:
+  - **Span scope**: prefer aliases (`{{span_input}}`, `{{span_output}}`) over deep paths so the prompt adapts when the same evaluator runs across LLM and non-LLM spans.
+  - **Trace scope**: bound the payload by tool count, span name, or kind. Avoid `{{spans}}` (whole trace) as the default — the per-field 250 KB limit can truncate large traces. Reach for it only as a fallback alongside narrower extracts.
+- **`structured_output.schema`**: Strict JSON Schema with `additionalProperties: false`, `required` listing every property, and `strict: true` at the schema level. For categorical outputs, list the `reasoning` field **before** the categorical field in `required` and `properties` so the model writes its justification before committing to a label (improves accuracy on borderline cases for OpenAI / Anthropic strict-mode judges).
+- **`assessment_criteria`**: Maps the structured-output value to Pass/Fail. For categorical, name only the categories that should Pass; everything else is Fail. For score, set `min_threshold` (or `max_threshold`). For boolean, set `pass_when` to `true` or `false`.
+- **`evidence`**: Pull from traces actually inspected in Phase 1. For span-scoped evaluators, the `span_id` should be the specific span the evaluator would target. Each entry must link to a real trace — fabricated IDs are a non-starter.
+
+#### Writing instructions
+
+1. Iterate the confirmed evaluator suite. Each evaluator was already classified in Phase 2 — honor that classification (or the user's override) and do not re-classify here.
+2. For each evaluator, generate `system_prompt` and `user_prompt` using the scope's templating syntax:
+   - Anchor the User prompt with explicit named extracts (e.g., user request, final response, tool calls) **before** any wide-payload fallback. The judge does better with anchors than with raw blobs.
+   - Strip PII from any literal text included in either prompt.
+   - Match the structured output format to the judgment shape (boolean → "did X happen", categorical → "which of these labels", score → "1-10", json → multi-dimensional).
+3. Build the JSON object following the schema above and write to `./evals/{ml_app}_in_product_evals.json` with 2-space indentation.
+4. Display a completion summary plus a UI walkthrough that branches per scope:
+
+```
+## Generated In-Product Evaluators
+
+Wrote `./evals/{ml_app}_in_product_evals.json`:
+
+| # | Name | Scope | Format | Pass Criteria | Sample Rate |
+|---|------|-------|--------|---------------|-------------|
+| 1 | task_completion | span | boolean | pass_when=true | 5% |
+| 2 | tool_use_correctness | trace | categorical | in [correct] | 5% |
+
+### Configure each evaluator in Datadog
+
+For each entry above:
+
+1. Open **LLM Observability → Evaluations → Create Evaluation → Create your own**.
+2. Enter the `name`, pick an LLM judge **Account** and **Model**.
+3. **Evaluation Scope**:
+   - **Application**: `{ml_app}`
+   - **Evaluate On**: **Span** for span-scoped evaluators, **Trace** for trace-scoped evaluators (per the **Scope** column).
+   - **Filter**: paste `filter_query`.
+   - **Sampling Rate**: `sampling_rate * 100`%.
+4. **System Prompt**: paste `system_prompt` (no placeholders here).
+5. **User**: paste `user_prompt`. Span-scoped prompts use `{{span_input}}` / direct paths; trace-scoped prompts use `{{spans...}}`.
+6. **Structured Output**: choose `structured_output.format`, paste `structured_output.schema` into the JSON Schema editor.
+7. **Assessment Criteria**: configure per `assessment_criteria`.
+8. Pick 3–5 samples from the right-hand pane (matching spans for span scope, sample traces for trace scope) and click **Test Evaluation** before **Save and Publish**.
+
+### Next Steps
+
+1. **Review** the generated prompts, scopes, and schemas in the JSON file
+2. **Test on 3–5 samples per evaluator** in the UI before publishing — verify the judge's reasoning matches your expectation on a synthetic test, a typical happy path, and at least one known failure
+3. **Raise sampling rate** from the seed value after a manual review of ~30 results validates judge accuracy
+```
+
+#### Notebook export (after summary)
+
+Same logic as Phase 3A and 3B — offer to append to the RCA notebook if `rca_notebook_url` was detected, or create a new standalone notebook. Use the same notebook cell format, substituting `output_path` with the in-product evals JSON file path and noting that the artifacts are in-product configs (not SDK code). Include the scope split (`{N} span-scoped, {M} trace-scoped`) in the summary.
 
 ---
 
