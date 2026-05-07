@@ -13,6 +13,7 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 | **dd-docs** | Search Datadog documentation |
 | **dd-llmo** | LLM Observability: experiments, eval RCA, evaluator generation, session classification |
 | **dd-browser-sdk** | Browser SDK: RUM, Logs, Session Replay, profiling, product analytics, error tracking, version migration |
+| **dd-audit** | Audit Trail investigations: who changed what, key compromise, cost spike root cause, compliance evidence (SOC 2/PCI), AI activity auditing |
 
 ## Install
 
@@ -128,6 +129,64 @@ Look at the errors on <ml_app> over the last 24h
 
 # Classify a session
 /eval-session-classify <session_id>
+```
+
+### Audit Trail (dd-audit)
+
+The `dd-audit` directory contains five skills for investigating Datadog Audit Trail data:
+
+| Skill | Purpose |
+|-------|---------|
+| `security-investigation` | Who changed what, user activity, login geo, deletions, permission changes |
+| `key-compromise` | Investigate a potentially compromised API key — timeline, geo/IP, endpoints called |
+| `cost-spike-investigation` | Correlate usage spike (Usage Metering) with config changes (Audit Trail) to find root cause |
+| `compliance-report` | Generate SOC 2 / PCI DSS evidence from audit data |
+| `ai-activity-audit` | Audit what the Bits AI / MCP assistant did in your org |
+
+#### Prerequisites
+
+These skills use the Datadog Audit REST API directly (no `pup audit` command exists yet). You need an API key + App key with `audit_logs_read` scope:
+
+```bash
+export DD_API_KEY=<your-api-key>
+export DD_APP_KEY=<your-app-key>
+export DD_SITE=datadoghq.com   # or us3/us5/eu/ap1/ap2
+```
+
+#### Install
+
+```bash
+# Claude Code — copy any or all skills
+cp -r dd-audit/security-investigation ~/.claude/skills
+cp -r dd-audit/key-compromise ~/.claude/skills
+cp -r dd-audit/cost-spike-investigation ~/.claude/skills
+cp -r dd-audit/compliance-report ~/.claude/skills
+cp -r dd-audit/ai-activity-audit ~/.claude/skills
+```
+
+#### Usage
+
+```
+# Security investigation
+Who deleted monitors in the last 24 hours?
+What did user@example.com do this week?
+Show login activity from unexpected locations
+
+# Key compromise
+Was API key <key_id> used from unexpected locations?
+Investigate this API key: <key_id>
+
+# Cost spike
+Why did our LLM Observability usage spike on May 1?
+What caused the cost increase this week?
+
+# Compliance
+Generate SOC 2 evidence for CC6.2 and CC6.3 for Q1 2026
+Create a PCI DSS Requirement 10 report for the last 90 days
+
+# AI activity
+What did the Bits AI assistant do in my org this week?
+Show me a governance report for AI tool calls in April
 ```
 
 ## Quick Reference

@@ -28,6 +28,9 @@ Pup CLI for Datadog API operations. Supports OAuth2 and API key auth.
 | Check SLOs | `pup slos list` |
 | On-call teams | `pup on-call teams list` |
 | Triage open critical security signals (last 1h) | `pup security signals list --query "status:open severity:critical" --from 1h --limit 100` |
+| Search audit logs | `pup audit-logs search --query "@action:deleted" --from 24h` |
+| Audit activity by user | `pup audit-logs search --query "@usr.email:user@example.com" --from 7d` |
+| Investigate API key | `pup audit-logs search --query "@metadata.api_key.id:KEY_ID" --from 90d` |
 | Check auth | `pup auth status` |
 | Token expiry (time left) | `pup auth status` |
 | Refresh token | `pup auth refresh` |
@@ -188,6 +191,24 @@ pup security signals list --query "*" --from 1h --limit 100
 pup security signals list --query "status:open severity:critical" --from 1h --limit 100
 # Broader lookback for historical triage
 pup security signals list --query "severity:critical" --from 24h --limit 100
+```
+
+### Audit Logs
+```bash
+# List recent events
+pup audit-logs list --from 1h --limit 100
+
+# Search with query (Lucene syntax, same as Log Explorer)
+pup audit-logs search --query "@action:deleted" --from 24h
+pup audit-logs search --query "@usr.email:user@example.com" --from 7d
+pup audit-logs search --query "@evt.name:Authentication @action:login" --from 7d
+pup audit-logs search --query "@metadata.api_key.id:KEY_ID" --from 90d --limit 200
+
+# JSON output for piping to jq
+pup audit-logs search --query "@action:deleted" --from 24h -o json | jq '.data[].attributes'
+
+# audit-logs is the long form (both work)
+pup audit-logs search --query "@evt.name:Monitor @action:modified" --from 7d
 ```
 
 ### Service Catalog
