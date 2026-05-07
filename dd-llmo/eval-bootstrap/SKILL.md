@@ -41,9 +41,9 @@ If `ml_app` is missing, ask the user before proceeding. If both `--data-only` an
 | `get_llmobs_trace` | Full trace hierarchy as span tree with span counts by kind. |
 | `get_llmobs_agent_loop` | Chronological agent execution timeline (LLM calls, tool invocations, decisions). |
 | `list_llmobs_evals` | List every evaluator configured for the caller's org across all ml_apps, with `enabled` status and `ml_app` per result. Call once in Phase 0 to map existing coverage before proposing new evaluators — filter the result by `ml_app` client-side. |
-| `get_llmobs_evaluator` | Fetch the **full** persisted evaluator config by name (target ml_app + sampling + filter, provider, prompt template, parsing type, output schema, assessment criteria). Use in Phase 0 to understand what each existing custom eval measures, and (in publish mode) **before any update** — `create_or_update_llmobs_evaluator` is full-replace, so you must round-trip the full config to avoid clobbering fields. Not all evaluators have a stored config (notably `source=ootb`); a not-found error there is expected — skip those. |
-| `create_or_update_llmobs_evaluator` | *(publish mode)* Write an LLM-judge evaluator config to Datadog. Full-replace semantics: any omitted optional field resets to its default. See "Publishing Conventions" for required fields and structured output → JSON schema mapping. |
-| `delete_llmobs_evaluator` | *(publish mode)* Only used if the user explicitly asks to remove an evaluator. Never invoke speculatively. |
+| `get_llmobs_evaluator` | Fetch the persisted evaluator config by name (target ml_app + sampling + filter, provider, prompt template, parsing type, output schema, assessment criteria). Use in Phase 0 to understand what each existing custom eval measures and to map coverage. In publish mode also use it for the pre-publish name-collision check (rename or skip — never overwrite). Not all evaluators have a stored config (notably `source=ootb`); a not-found error there is expected — skip those. |
+| `create_or_update_llmobs_evaluator` | *(publish mode)* Write a **new** LLM-judge evaluator config to Datadog. **This skill only ever creates** — it never updates or overwrites an existing evaluator. If a name collision is detected via `get_llmobs_evaluator`, rename (e.g., `_v2` suffix) or skip; never re-call this tool with an `eval_name` that already exists. See "Publishing Conventions" for required fields and structured output → JSON schema mapping. |
+| `delete_llmobs_evaluator` | **This skill never invokes this tool.** Existing evaluators are always preserved. To delete an evaluator, the user does it directly in the UI. |
 
 ### Key `get_llmobs_span_content` Patterns
 
@@ -788,17 +788,17 @@ Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_
 
 #### Pre-publish checks (single message — parallelize)
 
+**Hard rule: this skill never modifies or deletes existing evaluators.** Every published evaluator is a *new* draft. If a proposed name collides with an existing evaluator, the skill renames or skips — it never overwrites. To change an existing evaluator's prompt, sampling, or filter, the user edits it directly in the Datadog UI.
+
 For every proposed `eval_name`, call `get_llmobs_evaluator(eval_name=...)`:
 
 - **Not found** → safe to create.
-- **Found** → existing evaluator with the same name. Surface a diff to the user (existing dimension/prompt vs. proposed) and ask:
-  > Evaluator `{name}` already exists. Overwrite, rename, or skip?
+- **Found** → existing evaluator with the same name. Surface a one-line summary to the user (existing dimension / prompt direction vs. proposed) and ask:
+  > Evaluator `{name}` already exists in this ml_app. I will **not** modify it. Should I (a) **rename** the new one to `{name}_v2` and create it as a separate draft, or (b) **skip** the proposal entirely?
 
-  If **overwrite**: keep the fetched config as the base and **merge** your generated fields on top, then send the **complete** object back. The MCP tool is full-replace — any field you omit (e.g. `temperature`, `max_tokens`, `filter`, `sampling_percentage`) reverts to its default. Never re-publish without round-tripping the existing config.
+  If **rename**: append a suffix (`_v2`, `_v3`, …) until the name is free, and treat as a new create.
 
-  If **rename**: append a suffix (e.g. `_v2`) and treat as new.
-
-  If **skip**: drop from the publish set.
+  If **skip**: drop from the publish set. Note in the proposal summary that this dimension is already covered by `{name}`.
 
 #### Publishing Conventions
 
@@ -1051,7 +1051,7 @@ The drafts are intentionally not running yet. Walk through each one in the Datad
    - **Click into a sample span/trace** and use the test pane to dry-run the prompt against real data. Confirm the result matches your expectation.
 3. **Enable**: once each draft passes review, toggle it to enabled. Datadog starts scoring incoming spans immediately.
 4. **Wait for first scores**: with `sampling_percentage=10` (span scope) or `5` (trace scope), expect first results within minutes for high-traffic apps.
-5. **Tune sampling/filter**: if results are noisy or volume is too high, reduce `sampling_percentage` or tighten the `filter` from the UI. Re-running `/eval-bootstrap {ml_app} --publish` will round-trip the existing config before overwriting — your manual tweaks survive across reruns.
+5. **Tune sampling / filter / prompt**: any post-creation edits live in the UI. The skill never modifies or deletes evaluators it (or anyone) created earlier — re-running `/eval-bootstrap {ml_app} --publish` will detect existing names and either rename (creating a `_v2` draft) or skip them, leaving your tuned originals untouched.
 ```
 
 #### Notebook export (after summary)
@@ -1066,4 +1066,5 @@ Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_
 - **Don't overfit**: Write criteria that generalize beyond the specific sampled traces. Use examples as grounding, not as the sole criteria.
 - **Show your work**: Every proposed evaluator cites at least one trace as evidence with a clickable link: `[Trace {first_8}...](https://app.datadoghq.com/llm/traces?query=trace_id:{full_32_char_id})`.
 - **New file only**: Never modify existing evaluator code or experiment configurations.
+- **Never modify or delete published evaluators**: In `publish` mode, the skill only ever **creates** new evaluators. It never overwrites, edits, or deletes an existing evaluator config — even if the user re-runs the skill on the same ml_app. Name collisions resolve to **rename** (suffix `_v2`, `_v3`, …) or **skip**, chosen by the user at the pre-publish check. Tuning a published evaluator (sampling, filter, prompt) is done by the user in the Datadog UI; the skill stays out of that loop.
 - **Honest about uncertainty**: If fewer than 5 traces support a proposed evaluator, flag it as tentative.
