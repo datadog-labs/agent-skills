@@ -30,16 +30,16 @@ You need the **key ID** of the suspect key (not the key value). Find it in Datad
 pup audit-logs search --query "@metadata.api_key.id:KEY_ID" --from 90d --limit 200 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      action: .attributes.attributes["@action"],
-      event: .attributes.attributes["@evt.name"],
-      resource_type: .attributes.attributes["@asset.type"],
-      resource_id: .attributes.attributes["@asset.id"],
-      endpoint: .attributes.attributes["@http.url_details.path"],
-      method: .attributes.attributes["@http.method"],
-      ip: .attributes.attributes["@network.client.ip"],
-      city: .attributes.attributes["@network.client.geoip.city.name"],
-      country: .attributes.attributes["@network.client.geoip.country.name"],
-      asn: .attributes.attributes["@network.client.geoip.as.name"]
+      action: .attributes.attributes.action,
+      event: .attributes.attributes.evt.name,
+      resource_type: .attributes.attributes.asset.type,
+      resource_id: .attributes.attributes.asset.id,
+      endpoint: .attributes.attributes.http.url_details.path,
+      method: .attributes.attributes.http.method,
+      ip: .attributes.attributes.network.client.ip,
+      city: .attributes.attributes.network.client.geoip.city.name,
+      country: .attributes.attributes.network.client.geoip.country.name,
+      asn: .attributes.attributes.network.client.geoip.as.name
     }]'
 ```
 
@@ -48,9 +48,9 @@ pup audit-logs search --query "@metadata.api_key.id:KEY_ID" --from 90d --limit 2
 ```bash
 pup audit-logs search --query "@metadata.api_key.id:KEY_ID" --from 90d --limit 500 -o json \
   | jq '[.data[] | {
-      country: .attributes.attributes["@network.client.geoip.country.name"],
-      asn: .attributes.attributes["@network.client.geoip.as.name"],
-      ip: .attributes.attributes["@network.client.ip"]
+      country: .attributes.attributes.network.client.geoip.country.name,
+      asn: .attributes.attributes.network.client.geoip.as.name,
+      ip: .attributes.attributes.network.client.ip
     }]
     | group_by(.country)
     | map({
@@ -67,8 +67,8 @@ pup audit-logs search --query "@metadata.api_key.id:KEY_ID" --from 90d --limit 5
 ```bash
 pup audit-logs search --query "@metadata.api_key.id:KEY_ID" --from 90d --limit 500 -o json \
   | jq '[.data[] | {
-      method: .attributes.attributes["@http.method"],
-      path: .attributes.attributes["@http.url_details.path"]
+      method: .attributes.attributes.http.method,
+      path: .attributes.attributes.http.url_details.path
     }]
     | group_by(.path)
     | map({path: .[0].path, methods: [.[].method] | unique, count: length})
@@ -81,10 +81,10 @@ pup audit-logs search --query "@metadata.api_key.id:KEY_ID" --from 90d --limit 5
 pup audit-logs search --query "@metadata.api_key.id:KEY_ID @action:deleted" --from 90d -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      resource_type: .attributes.attributes["@asset.type"],
-      resource_id: .attributes.attributes["@asset.id"],
-      ip: .attributes.attributes["@network.client.ip"],
-      country: .attributes.attributes["@network.client.geoip.country.name"]
+      resource_type: .attributes.attributes.asset.type,
+      resource_id: .attributes.attributes.asset.id,
+      ip: .attributes.attributes.network.client.ip,
+      country: .attributes.attributes.network.client.geoip.country.name
     }]'
 ```
 
@@ -94,9 +94,9 @@ pup audit-logs search --query "@metadata.api_key.id:KEY_ID @action:deleted" --fr
 pup audit-logs search --query "@asset.type:api_key @asset.id:KEY_ID @action:created" --from 90d -o json \
   | jq '[.data[] | {
       created_at: .attributes.timestamp,
-      created_by: .attributes.attributes["@usr.email"],
-      creator_ip: .attributes.attributes["@network.client.ip"],
-      creator_country: .attributes.attributes["@network.client.geoip.country.name"]
+      created_by: .attributes.attributes.usr.email,
+      creator_ip: .attributes.attributes.network.client.ip,
+      creator_country: .attributes.attributes.network.client.geoip.country.name
     }]'
 ```
 

@@ -28,13 +28,13 @@ pup auth login   # OAuth2 (recommended)
 pup audit-logs search --query "@evt.name:\"MCP Server\"" --from 7d --limit 500 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      actor_type: .attributes.attributes["@evt.actor.type"],
-      action: .attributes.attributes["@action"],
-      resource_type: .attributes.attributes["@asset.type"],
-      resource_id: .attributes.attributes["@asset.id"],
-      ip: .attributes.attributes["@network.client.ip"],
-      country: .attributes.attributes["@network.client.geoip.country.name"]
+      user: .attributes.attributes.usr.email,
+      actor_type: .attributes.attributes.evt.actor.type,
+      action: .attributes.attributes.action,
+      resource_type: .attributes.attributes.asset.type,
+      resource_id: .attributes.attributes.asset.id,
+      ip: .attributes.attributes.network.client.ip,
+      country: .attributes.attributes.network.client.geoip.country.name
     }]'
 ```
 
@@ -42,7 +42,7 @@ pup audit-logs search --query "@evt.name:\"MCP Server\"" --from 7d --limit 500 -
 
 ```bash
 pup audit-logs search --query "@evt.name:\"MCP Server\"" --from 30d --limit 1000 -o json \
-  | jq '[.data[] | .attributes.attributes["@usr.email"]]
+  | jq '[.data[] | .attributes.attributes.usr.email]
     | group_by(.)
     | map({user: .[0], tool_calls: length})
     | sort_by(-.tool_calls)'
@@ -56,10 +56,10 @@ pup audit-logs search \
   --from 7d --limit 500 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      action: .attributes.attributes["@action"],
-      resource_type: .attributes.attributes["@asset.type"],
-      resource_id: .attributes.attributes["@asset.id"]
+      user: .attributes.attributes.usr.email,
+      action: .attributes.attributes.action,
+      resource_type: .attributes.attributes.asset.type,
+      resource_id: .attributes.attributes.asset.id
     }]'
 ```
 
@@ -71,9 +71,9 @@ pup audit-logs search \
   --from 30d --limit 500 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      action: .attributes.attributes["@action"],
-      resource_type: .attributes.attributes["@asset.type"],
-      resource_id: .attributes.attributes["@asset.id"]
+      action: .attributes.attributes.action,
+      resource_type: .attributes.attributes.asset.type,
+      resource_id: .attributes.attributes.asset.id
     }]'
 ```
 
@@ -83,22 +83,22 @@ pup audit-logs search \
 pup audit-logs search --query "@evt.name:\"MCP Server\"" --from 7d --limit 1000 -o json \
   | jq '{
       total_tool_calls: (.data | length),
-      unique_users: ([.data[] | .attributes.attributes["@usr.email"]] | unique | length),
+      unique_users: ([.data[] | .attributes.attributes.usr.email] | unique | length),
       top_users: (
-        [.data[] | .attributes.attributes["@usr.email"]]
+        [.data[] | .attributes.attributes.usr.email]
         | group_by(.)
         | map({user: .[0], calls: length})
         | sort_by(-.calls)
         | .[:5]
       ),
       actions_breakdown: (
-        [.data[] | .attributes.attributes["@action"]]
+        [.data[] | .attributes.attributes.action]
         | group_by(.)
         | map({action: .[0], count: length})
         | sort_by(-.count)
       ),
       resource_types: (
-        [.data[] | .attributes.attributes["@asset.type"]]
+        [.data[] | .attributes.attributes.asset.type]
         | group_by(.)
         | map({type: .[0], count: length})
         | sort_by(-.count)

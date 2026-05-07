@@ -32,9 +32,9 @@ PCI requires 12 months. Datadog default retention is 90 days. Check whether arch
 pup audit-logs search --query "@evt.name:\"Audit Trail\" @action:modified" --from 90d -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      action: .attributes.attributes["@action"],
-      resource: .attributes.attributes["@asset.type"]
+      user: .attributes.attributes.usr.email,
+      action: .attributes.attributes.action,
+      resource: .attributes.attributes.asset.type
     }]'
 ```
 
@@ -59,9 +59,9 @@ pup audit-logs search \
   --from PERIOD_START --to PERIOD_END --limit 500 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      actor: .attributes.attributes["@usr.email"],
-      action: .attributes.attributes["@action"],
-      affected_user: .attributes.attributes["@asset.id"]
+      actor: .attributes.attributes.usr.email,
+      action: .attributes.attributes.action,
+      affected_user: .attributes.attributes.asset.id
     }]'
 ```
 
@@ -73,9 +73,9 @@ pup audit-logs search \
   --from PERIOD_START --to PERIOD_END --limit 500 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      actor: .attributes.attributes["@usr.email"],
-      action: .attributes.attributes["@action"],
-      role_id: .attributes.attributes["@asset.id"]
+      actor: .attributes.attributes.usr.email,
+      action: .attributes.attributes.action,
+      role_id: .attributes.attributes.asset.id
     }]'
 ```
 
@@ -87,9 +87,9 @@ pup audit-logs search \
   --from PERIOD_START --to PERIOD_END --limit 500 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      ip: .attributes.attributes["@network.client.ip"],
-      country: .attributes.attributes["@network.client.geoip.country.name"]
+      user: .attributes.attributes.usr.email,
+      ip: .attributes.attributes.network.client.ip,
+      country: .attributes.attributes.network.client.geoip.country.name
     }]'
 ```
 
@@ -101,10 +101,10 @@ pup audit-logs search \
   --from PERIOD_START --to PERIOD_END --limit 500 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      support_actor: .attributes.attributes["@usr.email"],
-      action: .attributes.attributes["@action"],
-      resource_type: .attributes.attributes["@asset.type"],
-      resource_id: .attributes.attributes["@asset.id"]
+      support_actor: .attributes.attributes.usr.email,
+      action: .attributes.attributes.action,
+      resource_type: .attributes.attributes.asset.type,
+      resource_id: .attributes.attributes.asset.id
     }]'
 ```
 
@@ -122,9 +122,9 @@ pup audit-logs search \
   --from PERIOD_START --to PERIOD_END --limit 200 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      actor: .attributes.attributes["@usr.email"],
-      action: .attributes.attributes["@action"],
-      resource_type: .attributes.attributes["@asset.type"]
+      actor: .attributes.attributes.usr.email,
+      action: .attributes.attributes.action,
+      resource_type: .attributes.attributes.asset.type
     }]'
 ```
 
@@ -136,9 +136,9 @@ pup audit-logs search \
   --from PERIOD_START --to PERIOD_END --limit 200 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      actor: .attributes.attributes["@usr.email"],
-      action: .attributes.attributes["@action"],
-      resource_type: .attributes.attributes["@asset.type"]
+      actor: .attributes.attributes.usr.email,
+      action: .attributes.attributes.action,
+      resource_type: .attributes.attributes.asset.type
     }]'
 ```
 
@@ -154,11 +154,11 @@ pup audit-logs search \
   --from PERIOD_START --to PERIOD_END --limit 1000 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      auth_method: .attributes.attributes["@auth_method"],
-      result: .attributes.attributes["@status"],
-      ip: .attributes.attributes["@network.client.ip"],
-      country: .attributes.attributes["@network.client.geoip.country.name"]
+      user: .attributes.attributes.usr.email,
+      auth_method: .attributes.attributes.auth_method,
+      result: .attributes.attributes.status,
+      ip: .attributes.attributes.network.client.ip,
+      country: .attributes.attributes.network.client.geoip.country.name
     }]'
 ```
 
@@ -170,11 +170,11 @@ pup audit-logs search \
   --from PERIOD_START --to PERIOD_END --limit 1000 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      action: .attributes.attributes["@action"],
-      resource_type: .attributes.attributes["@asset.type"],
-      resource_id: .attributes.attributes["@asset.id"],
-      ip: .attributes.attributes["@network.client.ip"]
+      user: .attributes.attributes.usr.email,
+      action: .attributes.attributes.action,
+      resource_type: .attributes.attributes.asset.type,
+      resource_id: .attributes.attributes.asset.id,
+      ip: .attributes.attributes.network.client.ip
     }]'
 ```
 

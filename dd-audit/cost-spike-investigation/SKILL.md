@@ -67,12 +67,12 @@ pup audit-logs search \
   -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      actor_type: .attributes.attributes["@evt.actor.type"],
-      action: .attributes.attributes["@action"],
-      event_category: .attributes.attributes["@evt.name"],
-      resource_type: .attributes.attributes["@asset.type"],
-      resource_id: .attributes.attributes["@asset.id"]
+      user: .attributes.attributes.usr.email,
+      actor_type: .attributes.attributes.evt.actor.type,
+      action: .attributes.attributes.action,
+      event_category: .attributes.attributes.evt.name,
+      resource_type: .attributes.attributes.asset.type,
+      resource_id: .attributes.attributes.asset.id
     }]'
 ```
 
@@ -101,11 +101,11 @@ pup audit-logs search \
   -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      action: .attributes.attributes["@action"],
-      category: .attributes.attributes["@evt.name"],
-      resource_type: .attributes.attributes["@asset.type"],
-      resource_id: .attributes.attributes["@asset.id"]
+      user: .attributes.attributes.usr.email,
+      action: .attributes.attributes.action,
+      category: .attributes.attributes.evt.name,
+      resource_type: .attributes.attributes.asset.type,
+      resource_id: .attributes.attributes.asset.id
     }]'
 ```
 

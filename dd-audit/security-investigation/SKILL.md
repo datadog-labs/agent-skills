@@ -35,11 +35,11 @@ pup auth login   # OAuth2 (recommended)
 pup audit-logs search --query "@action:deleted" --from 24h -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      actor_type: .attributes.attributes["@evt.actor.type"],
-      resource_type: .attributes.attributes["@asset.type"],
-      resource_id: .attributes.attributes["@asset.id"],
-      country: .attributes.attributes["@network.client.geoip.country.name"]
+      user: .attributes.attributes.usr.email,
+      actor_type: .attributes.attributes.evt.actor.type,
+      resource_type: .attributes.attributes.asset.type,
+      resource_id: .attributes.attributes.asset.id,
+      country: .attributes.attributes.network.client.geoip.country.name
     }]'
 ```
 
@@ -49,9 +49,9 @@ pup audit-logs search --query "@action:deleted" --from 24h -o json \
 pup audit-logs search --query "@asset.id:RESOURCE_ID" --from 7d -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      action: .attributes.attributes["@action"],
-      event: .attributes.attributes["@evt.name"]
+      user: .attributes.attributes.usr.email,
+      action: .attributes.attributes.action,
+      event: .attributes.attributes.evt.name
     }]'
 ```
 
@@ -61,12 +61,12 @@ pup audit-logs search --query "@asset.id:RESOURCE_ID" --from 7d -o json \
 pup audit-logs search --query "@usr.email:user@example.com" --from 7d --limit 200 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      action: .attributes.attributes["@action"],
-      event: .attributes.attributes["@evt.name"],
-      resource_type: .attributes.attributes["@asset.type"],
-      resource_id: .attributes.attributes["@asset.id"],
-      ip: .attributes.attributes["@network.client.ip"],
-      country: .attributes.attributes["@network.client.geoip.country.name"]
+      action: .attributes.attributes.action,
+      event: .attributes.attributes.evt.name,
+      resource_type: .attributes.attributes.asset.type,
+      resource_id: .attributes.attributes.asset.id,
+      ip: .attributes.attributes.network.client.ip,
+      country: .attributes.attributes.network.client.geoip.country.name
     }]'
 ```
 
@@ -76,12 +76,12 @@ pup audit-logs search --query "@usr.email:user@example.com" --from 7d --limit 20
 pup audit-logs search --query "@evt.name:Authentication @action:login" --from 7d --limit 200 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      status: .attributes.attributes["@status"],
-      ip: .attributes.attributes["@network.client.ip"],
-      city: .attributes.attributes["@network.client.geoip.city.name"],
-      country: .attributes.attributes["@network.client.geoip.country.name"],
-      asn: .attributes.attributes["@network.client.geoip.as.name"]
+      user: .attributes.attributes.usr.email,
+      status: .attributes.attributes.status,
+      ip: .attributes.attributes.network.client.ip,
+      city: .attributes.attributes.network.client.geoip.city.name,
+      country: .attributes.attributes.network.client.geoip.country.name,
+      asn: .attributes.attributes.network.client.geoip.as.name
     }]'
 ```
 
@@ -91,9 +91,9 @@ pup audit-logs search --query "@evt.name:Authentication @action:login" --from 7d
 pup audit-logs search --query "@evt.name:Authentication @action:login @status:error" --from 7d --limit 200 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      ip: .attributes.attributes["@network.client.ip"],
-      country: .attributes.attributes["@network.client.geoip.country.name"]
+      user: .attributes.attributes.usr.email,
+      ip: .attributes.attributes.network.client.ip,
+      country: .attributes.attributes.network.client.geoip.country.name
     }]'
 ```
 
@@ -103,10 +103,10 @@ pup audit-logs search --query "@evt.name:Authentication @action:login @status:er
 pup audit-logs search --query "@evt.name:\"Access Management\"" --from 30d --limit 200 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      action: .attributes.attributes["@action"],
-      resource_type: .attributes.attributes["@asset.type"],
-      resource_id: .attributes.attributes["@asset.id"]
+      user: .attributes.attributes.usr.email,
+      action: .attributes.attributes.action,
+      resource_type: .attributes.attributes.asset.type,
+      resource_id: .attributes.attributes.asset.id
     }]'
 ```
 
@@ -116,11 +116,11 @@ pup audit-logs search --query "@evt.name:\"Access Management\"" --from 30d --lim
 pup audit-logs search --query "@network.client.ip:1.2.3.4" --from 30d --limit 200 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      actor_type: .attributes.attributes["@evt.actor.type"],
-      action: .attributes.attributes["@action"],
-      event: .attributes.attributes["@evt.name"],
-      resource_type: .attributes.attributes["@asset.type"]
+      user: .attributes.attributes.usr.email,
+      actor_type: .attributes.attributes.evt.actor.type,
+      action: .attributes.attributes.action,
+      event: .attributes.attributes.evt.name,
+      resource_type: .attributes.attributes.asset.type
     }]'
 ```
 
@@ -130,11 +130,11 @@ pup audit-logs search --query "@network.client.ip:1.2.3.4" --from 30d --limit 20
 pup audit-logs search --query "@evt.name:Authentication @asset.type:api_key" --from 90d --limit 200 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
-      user: .attributes.attributes["@usr.email"],
-      action: .attributes.attributes["@action"],
-      key_id: .attributes.attributes["@asset.id"],
-      ip: .attributes.attributes["@network.client.ip"],
-      country: .attributes.attributes["@network.client.geoip.country.name"]
+      user: .attributes.attributes.usr.email,
+      action: .attributes.attributes.action,
+      key_id: .attributes.attributes.asset.id,
+      ip: .attributes.attributes.network.client.ip,
+      country: .attributes.attributes.network.client.geoip.country.name
     }]'
 ```
 
