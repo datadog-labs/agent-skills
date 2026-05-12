@@ -3,7 +3,7 @@ name: dd-apm
 description: APM - install, onboard, instrument, enable, set up, configure, traces, services, dependencies, performance analysis. Use for any request involving Datadog APM setup, instrumentation (SSI, ddtrace, agent install), or analysis.
 alwaysApply: true
 metadata:
-  version: "1.0.1"
+  version: "1.1.0"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,tracing,performance,distributed-tracing,dd-apm,install,onboarding,instrumentation,ssi,agent
@@ -16,87 +16,57 @@ Distributed tracing, service maps, and performance analysis.
 
 ## Routing — Read This First
 
-**For Kubernetes APM install / instrument / onboard tasks — follow this procedure exactly:**
-
-> ⚠️ **Common wrong approaches that LOOK like they work but silently fail:**
-> - `helm install datadog datadog/datadog` — the standard chart does NOT support SSI via DatadogAgent CR. Do NOT use it.
-> - Adding `ddtrace` imports or `ddtrace-run` to the app — SSI auto-instruments WITHOUT any code changes.
-> - `admission.datadoghq.com/enabled` annotations — this is admission controller config injection, not SSI init container injection.
-
-### Step 0: Pre-flight checks (MANDATORY — run before installing anything)
-
-```bash
-# Check for ddtrace/otel — even without imports it SILENTLY DISABLES SSI at runtime
-grep -rn "ddtrace\|dd-trace\|opentelemetry" requirements.txt package.json Gemfile go.mod pom.xml 2>/dev/null || echo "No tracer dependency found"
-```
-
-If ddtrace found → remove that line entirely from the dependency file, rebuild image, reload into cluster, restart pod.
-
-### Step 1: Install the Datadog Operator (NOT `datadog/datadog`)
-
-```bash
-helm repo add datadog https://helm.datadoghq.com && helm repo update
-helm upgrade --install datadog-operator datadog/datadog-operator \
-  --namespace datadog --create-namespace
-kubectl wait --for=condition=Ready pod \
-  -l app.kubernetes.io/name=datadog-operator -n datadog --timeout=120s
-
-kubectl create secret generic datadog-secret \
-  --from-literal api-key=$DD_API_KEY -n datadog
-```
-
-### Step 2: Create DatadogAgent CR with SSI enabled
-
-Save as `datadog-agent.yaml`, then `kubectl apply -f datadog-agent.yaml`:
-
-```yaml
-apiVersion: datadoghq.com/v2alpha1
-kind: DatadogAgent
-metadata:
-  name: datadog
-  namespace: datadog
-spec:
-  global:
-    site: <DD_SITE>
-    credentials:
-      apiSecret:
-        secretName: datadog-secret
-        keyName: api-key
-    kubelet:
-      tlsVerify: false  # required for kind/minikube; omit for cloud clusters
-  features:
-    apm:
-      instrumentation:
-        enabled: true
-```
-
-### Step 3: Apply Unified Service Tags to the application Deployment
-
-Add to **both** `metadata.labels` and `spec.template.metadata.labels`:
-```yaml
-tags.datadoghq.com/env: "dev"
-tags.datadoghq.com/service: "<service-name>"
-tags.datadoghq.com/version: "1.0.0"
-```
-
-### Step 4: Restart app pods and verify SSI init containers
-
-> **Confirm with the user before restarting.** Tell the user: "I need to restart `<name>` in `<namespace>` for SSI to inject into the pods. This will cause a brief outage. Ready to proceed?" Wait for confirmation.
-
-```bash
-kubectl rollout restart deployment/<name> -n <namespace>
-kubectl get pods -A -o json | grep -o '"datadog-lib[^"]*"' | sort -u
-```
-
-Expected: `"datadog-lib-python-init"` (or the language-appropriate init container).
-
-**Immediately read** `.claude/skills/dd-apm/k8s-ssi/agent-install/SKILL.md` now, then `.claude/skills/dd-apm/k8s-ssi/enable-ssi/SKILL.md` — do not proceed from memory or the summary above.
+Match the user's request to one of the entries below. Each entry has the same shape: **triggers** → which sub-skill to load → the anti-pattern to avoid. If nothing matches, see "None of the above" at the end.
 
 ---
 
-**For Linux APM install/instrument tasks:** **Immediately read** `.claude/skills/dd-apm/linux-ssi/agent-install/SKILL.md` now, then enable-ssi then verify-ssi — do not proceed from memory or the summary above.
+**Kubernetes APM install / instrument / onboard** — trigger when the user mentions Kubernetes, K8s, EKS, GKE, AKS, kind, minikube, K3s, helm, DatadogAgent CR, kubectl, SSI on a cluster, pod injection, or init containers.
 
-**For trace search, service analysis, metrics:** Continue below.
+**Immediately read** `.claude/skills/dd-apm/k8s-ssi/agent-install/SKILL.md` now, then `.claude/skills/dd-apm/k8s-ssi/enable-ssi/SKILL.md` — do not proceed from memory.
+
+> ⚠️ **Common wrong approaches that LOOK like they work but silently fail:**
+> - `helm install datadog datadog/datadog` — the standard chart does NOT support SSI via DatadogAgent CR.
+> - Adding `ddtrace` imports or `ddtrace-run` to the app — SSI auto-instruments WITHOUT any code changes.
+> - `admission.datadoghq.com/enabled` annotations — that's admission controller config injection, not SSI init container injection.
+
+---
+
+**Linux APM install / instrument / onboard** — trigger when the user mentions a single host, VM, EC2 instance, bare-metal, RHEL/Ubuntu/Debian, systemd, or no orchestrator.
+
+**Immediately read** `.claude/skills/dd-apm/linux-ssi/agent-install/SKILL.md` now, then `enable-ssi`, then `verify-ssi` — do not proceed from memory.
+
+> ⚠️ **Do NOT** install the agent via plain `apt-get install datadog-agent` (or yum equivalent) and assume SSI follows — host auto-instrumentation requires the install script with the SSI flags, which the sub-skill walks through.
+
+---
+
+**Service rename / service remapping** — trigger when the user mentions renaming a service, collapsing multiple service names, stripping suffixes/prefixes, normalizing `peer.service`, or cleaning up inferred services.
+
+**Immediately read** `.claude/skills/dd-apm/service-remapping/SKILL.md` now — do not proceed from memory.
+
+> ⚠️ **Do NOT** change `tags.datadoghq.com/service` labels or `DD_SERVICE` env vars to rename a service in Datadog. That requires a rollout and only affects new data. Use a service remapping rule — it rewrites the name at ingestion time with no deployment change.
+
+---
+
+### Overlap disambiguation
+
+When a request could plausibly fit more than one entry above, use these tiebreakers:
+
+| Hint | Route to |
+|---|---|
+| Cluster orchestrator mentioned (EKS/GKE/AKS/kind/K3s/minikube) — even if "just one node" | k8s-ssi |
+| Single host, VM, or EC2 with no orchestrator | linux-ssi |
+| "Several services that should be one" — they have spans from a tracer (real instrumented services) | service-remapping with `rule_type: 0` (SERVICE) |
+| "Several services that should be one" — they're databases, queues, or external APIs | service-remapping with `rule_type: 1` (INFERRED_ENTITY) — verify `peer.service` is set first |
+| "My service shows under the wrong name" | First check `DD_SERVICE` on the deploy. If correct and the name is still wrong → service-remapping. |
+| "Reduce APM volume / cost / noise" | Not yet covered by a sub-skill. Ask the user whether they want fewer ingested traces (sampling) or less indexed data (retention filters — use `pup apm retention-filters`). |
+
+---
+
+### None of the above
+
+If the request doesn't match any entry above, fall through to the trace-search, service analysis, and metrics content in the rest of this file. If even that doesn't fit, **ask the user to clarify** rather than guessing — do not invent a workflow.
+
+---
 
 ## Requirements
 
