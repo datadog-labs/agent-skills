@@ -96,6 +96,10 @@ Expected: `"datadog-lib-python-init"` (or the language-appropriate init containe
 
 **For Linux APM install/instrument tasks:** **Immediately read** `.claude/skills/dd-apm/linux-ssi/agent-install/SKILL.md` now, then enable-ssi then verify-ssi — do not proceed from memory or the summary above.
 
+**For sampling / ingestion volume / adaptive sampling tasks** — any request to set or change a sample rate, drop or keep traces for a service/resource, reduce APM ingestion, onboard a service to adaptive sampling, tune agent priority/error/rare TPS, or diagnose why a sampling rule isn't applying: **Immediately read** `.claude/skills/dd-apm/sampling/SKILL.md` now — do not proceed from memory or the summary above.
+
+> ⚠️ **Do NOT** tell users to set `DD_TRACE_SAMPLE_RATE` or `DD_TRACE_SAMPLING_RULES` before checking the Ingestion Control UI for existing remote rules. UI-authored rules (priority 1) and adaptive rules (priority 2) **override** local env vars (priority 3–5), so the env var change will silently appear to do nothing.
+
 **For trace search, service analysis, metrics:** Continue below.
 
 ## Requirements
