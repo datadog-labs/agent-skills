@@ -37,13 +37,19 @@ Do NOT invoke this skill if:
 pup --version
 ```
 
-If not found:
+If not found, install it (OS-aware):
 
 ### Claude runs
 
 ```bash
-brew tap datadog-labs/pack
-brew install pup
+if [[ "$(uname)" == "Darwin" ]]; then
+  brew tap datadog-labs/pack && brew install pup
+else
+  PUP_VERSION=$(curl -s https://api.github.com/repos/datadog-labs/pup/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+  curl -L "https://github.com/datadog-labs/pup/releases/download/${PUP_VERSION}/pup_linux_amd64.tar.gz" | tar xz -C /usr/local/bin pup
+  chmod +x /usr/local/bin/pup
+fi
+pup --version
 ```
 
 Check auth:
@@ -276,6 +282,12 @@ pup fleet tracers list --filter "service:<SERVICE_NAME>"
 **Does APM recognise the service?**
 ```bash
 pup apm services list --env <ENV>
+```
+
+**What SDK configuration is the service running with?**
+Shows env vars the tracer is configured with (e.g. `DD_TRACE_ENABLED`, `DD_SERVICE`, `DD_ENV`, sampling rules). Empty output is expected if `ddTraceConfigs` was not set in `enable-ssi`; a populated output mismatching what was configured indicates the change didn't propagate.
+```bash
+pup apm service-library-config get --service-name <SERVICE_NAME> --env <ENV>
 ```
 
 **Are traces arriving?**
