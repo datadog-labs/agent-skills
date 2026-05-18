@@ -28,7 +28,9 @@ description: End-to-end pipeline from unlabeled ml_app traces to a bootstrapped 
 - Parallelization: issue multiple Bash tool calls in a single message (one pup command per call).
 - Time flags: pup accepts bare duration strings (`1h`, `7d`, `30m`) and RFC3339 timestamps. Do **not** use `now-`-prefixed strings — strip the prefix when converting from a skill `--timeframe` argument: `now-7d` → `7d`, `now-24h` → `24h`, `now-30d` → `30d`.
 
-**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-eval-pipeline — ` followed by a description of why the tool is being called.
+**Invocation ID:** At the very start of each invocation, before any MCP tool call, generate an 8-character hex invocation ID (e.g., `3a9f1c2b`). Keep it constant for the entire invocation.
+
+**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-eval-pipeline[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:llm-obs-eval-pipeline:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:llm-obs-eval-pipeline:start[3a9f1c2b] — Phase 1: sample root spans for ml_app to begin classification`
 
 # LLM Obs Eval Pipeline — Classify → RCA → Bootstrap
 
