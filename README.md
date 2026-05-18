@@ -47,6 +47,8 @@ npx skills add datadog-labs/agent-skills \
   --full-depth -y
 ```
 
+For ALL skills:
+
 ```bash
 npx skills add datadog-labs/agent-skills \
   --skill dd-pup \
@@ -54,6 +56,9 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-logs \
   --skill dd-apm \
   --skill dd-docs \
+  --skill dd-llmo \
+  --skill dd-browser-sdk \
+  --skill dd-audit \
   --full-depth -y
 ```
 
