@@ -181,7 +181,7 @@ Then **skip Phase 1 and jump directly to Phase 2**. Carry forward:
 4. **Resolve mode** (skip if `mode` was explicitly provided):
    - `eval_name` given → **Eval Signal**
    - User explicitly mentioned errors/exceptions/crashes → **Error Signal**
-   - Otherwise → call `list_llmobs_evals(ml_app)`:
+   - Otherwise → call `list_llmobs_evals_by_ml_app(ml_app)`:
      - Evals returned → **Eval Signal**
      - No evals → **Error Signal** (announce auto-selection in Phase 1)
 5. When `eval_name` is multi-valued, note for Phase 1: run parallel per-eval searches and merge+dedup by `(trace_id, span_id)`.
