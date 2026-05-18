@@ -1067,7 +1067,7 @@ Either way, the evaluator is published with `enabled: false`. The user is the ga
 
 #### Publish (single message — parallelize)
 
-Issue all `create_or_update_llmobs_evaluator` calls in a **single message** (one per evaluator). Set `telemetry.intent` to a short English description like `"Bootstrap evaluator suite for ml_app=<ml_app> from production trace analysis."`.
+Issue all `create_or_update_llmobs_evaluator` calls in a **single message** (one per evaluator). Set `telemetry.intent` to a short English description like `"skill:llm-obs-eval-bootstrap — Bootstrap evaluator suite for ml_app=<ml_app> from production trace analysis."`.
 
 If any call fails, capture the error and continue with the remaining evaluators — never silently abort the batch. Report failures explicitly in the summary.
 
