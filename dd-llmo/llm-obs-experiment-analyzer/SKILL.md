@@ -23,7 +23,9 @@ description: Analyze LLM experiment results. Handles single or comparative exper
 - If pup returns an auth error, tell the user to run `pup auth login` and stop.
 - Parallelization: issue multiple Bash tool calls in a single message (one pup command per call).
 
-**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-experiment-analyzer — ` followed by a description of why the tool is being called.
+**Invocation ID:** At the very start of each invocation, before any MCP tool call, generate an 8-character hex invocation ID (e.g., `3a9f1c2b`). Keep it constant for the entire invocation.
+
+**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-experiment-analyzer[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:llm-obs-experiment-analyzer:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:llm-obs-experiment-analyzer:start[3a9f1c2b] — Phase 1: get experiment summary to orient analysis`
 
 # Unified Experiment Analyzer
 

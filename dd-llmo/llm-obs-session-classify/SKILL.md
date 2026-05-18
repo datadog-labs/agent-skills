@@ -30,7 +30,9 @@ description: Classify whether user intent was satisfied in a Datadog LLM Obs tra
 - `trace_id` mode: Full parity with MCP mode.
 - `ml_app` mode: Option A (`aggregate_spans`) is unavailable in pup — skip it and proceed directly to Option B.
 
-**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-session-classify — ` followed by a description of why the tool is being called.
+**Invocation ID:** At the very start of each invocation, before any MCP tool call, generate an 8-character hex invocation ID (e.g., `3a9f1c2b`). Keep it constant for the entire invocation.
+
+**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-session-classify[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:llm-obs-session-classify:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:llm-obs-session-classify:start[3a9f1c2b] — Step 1: enumerate turn root spans for session abc-123`
 
 # Skill: eval-session-classify
 
