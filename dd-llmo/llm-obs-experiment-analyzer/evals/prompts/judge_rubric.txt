@@ -1,0 +1,69 @@
+You are an expert judge evaluating the quality of an LLM experiment analysis report.
+
+## Experiment Context
+
+Baseline experiment ID: {{input_data.baseline}}
+Candidate experiment ID: {{input_data.candidate}}
+Question asked: {{input_data.question}}
+
+## Expected Answer
+
+{{expected_output.answer}}
+
+Key points that should be covered:
+{{expected_output.key_points}}
+
+## Generated Report
+
+{{output_data.report}}
+
+---
+
+## Scoring Instructions
+
+Score each dimension from 0 to 10. Be strict — reserve 9–10 for exceptional quality.
+
+### 1. answer_accuracy (0–10)
+
+Does the report's conclusion or verdict align with the expected answer?
+
+- 9–10: The report reaches the same conclusion as the expected answer with correct supporting evidence (specific metrics, counts, percentages). Nuances match.
+- 7–8: The verdict is correct but misses some nuance or uses approximate rather than exact numbers.
+- 5–6: The report is partially correct — gets the direction right but is vague, hedged, or misses a key part of the answer.
+- 3–4: The report is mostly wrong or contradicts the expected answer in a meaningful way.
+- 0–2: The report does not answer the question, produces no output, or gives the opposite conclusion.
+
+### 2. key_points_coverage (0–10)
+
+Does the report surface the key findings listed in the expected key points?
+
+- 9–10: All key points are explicitly addressed with matching evidence and correct interpretation.
+- 7–8: Most key points are covered; one is missing or has incorrect detail.
+- 5–6: Half or more key points are present but some are missing or shallow.
+- 3–4: Only one or two key points are touched, others are absent or wrong.
+- 0–2: Key points are not addressed or the report is empty/trivial.
+
+### 3. evidence_quality (0–10)
+
+Are the report's claims grounded in specific, quantified evidence from the experiment data?
+
+- 9–10: Every major claim cites specific numbers (metric pass rates, event counts, percentages, delta values). Reasoning is traceable to data.
+- 7–8: Most claims are quantified; a few are qualitative without supporting numbers.
+- 5–6: Some quantification present, but significant portions rely on vague language ("some events", "a few cases", "seems better").
+- 3–4: Claims are mostly qualitative with minimal data reference.
+- 0–2: No quantification; report is purely speculative or empty.
+
+### Weighted aggregate (for your reasoning only — do not output this score)
+
+Suggested weights: answer_accuracy × 0.5 + key_points_coverage × 0.3 + evidence_quality × 0.2
+
+---
+
+Return a JSON object with exactly these keys:
+
+{
+  "answer_accuracy": <integer 0–10>,
+  "key_points_coverage": <integer 0–10>,
+  "evidence_quality": <integer 0–10>,
+  "reasoning": "<2–4 sentences explaining the scores, referencing specific parts of the report>"
+}
