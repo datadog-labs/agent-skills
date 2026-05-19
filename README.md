@@ -55,43 +55,47 @@ npx skills add datadog-labs/agent-skills --full-depth -y
 
 ### LLM Observability (LLMO)
 
-The `dd-llmo` directory contains four skills for working with LLM Observability data:
+The `dd-llmo` directory contains five skills for working with LLM Observability data:
 
 | Skill | Purpose |
 |-------|---------|
-| `experiment-analyzer` | Analyze and compare offline LLM experiments |
-| `eval-trace-rca` | Root-cause production failures using eval judge signal or runtime errors |
-| `eval-bootstrap` | Generate evaluator code from traces, optionally seeded by RCA output |
-| `eval-session-classify` | Classify whether user intent was satisfied in a session (trace + RUM signals) |
+| `llm-obs-experiment-analyzer` | Analyze and compare offline LLM experiments |
+| `llm-obs-trace-rca` | Root-cause production failures using eval judge signal or runtime errors |
+| `llm-obs-eval-bootstrap` | Generate evaluator code from traces, optionally seeded by RCA output |
+| `llm-obs-eval-pipeline` | End-to-end pipeline: classify sessions → RCA → bootstrap evaluators |
+| `llm-obs-session-classify` | Classify whether user intent was satisfied in a session (trace + RUM signals) |
 
 **Eval pipeline flow:**
 
 ```
-eval-session-classify          eval-trace-rca → eval-bootstrap
- (classify sessions)           (diagnose why)   (build evals)
+llm-obs-session-classify    llm-obs-trace-rca → llm-obs-eval-bootstrap
+ (classify sessions)          (diagnose why)      (build evals)
 ```
 
-Run `eval-trace-rca` to understand why an app is failing by analyzing eval judge verdicts or
-runtime errors across production traces. Then run `eval-bootstrap` to generate evaluator code
-that captures those failure patterns. Pass the RCA output directly to `eval-bootstrap` to seed
-it with the discovered failure taxonomy.
+Run `llm-obs-trace-rca` to understand why an app is failing by analyzing eval judge verdicts or
+runtime errors across production traces. Then run `llm-obs-eval-bootstrap` to generate evaluator
+code that captures those failure patterns. Pass the RCA output directly to `llm-obs-eval-bootstrap`
+to seed it with the discovered failure taxonomy.
 
-Use `eval-session-classify` independently to evaluate whether individual assistant sessions
+Use `llm-obs-eval-pipeline` to run all three steps in sequence with checkpoints between each phase.
+
+Use `llm-obs-session-classify` independently to evaluate whether individual assistant sessions
 satisfied user intent, combining LLM Obs trace data with RUM behavioral signals.
 
 #### Install
 
 ```bash
 # Claude Code — copy any or all skills
-cp -r dd-llmo/experiment-analyzer ~/.claude/skills
-cp -r dd-llmo/eval-trace-rca ~/.claude/skills
-cp -r dd-llmo/eval-bootstrap ~/.claude/skills
-cp -r dd-llmo/eval-session-classify ~/.claude/skills
+cp -r dd-llmo/llm-obs-experiment-analyzer ~/.claude/skills
+cp -r dd-llmo/llm-obs-trace-rca ~/.claude/skills
+cp -r dd-llmo/llm-obs-eval-bootstrap ~/.claude/skills
+cp -r dd-llmo/llm-obs-eval-pipeline ~/.claude/skills
+cp -r dd-llmo/llm-obs-session-classify ~/.claude/skills
 ```
 
 #### MCP Requirements
 
-All four skills require the LLMO toolset:
+All five skills require the LLMO toolset:
 
 ```bash
 claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'
