@@ -121,13 +121,15 @@ Read this before investigating. It gives you the mental model to reason about no
 
 ## Step 1: Triage
 
-Run all five simultaneously and surface them back to the user as the diagnostics you're running. Everything after this is driven by what you find here.
+Run all seven simultaneously and surface them back to the user as the diagnostics you're running. Everything after this is driven by what you find here. Resolve `<NODE_HOSTNAME>` from `kubectl get pod <POD_NAME> -n <APP_NAMESPACE> -o jsonpath='{.spec.nodeName}'` once you have a pod name; if no pod context yet, run the `pup` commands without `--hostname` first.
 
 ### Claude runs
 
 ```bash
 pup traces search --query "service:<SERVICE_NAME>" --from 1h --limit 5
 pup fleet instrumented-pods list <CLUSTER_NAME>
+pup apm troubleshooting list --hostname <NODE_HOSTNAME> --timeframe 1h
+pup apm service-library-config get --service-name <SERVICE_NAME> --env <ENV>
 kubectl get pod <POD_NAME> -n <APP_NAMESPACE> \
   -o jsonpath='{.spec.initContainers[*].name}'
 kubectl describe pod <POD_NAME> -n <APP_NAMESPACE> | grep -A 10 "Events:"
@@ -135,6 +137,8 @@ kubectl get mutatingwebhookconfigurations | grep datadog
 ```
 
 The last command confirms the Admission Controller webhook is registered cluster-wide — this is the precondition for SSI injection working at all and must be checked even when most other services are being instrumented (any deviation in one webhook config can silently skip a subset of pods).
+
+`pup apm troubleshooting list` surfaces injection errors that Datadog's backend received from the cluster — these point to cluster-side mutation failures that may not be visible from `kubectl describe` alone. `pup apm service-library-config get` shows the runtime SDK config the tracer is operating under; an empty result with `ddTraceConfigs` configured, or unexpected values, points to UST/config-propagation issues.
 
 ---
 
