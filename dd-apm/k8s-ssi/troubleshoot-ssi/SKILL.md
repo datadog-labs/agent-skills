@@ -121,7 +121,7 @@ Read this before investigating. It gives you the mental model to reason about no
 
 ## Step 1: Triage
 
-Run all four simultaneously. Everything after this is driven by what you find here.
+Run all five simultaneously and surface them back to the user as the diagnostics you're running. Everything after this is driven by what you find here.
 
 ### Claude runs
 
@@ -131,13 +131,18 @@ pup fleet instrumented-pods list <CLUSTER_NAME>
 kubectl get pod <POD_NAME> -n <APP_NAMESPACE> \
   -o jsonpath='{.spec.initContainers[*].name}'
 kubectl describe pod <POD_NAME> -n <APP_NAMESPACE> | grep -A 10 "Events:"
+kubectl get mutatingwebhookconfigurations | grep datadog
 ```
+
+The last command confirms the Admission Controller webhook is registered cluster-wide — this is the precondition for SSI injection working at all and must be checked even when most other services are being instrumented (any deviation in one webhook config can silently skip a subset of pods).
 
 ---
 
 ## Step 2: State Your Hypotheses
 
 Before investigating, explicitly state your ranked hypotheses based on triage output. Do not skip this step.
+
+**When the user reports multiple affected services in the same namespace, diagnose each independently.** Two pods can fail injection for entirely different reasons (one opt-out annotation, one missing namespace label, one with pre-existing ddtrace). Do not assume a shared root cause — investigate each service's pod spec, annotations, and runtime separately and surface findings per-service.
 
 | Triage signal | Strong hypothesis |
 |---|---|
@@ -183,6 +188,19 @@ kubectl wait --for=condition=Ready pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --t
 pup fleet instrumented-pods list <CLUSTER_NAME>
 ```
 
+**Does the namespace carry the Admission Controller opt-in label?**
+When the Admission Controller runs with `mutateUnlabelled: false`, injection happens only in namespaces explicitly labeled `admission.datadoghq.com/mutate-pods=true`. A namespace missing this label silently has SSI skipped for every pod in it — a common cause when most cluster services are instrumented but one namespace's services aren't.
+
+```bash
+kubectl get namespace <APP_NAMESPACE> -o jsonpath='{.metadata.labels}'
+kubectl get namespace <APP_NAMESPACE> --show-labels
+```
+
+Fix: label the namespace, then restart the affected deployments so the AC mutates them on pod recreate.
+```bash
+kubectl label namespace <APP_NAMESPACE> admission.datadoghq.com/mutate-pods=true
+```
+
 **Is namespace targeting filtering the pod out?**
 ```bash
 kubectl get datadogagent datadog -n <AGENT_NAMESPACE> -o yaml | grep -A 15 instrumentation
@@ -203,13 +221,24 @@ kubectl get pod <POD_NAME> -n <APP_NAMESPACE> --show-labels
 ```
 Fix: add a matching label to the pod template, or broaden the `podSelector`, then apply and restart.
 
-**Is a pod annotation opting it out?**
-`admission.datadoghq.com/enabled: "false"` tells the webhook to skip this pod.
+**Is a pod annotation opting it out — or missing the AC's injection-success annotation?**
+Two annotations to look for:
+- `admission.datadoghq.com/enabled: "false"` — explicit opt-out, AC skips the pod.
+- `admission.datadoghq.com/status: injected` — set by the AC after successful mutation; its **absence** on a running pod is positive evidence the AC never mutated it.
+
 ```bash
-kubectl get pod <POD_NAME> -n <APP_NAMESPACE> -o yaml | grep -A 5 annotations
-kubectl get pod <POD_NAME> -n <APP_NAMESPACE> --show-labels
+kubectl get pod <POD_NAME> -n <APP_NAMESPACE> -o jsonpath='{.metadata.annotations}'
+kubectl get pod <POD_NAME> -n <APP_NAMESPACE> -o yaml | grep -A 10 annotations
 ```
-Fix: remove the annotation from the Deployment pod template, then apply and restart.
+Fix: remove an opt-out annotation from the Deployment pod template, then apply and restart.
+
+**Are the expected `DD_*` environment variables present in the running pod?**
+SSI injects `DD_SERVICE`, `DD_ENV`, `DD_VERSION`, `DD_TRACE_*`, and `LD_PRELOAD` into the container env when it mutates a pod. Their absence confirms the mutation did not run; their presence with unexpected values points to UST label mismatches or `ddTraceConfigs` issues.
+
+```bash
+kubectl exec -n <APP_NAMESPACE> <POD_NAME> -- env | grep -E '^(DD_|LD_PRELOAD)'
+kubectl describe pod <POD_NAME> -n <APP_NAMESPACE> | grep -E 'DD_|LD_PRELOAD'
+```
 
 ### Claude runs
 
