@@ -379,6 +379,40 @@ When `--evaluator-style remote`, lean toward the `07` style. When `--dataset` is
 
 ---
 
+## Datadog Documentation
+
+These are the canonical reference pages on <https://docs.datadoghq.com/>. Use them to ground answers about LLM Observability features and to look up details that aren't covered in this skill.
+
+| Topic | URL | Use when |
+|---|---|---|
+| LLM Observability overview | <https://docs.datadoghq.com/llm_observability/> | Establishing what the product covers, terminology |
+| Setup | <https://docs.datadoghq.com/llm_observability/setup/> | API/app key creation, project + ml_app setup, region/site selection |
+| Instrumentation overview | <https://docs.datadoghq.com/llm_observability/instrumentation/> | Auto-instrumentation, manual SDK usage, span model |
+| Python SDK reference | <https://docs.datadoghq.com/llm_observability/instrumentation/sdk/> | Public symbol list, decorator semantics, span kinds, annotate/enable signatures |
+| Experiments | <https://docs.datadoghq.com/llm_observability/experiments/> | `LLMObs.experiment(...)`, dataset lifecycle, eval streaming, status states |
+| Evaluations | <https://docs.datadoghq.com/llm_observability/evaluations/> | Evaluator concepts, managed vs custom evaluators |
+| Custom LLM-as-a-judge evaluations | <https://docs.datadoghq.com/llm_observability/evaluations/custom_llm_as_a_judge_evaluations/> | `RemoteEvaluator` payload shape and rubric design |
+| Managed evaluations | <https://docs.datadoghq.com/llm_observability/evaluations/managed_evaluations/> | Pre-built judges (faithfulness, toxicity, etc.) |
+| Monitoring | <https://docs.datadoghq.com/llm_observability/monitoring/> | Alerts, dashboards, span-level monitors |
+| Terms / glossary | <https://docs.datadoghq.com/llm_observability/terms/> | Span kinds, sessions, traces, ml_app |
+| Evaluation developer guide | <https://docs.datadoghq.com/llm_observability/guide/evaluation_developer_guide/> | Writing offline evaluators, validation strategy |
+| Claude Code skills guide | <https://docs.datadoghq.com/llm_observability/guide/claude_code_skills/> | How this skill fits alongside the rest of the `dd-llmo` set |
+| MCP server | <https://docs.datadoghq.com/llm_observability/mcp_server/> | Connecting MCP-compatible clients to LLM Obs data |
+| Reference notebooks (GitHub) | <https://github.com/DataDog/llm-observability/tree/main/experiments/notebooks> | Style-of-life examples for the generated `.py` / `.ipynb` |
+
+### Researching features the skill does not cover
+
+If the user asks about an LLM Observability feature the skill's body doesn't address (e.g., specific span kinds, dataset versioning semantics, an evaluator type not covered above), fetch the relevant page from `docs.datadoghq.com` rather than guessing:
+
+1. **Pick the most specific URL** from the table above. Most LLM Obs questions resolve under `/llm_observability/{experiments,evaluations,instrumentation,monitoring}/`.
+2. **Use `WebFetch`** on that URL with a focused query (e.g., `"How does Dataset.push() handle the 5 MB threshold?"`). Prefer `WebFetch` over generic web search — the canonical page is almost always under `docs.datadoghq.com/llm_observability/`.
+3. **Fall back to `WebSearch`** with `site:docs.datadoghq.com/llm_observability` if you don't know which subpage owns the topic.
+4. **Cite the page** in the answer with its URL so the user can verify and bookmark.
+
+Never invent symbols or behaviors not present in this skill body or the docs above. If the docs don't cover the question either, say so explicitly and suggest filing an issue on `DataDog/llm-observability` rather than fabricating a workaround.
+
+---
+
 ## Operating Rules
 
 - **SDK only.** No `requests.post`, no manual JSON:API envelope construction, no manual ID generation. If a feature seems to require those, you're solving the wrong problem — the SDK already covers it.
@@ -393,3 +427,4 @@ When `--evaluator-style remote`, lean toward the `07` style. When `--dataset` is
 - **Don't generate `requirements.txt` or `pyproject.toml`.** Print the `pip install` command in the next-steps message instead — most users already have a venv.
 - **No silent fallbacks.** If `--format` is unsupported, error out with the valid choices.
 - **Python only.** If a user passes `--language typescript` (or any non-Python language flag), error out — this skill produces Python `ddtrace.llmobs` SDK code only.
+- **Research, don't invent.** If the user asks about an LLM Observability feature, span kind, evaluator type, or SDK symbol that is not documented in this skill body, `WebFetch` the relevant `docs.datadoghq.com/llm_observability/*` page (see the Datadog Documentation table above for the canonical URLs) before answering. Cite the page URL in the response. If the docs don't cover the topic, say so explicitly — never fabricate symbols, flags, or behaviors.
