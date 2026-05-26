@@ -205,7 +205,7 @@ If the user wants to remap an inferred entity, verify `peer.service` is set befo
 
 ### 2. Filter
 
-Write a single event-grammar query string targeting the service(s) to remap. Use the filter syntax and pattern table in Domain Knowledge to pick the right form.
+Write a single event-grammar query string targeting the service(s) to remap. Use the filter syntax and pattern table in Domain Knowledge to pick the right form. **State the filter expression verbatim in the planned-rule preview (Step 3)** — it is the user's primary way to verify the rule will match the intended entities, and they cannot evaluate the rule without it.
 
 ### 3. New name (`value`)
 
