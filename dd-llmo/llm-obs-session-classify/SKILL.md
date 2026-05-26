@@ -1,6 +1,13 @@
 ---
 name: llm-obs-session-classify
-description: Classify whether user intent was satisfied in a Datadog LLM Obs trace or session. Three modes: (1) session_id — classify a single CMD+I assistant session with RUM; (2) trace_id — classify a single LLM Obs trace without RUM; (3) ml_app — sample and classify multiple sessions or traces from a given LLM app. Output is compact by default (verdict + one-sentence reason). Use when evaluating satisfaction, classifying sessions/traces, labeling data, or generating signal for llm-obs-eval-pipeline or llm-obs-trace-rca.
+description: >
+  Classify whether user intent was satisfied in a Datadog LLM Obs trace or session.
+  Three modes: (1) session_id — classify a single CMD+I assistant session with RUM;
+  (2) trace_id — classify a single LLM Obs trace without RUM; (3) ml_app — sample
+  and classify multiple sessions or traces from a given LLM app. Output is compact
+  by default (verdict + one-sentence reason). Use when evaluating satisfaction,
+  classifying sessions/traces, labeling data, or generating signal for
+  llm-obs-eval-pipeline or llm-obs-trace-rca.
 ---
 
 ## Backend

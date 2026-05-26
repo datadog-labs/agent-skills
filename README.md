@@ -50,7 +50,33 @@ npx skills add datadog-labs/agent-skills \
 For ALL skills:
 
 ```bash
-npx skills add datadog-labs/agent-skills --full-depth -y
+npx skills add datadog-labs/agent-skills \
+  --skill dd-pup \
+  --skill dd-monitors \
+  --skill dd-logs \
+  --skill dd-apm \
+  --skill dd-docs \
+  --skill dd-browser-sdk \
+  --skill dd-audit \
+  --skill service-remapping \
+  --skill agent-install \
+  --skill enable-ssi \
+  --skill verify-ssi \
+  --skill troubleshoot-ssi \
+  --skill onboarding-summary \
+  --skill upgrade-browser-sdk-v7 \
+  --skill dd-audit-security-investigation \
+  --skill dd-audit-key-compromise \
+  --skill dd-audit-cost-spike-investigation \
+  --skill dd-audit-compliance-report \
+  --skill dd-audit-ai-activity \
+  --skill llm-obs-experiment-analyzer \
+  --skill llm-obs-trace-rca \
+  --skill llm-obs-eval-bootstrap \
+  --skill llm-obs-eval-pipeline \
+  --skill llm-obs-session-classify \
+  --skill k9-ownership-byod-setup \
+  --full-depth -y
 ```
 
 ### LLM Observability (LLMO)
