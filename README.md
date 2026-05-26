@@ -14,6 +14,7 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 | **dd-llmo** | LLM Observability: experiments, eval RCA, evaluator generation, session classification |
 | **dd-browser-sdk** | Browser SDK: RUM, Logs, Session Replay, profiling, product analytics, error tracking, version migration |
 | **dd-audit** | Audit Trail investigations: who changed what, key compromise, cost spike root cause, compliance evidence (SOC 2/PCI), AI activity auditing |
+| **dd-software-delivery** | CI/CD workflow skills — unblock failing PR pipelines, triage flaky tests |
 
 ## Install
 
@@ -199,6 +200,57 @@ Create a PCI DSS Requirement 10 report for the last 90 days
 # AI activity
 What did the Bits AI assistant do in my org this week?
 Show me a governance report for AI tool calls in April
+```
+
+### Software Delivery (dd-software-delivery)
+
+The `dd-software-delivery` directory contains workflow skills for CI/CD visibility and test reliability:
+
+| Skill | Purpose |
+|-------|---------|
+| `unblock-pr` | Investigate a failing PR CI pipeline — classify each failure as flaky, infra, or regression; fetch code coverage; propose targeted actions |
+| `triage-flaky-test` | Deep-dive on a specific flaky test — get history, blast radius, root cause category, and recommend a code fix or quarantine |
+
+**Workflow:**
+
+```
+unblock-pr → (if flaky failure) → triage-flaky-test → quarantine or fix
+```
+
+Run `unblock-pr` when CI is red on a PR to attribute each failing job. If a failure is classified as **flaky**, the skill hands off to `triage-flaky-test` for deeper investigation and a targeted fix or quarantine via `pup test-optimization flaky-tests update`.
+
+#### Prerequisites
+
+Requires `pup` CLI installed and authenticated (`pup auth login`). See [Setup Pup](#setup-pup).
+
+#### Install
+
+```bash
+# Claude Code — copy any or all skills
+cp -r dd-software-delivery/unblock-pr ~/.claude/skills
+cp -r dd-software-delivery/triage-flaky-test ~/.claude/skills
+```
+
+Or via `npx`:
+
+```bash
+npx skills add datadog-labs/agent-skills \
+  --skill dd-software-delivery/unblock-pr \
+  --skill dd-software-delivery/triage-flaky-test \
+  --full-depth -y
+```
+
+#### Usage
+
+```
+# Investigate a failing PR
+unblock-pr                                    # auto-detects branch and repo from git
+unblock-pr my-feature-branch                  # explicit branch
+unblock-pr my-feature-branch github.com/org/repo
+
+# Triage a specific flaky test
+triage-flaky-test TestMyFunc
+triage-flaky-test com.example.MyTest github.com/org/repo
 ```
 
 ## Quick Reference
