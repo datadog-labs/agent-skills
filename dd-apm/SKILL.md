@@ -55,8 +55,7 @@ When a request could plausibly fit more than one entry above, use these tiebreak
 |---|---|
 | Cluster orchestrator mentioned (EKS/GKE/AKS/kind/K3s/minikube) — even if "just one node" | k8s-ssi |
 | Single host, VM, or EC2 with no orchestrator | linux-ssi |
-| "Several services that should be one" — they have spans from a tracer (real instrumented services) | service-remapping with `rule_type: 0` (SERVICE) |
-| "Several services that should be one" — they're databases, queues, or external APIs | service-remapping with `rule_type: 1` (INFERRED_ENTITY) — verify `peer.service` is set first |
+| "Several services that should be one" | service-remapping — the sub-skill picks the rule type based on whether the duplicates are real instrumented services or inferred entities (DBs, queues, external APIs) |
 | "My service shows under the wrong name" | First check `DD_SERVICE` on the deploy. If correct and the name is still wrong → service-remapping. |
 | "Reduce APM volume / cost / noise" | No sub-skill yet. Ask whether the user means sampling (fewer ingested traces) or retention filters (less indexed data) before suggesting commands. |
 
