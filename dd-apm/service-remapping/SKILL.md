@@ -12,7 +12,7 @@ metadata:
 
 # APM Service Remapping
 
-> **Before doing anything else:** Fully resolve all variables in `## Context to resolve before acting`. Do not begin Step 0 until every variable has a concrete value.
+> **Before acting:** Run read-only verification first — confirm `peer.service` is set on outbound spans (when remapping an inferred entity) and surface an impact preview (monitors/dashboards referencing the old service names). Variables in `## Context to resolve before acting` can be gathered alongside presenting the planned rule. Do not stall the entire flow on a single missing variable when read-only inspection can run with what the user already gave you.
 
 ---
 
@@ -168,7 +168,7 @@ Wait for the user to set credentials, then re-run the check above before continu
 
 | Variable | How to resolve |
 |---|---|
-| `ENV` | Ask the user which environment to target. Do NOT assume `prod`. |
+| `ENV` | Required before creating the rule (Step 4). Ask the user — do NOT assume `prod`. Read-only verification and impact preview do not need `ENV` and should run first. |
 | `ORIGINAL_SERVICE` | Current service name(s) to remap — discover with `pup apm services list` or ask the user |
 | `ENTITY_TYPE` | Instrumented service (`rule_type: 0`) or inferred entity (`rule_type: 1`)? Ask if unclear — see Domain Knowledge |
 | `TARGET_NAME` | The desired new service name — ask the user |
