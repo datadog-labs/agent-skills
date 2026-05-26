@@ -257,9 +257,9 @@ If monitors reference the old service name, ask:
 
 ## Step 3: Confirm the Rule
 
-Show the user the planned rule and confirm before creating:
+Show the user the planned rule and confirm before creating. **Batch any unresolved context variables (e.g. `ENV`) into this same prompt** — do not ask for them in a separate earlier turn. One round-trip, not two.
 
-> *"I'm going to create a service remapping rule named `<RULE_NAME>` with filter `<FILTER>` that maps `<ORIGINAL_SERVICE>` → `<TARGET_NAME>` (rule_type: `<TYPE>`). Ready to proceed?"*
+> *"I'm planning rule `<RULE_NAME>` with filter `<FILTER>` mapping `<ORIGINAL_SERVICE>` → `<TARGET_NAME>` (rule_type: `<TYPE>`). Which environment should this apply to, and is this OK to proceed?"*
 
 Wait for confirmation before continuing.
 
