@@ -16,7 +16,7 @@ Distributed tracing, service maps, and performance analysis.
 
 ## Routing — Read This First
 
-Match the user's request to one of the entries below. Each entry has the same shape: **triggers** → which sub-skill to load → the anti-pattern to avoid. If nothing matches, see "None of the above" at the end.
+Match the user's request to one of the entries below. Each entry has the same shape: **triggers** → which sub-skill to load → the anti-pattern to avoid. If a request seems to fit more than one entry, see "Overlap disambiguation". If nothing matches, see "None of the above" at the end.
 
 ---
 
