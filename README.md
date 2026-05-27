@@ -14,6 +14,8 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 | **dd-llmo** | LLM Observability: experiments, eval RCA, evaluator generation, session classification |
 | **dd-browser-sdk** | Browser SDK: RUM, Logs, Session Replay, profiling, product analytics, error tracking, version migration |
 | **dd-audit** | Audit Trail investigations: who changed what, key compromise, cost spike root cause, compliance evidence (SOC 2/PCI), AI activity auditing |
+| **dd-software-delivery** | CI/CD workflow skills — unblock PR pipelines, triage flaky tests (MCP + pup) |
+| **dd-software-delivery** | CI/CD workflow skills — unblock failing PR pipelines, triage flaky tests |
 
 ## Install
 
@@ -169,6 +171,72 @@ Look at the errors on <ml_app> over the last 24h
 /eval-session-classify <session_id>
 ```
 
+### Software Delivery (dd-software-delivery)
+
+The `dd-software-delivery` directory contains workflow skills for CI/CD visibility and test reliability:
+
+| Skill | Purpose |
+|-------|---------|
+| `unblock-pr` | Investigate a failing PR CI pipeline — classify each failure as flaky, infra, or regression; fetch code coverage and PR quality/security insights; propose targeted actions |
+| `triage-flaky-test` | Deep-dive on a specific flaky test — get history, blast radius, root cause category, and recommend a code fix or quarantine |
+
+**Workflow:**
+
+```
+unblock-pr → (if flaky failure) → triage-flaky-test → quarantine or fix
+```
+
+#### Backend
+
+Both skills auto-detect the available backend at runtime:
+- **MCP mode** (preferred): uses the Datadog software-delivery MCP tools (`search_datadog_ci_pipeline_events`, `get_datadog_flaky_tests`, `retry_datadog_ci_job`, etc.). Enables PR quality/security insights and native GitHub Actions retry.
+- **pup mode** (fallback): uses the `pup` CLI. PR quality/security data is not available; GitHub Actions retry falls back to `gh run rerun`.
+
+Pass `--backend pup` to force pup mode regardless of MCP availability.
+
+#### MCP Requirements
+
+Connect the Datadog MCP server with the `software-delivery` toolset:
+
+```bash
+claude mcp add --scope user --transport http "datadog-mcp" \
+  'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=core,software-delivery'
+```
+
+#### Prerequisites
+
+Requires `pup` CLI for pup mode (and as a fallback). See [Setup Pup](#setup-pup).
+
+#### Install
+
+```bash
+# Claude Code — copy any or all skills
+cp -r dd-software-delivery/unblock-pr ~/.claude/skills
+cp -r dd-software-delivery/triage-flaky-test ~/.claude/skills
+```
+
+Or via `npx`:
+
+```bash
+npx skills add datadog-labs/agent-skills \
+  --skill dd-software-delivery/unblock-pr \
+  --skill dd-software-delivery/triage-flaky-test \
+  --full-depth -y
+```
+
+#### Usage
+
+```
+# Investigate a failing PR
+unblock-pr                                     # auto-detects branch and repo from git
+unblock-pr my-feature-branch                   # explicit branch
+unblock-pr my-feature-branch github.com/org/repo
+
+# Triage a specific flaky test
+triage-flaky-test TestMyFunc
+triage-flaky-test com.example.MyTest github.com/org/repo
+```
+
 ### Audit Trail (dd-audit)
 
 The `dd-audit` directory contains five skills for investigating Datadog Audit Trail data:
@@ -225,6 +293,57 @@ Create a PCI DSS Requirement 10 report for the last 90 days
 # AI activity
 What did the Bits AI assistant do in my org this week?
 Show me a governance report for AI tool calls in April
+```
+
+### Software Delivery (dd-software-delivery)
+
+The `dd-software-delivery` directory contains workflow skills for CI/CD visibility and test reliability:
+
+| Skill | Purpose |
+|-------|---------|
+| `unblock-pr` | Investigate a failing PR CI pipeline — classify each failure as flaky, infra, or regression; fetch code coverage; propose targeted actions |
+| `triage-flaky-test` | Deep-dive on a specific flaky test — get history, blast radius, root cause category, and recommend a code fix or quarantine |
+
+**Workflow:**
+
+```
+unblock-pr → (if flaky failure) → triage-flaky-test → quarantine or fix
+```
+
+Run `unblock-pr` when CI is red on a PR to attribute each failing job. If a failure is classified as **flaky**, the skill hands off to `triage-flaky-test` for deeper investigation and a targeted fix or quarantine via `pup test-optimization flaky-tests update`.
+
+#### Prerequisites
+
+Requires `pup` CLI installed and authenticated (`pup auth login`). See [Setup Pup](#setup-pup).
+
+#### Install
+
+```bash
+# Claude Code — copy any or all skills
+cp -r dd-software-delivery/unblock-pr ~/.claude/skills
+cp -r dd-software-delivery/triage-flaky-test ~/.claude/skills
+```
+
+Or via `npx`:
+
+```bash
+npx skills add datadog-labs/agent-skills \
+  --skill dd-software-delivery/unblock-pr \
+  --skill dd-software-delivery/triage-flaky-test \
+  --full-depth -y
+```
+
+#### Usage
+
+```
+# Investigate a failing PR
+unblock-pr                                    # auto-detects branch and repo from git
+unblock-pr my-feature-branch                  # explicit branch
+unblock-pr my-feature-branch github.com/org/repo
+
+# Triage a specific flaky test
+triage-flaky-test TestMyFunc
+triage-flaky-test com.example.MyTest github.com/org/repo
 ```
 
 ## Quick Reference
