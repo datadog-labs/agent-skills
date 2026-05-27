@@ -2,7 +2,7 @@
 name: agent-skills
 description: Datadog skills for AI agents. Essential monitoring, logging, tracing and observability.
 metadata:
-  version: "1.0.2"
+  version: "1.0.3"
 ---
 
 # Datadog Skills
@@ -20,6 +20,7 @@ Essential Datadog skills for AI agents.
 | **dd-docs** | Search Datadog documentation |
 | **dd-llmo** | LLM Observability traces, experiments, evals |
 | **dd-browser-sdk** | Browser SDK setup, RUM, Logs, Session Replay, version migration |
+| **dd-software-delivery** | CI/CD workflow skills — unblock PR, triage flaky tests |
 
 ## Install
 
@@ -31,6 +32,12 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-logs \
   --skill dd-apm \
   --skill dd-docs \
+  --full-depth -y
+
+# Install CI/CD workflow skills
+npx skills add datadog-labs/agent-skills \
+  --skill dd-software-delivery/unblock-pr \
+  --skill dd-software-delivery/triage-flaky-test \
   --full-depth -y
 ```
 

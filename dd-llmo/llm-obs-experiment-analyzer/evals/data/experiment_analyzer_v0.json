@@ -1,0 +1,87 @@
+[
+    {
+        "input": {
+            "llmo_project_name": "cmd-i-skill-evals",
+            "baseline": "a4b9d02e-203c-4d62-b8ec-ae986e83cb06",
+            "candidate": "a05b32f1-351b-44f0-bf4a-efa85c910de7"
+        },
+        "labels": {
+            "question": "Are there specific scenarios where the notebook skill was loaded in one experiment but not the other?",
+            "answer": "Yes, there are 4 scenarios where the candidate loaded the skill and the baseline didn't, and 3 where the baseline loaded the skill and the candidate didn't.",
+            "key_points": [
+                "2 ValueError crashes in baseline → 0 in candidate, eval pipeline fixed.",
+                "Metric recording was silently broken in baseline — 4/6 metrics now visible for the first time (combined_score 72.1%).",
+                "Skill loading flat overall (~43%), but candidate loses 3 SQL scenarios it shouldn't — worth watching.",
+                "Core task performance unchanged — 1/3 of runs still fail to produce a notebook at all."
+            ]
+        },
+        "metadata": {
+            "created_at": "2026-02-25",
+            "labeler": "mbl"
+        },
+        "record_id": "0edcb42a-b3b1-451f-9db5-ac21f8e40ede"
+    },
+    {
+        "input": {
+            "llmo_project_name": "bits-sre-judge-alignment",
+            "baseline": "21ad232f-b485-40fb-8a73-cf473ddc2c3b",
+            "candidate": "2c2c1525-400e-4d6b-9dd2-110fb0036274"
+        },
+        "labels": {
+            "question": "Which judge gives answers that are better aligned with human preferences, as represented in the eval set, the candidate judge or the baseline judge?",
+            "answer": "4.1 (the candidate) is better aligned. I think it's because we're giving it pretty heavy and specific instructions, which the 4.1 series is built to follow, rather than more open ended or \"goal oriented\" prompting that reasoning models are better at.",
+            "key_points": [
+                "IC was way up.",
+                "Mean error down.",
+                "Bias a little worse than we'd like still.",
+                "Significantly better than baseline overall."
+            ]
+        },
+        "metadata": {
+            "created_at": "2026-02-25",
+            "labeler": "mbl"
+        },
+        "record_id": "e8810544-348e-4340-bad2-c3d57e4e0b5f"
+    },
+    {
+        "input": {
+            "llmo_project_name": "cmdi_o2_tv2_test_trunc",
+            "baseline": "0bf91646-55e5-47b8-bb25-e3efeab93154",
+            "candidate": "7da2caa0-d0f5-4f21-bd24-002c57a17882"
+        },
+        "labels": {
+            "question": "What's the improvement of adding a warning about truncated content out of tools in the prompt?",
+            "answer": "No statistically significant improvement",
+            "key_points": [
+                "The metrics are better on the surface.",
+                "When running deeper analysis these results are not significant.",
+                "Context truncation is not a significant factor in the differing results."
+            ]
+        },
+        "metadata": {
+            "created_at": "2026-02-26",
+            "labeler": "mbl"
+        },
+        "record_id": "7a857d04-e9d8-4c88-b441-c85983d69ce1"
+    },
+    {
+        "input": {
+            "llmo_project_name": "assistant-code-reading",
+            "baseline": "f13a28ab-a10e-444c-b598-31b4596f7311",
+            "candidate": "fd6bc13b-6e7d-40df-843a-4576dd4b0e2b"
+        },
+        "labels": {
+            "question": "Does the tool \"code inspection\" help getting better results?",
+            "answer": "Yes, but the tool is not called, leading to a suspicion that the better results are due to informing the model that it CAN call code.",
+            "key_points": [
+                "Overall results slightly improve, though not significantly, across all categories. Most gains, suspiciously, occurred in non-sandbox scenarios, suggesting the improvement is due to simply informing the model it can investigate code.",
+                "Sandbox use is primarily for code investigation, but results vary significantly from previous experiments, indicating high run-to-run variance. These improvements aren't correlated with sandbox usage."
+            ]
+        },
+        "metadata": {
+            "created_at": "2026-03-05",
+            "labeler": "mbl"
+        },
+        "record_id": "08209254-9600-4dab-9ce1-d4301afa95a2"
+    }
+]

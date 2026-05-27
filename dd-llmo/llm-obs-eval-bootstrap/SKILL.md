@@ -1,7 +1,33 @@
 ---
-name: eval-bootstrap
+name: llm-obs-eval-bootstrap
 description: Bootstrap evaluators from production traces — emit SDK code, a framework-agnostic JSON spec, or publish online LLM-judge evaluators directly to Datadog. Use when user says "bootstrap evaluators", "generate evaluators", "create evals from traces", "eval bootstrap", "write evaluators", "build eval suite", "publish evaluators", or wants to generate BaseEvaluator/LLMJudge code or online judge configs from production LLM trace data. Works with ml_app and optional RCA report or failure hypothesis.
 ---
+
+## Backend
+
+**Detection** — At the start of every invocation, before taking any action, determine which backend to use:
+
+1. If the user passed `--backend pup` anywhere in their invocation → use **pup mode** immediately, regardless of whether MCP tools are present. Skip steps 2–4.
+2. Check whether MCP tools are present in your active tool list. The canonical signal is whether `mcp__datadog-llmo-mcp__list_llmobs_evals` appears in your available tools.
+3. If MCP tools are present → use **MCP mode** throughout. Call MCP tools exactly as named in this skill's workflow sections.
+4. If MCP tools are absent → check whether `pup` is executable: run `pup --version` via Bash. A JSON response containing `"version"` confirms pup is available.
+5. If pup responds → use **pup mode** throughout. Translate every MCP tool call to its pup equivalent using the Tool Reference appendix at the bottom of this file.
+6. If neither is available → stop and tell the user:
+   > "Neither the Datadog MCP server nor the pup CLI is available. Connect the MCP server (`claude mcp add --scope user --transport http datadog-llmo-mcp 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'`) or install pup."
+
+`--backend pup` is accepted anywhere in the invocation arguments and is stripped before passing remaining args to the skill logic.
+
+**pup invocation rules:**
+- Invoke via Bash: `pup llm-obs <subcommand> [flags]`
+- pup always outputs JSON. Parse directly — no content-block unwrapping (unlike MCP results, which may wrap JSON in `[{"type": "text", "text": "<json>"}]`).
+- If pup returns an auth error, tell the user to run `pup auth login` and stop.
+- Parallelization: issue multiple Bash tool calls in a single message (one pup command per call).
+- Time flags: pup accepts bare duration strings (`1h`, `7d`, `30m`) and RFC3339 timestamps. Do **not** use `now-`-prefixed strings — strip the prefix when converting from a skill `--timeframe` argument: `now-7d` → `7d`, `now-24h` → `24h`, `now-30d` → `30d`.
+- `--summary` on `pup llm-obs spans search` strips payload fields to essential metadata only. Use it in bulk/search phases where content is not needed.
+
+**Invocation ID:** At the very start of each invocation, before any MCP tool call, generate an 8-character hex invocation ID (e.g., `3a9f1c2b`). Keep it constant for the entire invocation.
+
+**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-eval-bootstrap[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:llm-obs-eval-bootstrap:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:llm-obs-eval-bootstrap:start[3a9f1c2b] — Phase 0: map existing eval coverage for task-cruncher`
 
 # Eval Bootstrap — Generate Evaluators from Production Traces
 
@@ -41,9 +67,9 @@ If `ml_app` is missing, ask the user before proceeding. If both `--data-only` an
 | `get_llmobs_trace` | Full trace hierarchy as span tree with span counts by kind. |
 | `get_llmobs_agent_loop` | Chronological agent execution timeline (LLM calls, tool invocations, decisions). |
 | `list_llmobs_evals` | List every evaluator configured for the caller's org across all ml_apps, with `enabled` status and `ml_app` per result. Call once in Phase 0 to map existing coverage before proposing new evaluators — filter the result by `ml_app` client-side. |
-| `get_llmobs_evaluator` | Fetch the persisted evaluator config by name (target ml_app + sampling + filter, provider, prompt template, parsing type, output schema, assessment criteria). Use in Phase 0 to understand what each existing custom eval measures and to map coverage. In publish mode also use it for the pre-publish name-collision check (rename or skip — never overwrite). Not all evaluators have a stored config (notably `source=ootb`); a not-found error there is expected — skip those. |
-| `create_or_update_llmobs_evaluator` | *(publish mode)* Write a **new** LLM-judge evaluator config to Datadog. **This skill only ever creates** — it never updates or overwrites an existing evaluator. If a name collision is detected via `get_llmobs_evaluator`, rename (e.g., `_v2` suffix) or skip; never re-call this tool with an `eval_name` that already exists. See "Publishing Conventions" for required fields and structured output → JSON schema mapping. |
-| `delete_llmobs_evaluator` | **This skill never invokes this tool.** Existing evaluators are always preserved. To delete an evaluator, the user does it directly in the UI. |
+| `get_llmobs_evaluator` | Fetch the **full** persisted evaluator config by name (target ml_app + sampling + filter, provider, prompt template, parsing type, output schema, assessment criteria). Use in Phase 0 to understand what each existing custom eval measures, and (in publish mode) **before any update** — `create_or_update_llmobs_evaluator` is full-replace, so you must round-trip the full config to avoid clobbering fields. Not all evaluators have a stored config (notably `source=ootb`); a not-found error there is expected — skip those. |
+| `create_or_update_llmobs_evaluator` | *(publish mode)* Write an LLM-judge evaluator config to Datadog. Full-replace semantics: any omitted optional field resets to its default. See "Publishing Conventions" for required fields and structured output → JSON schema mapping. |
+| `delete_llmobs_evaluator` | *(publish mode)* Only used if the user explicitly asks to remove an evaluator. Never invoke speculatively. |
 
 ### Key `get_llmobs_span_content` Patterns
 
@@ -310,7 +336,7 @@ If you have access to dd-trace-py locally, verify the API surface by reading the
 
 #### Cold Start Path
 
-1. **Sample the app**: `search_llmobs_spans(ml_app=<ml_app>, root_spans_only=true, limit=50, from=<timeframe>, query="@status:ok")`. Filter by `@status:ok` — error spans have no output to evaluate.
+1. **Sample the app**: `search_llmobs_spans(query="@ml_app:\"<ml_app>\" @status:ok", root_spans_only=true, limit=50, from=<timeframe>)`. Filter by `@status:ok` — error spans have no output to evaluate.
 
 2. **Profile the app and identify evaluation target spans**: Call `get_llmobs_span_details` for span_ids grouped by trace_id. Inspect `content_info` to classify:
 
@@ -354,7 +380,22 @@ If you have access to dd-trace-py locally, verify the API surface by reading the
 #### From RCA Path
 
 1. Extract the failure taxonomy from the RCA report. Each failure mode with High or Medium severity becomes an eval target.
-2. For each target: if the RCA includes trace IDs, use them directly; otherwise search for matching traces. Fetch 2-3 traces per target with `get_llmobs_span_content` to understand the concrete pattern.
+
+2. **Check root cause categories for infrastructure failures.** Before proposing evaluators, scan the Root Cause column of the taxonomy for any of: `Instrumentation Deficiency`, `Harness Deficiency`, `Runtime Error`, `Upstream Data Issue`, or any other root cause that points to infrastructure/environment rather than model behavior. If any are present, pause and ask:
+
+   > "Some failure modes were diagnosed as infrastructure or instrumentation issues rather than model behavior (e.g., `{list the infra root causes}`). Evaluators can be designed two ways:
+   > - **Behavior-targeted** (recommended for ongoing quality): measure whether the model produces correct, specific output — useful once the infrastructure is fixed and you want to track real quality
+   > - **Artifact-targeted** (useful as regression guard): detect the specific broken output observed (e.g., generic placeholder responses) — catches regressions if the infrastructure breaks again
+   >
+   > Which approach do you want, or both?"
+
+   - If **behavior-targeted**: design evaluators for what correct output looks like, not what the broken output looked like. Use the RCA's `expected_output` / gold-standard examples as the quality bar.
+   - If **artifact-targeted**: design evaluators that detect the specific failure symptom (e.g., `StringCheckEvaluator` for a known bad string, `LLMJudge` that checks for generic placeholders).
+   - If **both**: propose each category separately, clearly labelled.
+
+   If all root causes are behavioral (System Prompt Deficiency, Tool Gap, Tool Misuse, Retrieval Failure, etc.) → skip this step and proceed directly.
+
+3. For each target: if the RCA includes trace IDs, use them directly; otherwise search for matching traces. Fetch 2-3 traces per target with `get_llmobs_span_content` to understand the concrete pattern.
 
 ---
 
@@ -627,27 +668,37 @@ Wrote {N} evaluators to `{output_path}`:
 
 #### Notebook export (after summary)
 
-After displaying the summary, offer notebook export:
+After displaying the summary, offer notebook export.
 
 - **If `rca_notebook_url` was detected in Phase 0**:
   > An RCA notebook was created earlier in this session: `{rca_notebook_url}`
   > Would you like to (a) append the evaluator suite summary to that notebook, or (b) create a new standalone notebook?
 
-  If **append**: call `mcp__datadog-mcp__edit_datadog_notebook` with `id={rca_notebook_id}`, `append_only=true`, and the evaluator suite summary cell (see Notebook cell content below).
+  If **append**: use the notebook creation fallback pattern (see below) with `mcp__datadog-mcp__edit_datadog_notebook` (`id={rca_notebook_id}`, `append_only=true`, evaluator suite summary cell).
 
-  If **new**: call `mcp__datadog-mcp__create_datadog_notebook` (see below).
+  If **new**: use the notebook creation fallback pattern (see below) with `mcp__datadog-mcp__create_datadog_notebook`.
 
 - **If no `rca_notebook_url`**:
   > Would you like to export this evaluator suite summary to a Datadog notebook?
 
-  If yes: call `mcp__datadog-mcp__create_datadog_notebook` with:
+  If yes: use the notebook creation fallback pattern (see below) with `mcp__datadog-mcp__create_datadog_notebook`:
   - **`name`**: `Eval Bootstrap: {ml_app} — YYYY-MM-DD`
   - **`type`**: `report`
   - **`cells`**: single markdown cell with the evaluator suite summary
   - **`time`**: `{ "live_span": "1h" }`
 
-After the notebook is created or updated, output the URL:
-`Evaluator suite exported to notebook: <url>`
+**Notebook creation fallback pattern** (apply to every `create_datadog_notebook` / `edit_datadog_notebook` call):
+
+1. Try the MCP tool first.
+2. **If the MCP call fails**, inspect the error:
+   - **Auth / permission error (401, 403)** → stop and tell the user.
+   - **Field validation error** (error names a specific field) → fix that field and retry the MCP call once.
+   - **Any other error** (binding, serialization, unexpected response) → fall back to pup:
+     - Write the payload to `/tmp/nb_bootstrap_{ml_app}.json` as a full API envelope: `{"data": {"attributes": {"name": "...", "time": {...}, "cells": [...]}, "type": "notebooks"}}`
+     - Run `pup notebooks create --file /tmp/nb_bootstrap_{ml_app}.json`
+     - If pup is not available either, render the notebook content as markdown in chat.
+3. After successful creation by either method, output the URL:
+   `Evaluator suite exported to notebook: <url>`
 
 **Notebook cell content** — the markdown cell should contain:
 
@@ -656,6 +707,10 @@ After the notebook is created or updated, output the URL:
 
 **Generated**: YYYY-MM-DD | **App profile**: {LLM | RAG | Agent | Multi-agent} | **Entry mode**: {cold_start | from_rca}
 **Generated code**: `{output_path}`
+
+{One sentence: what does this app do?}
+
+**Coverage**: {N} new evaluators ({comma-separated dimension names}) | {N} existing (unchanged: {names}) | {gaps if any: dimensions identified but not covered, and why}
 
 ### Evaluator Suite
 
@@ -778,7 +833,7 @@ Wrote `./evals/{ml_app}_eval_spec.json`:
 
 #### Notebook export (after summary)
 
-Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_url` was detected, or create a new standalone notebook. Use the same notebook cell format as Phase 3A, substituting `output_path` with the JSON spec file path.
+Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_url` was detected, or create a new standalone notebook. Use the same notebook cell format as Phase 3A, substituting `output_path` with the JSON spec file path. In pup mode, use `pup notebooks create` / `pup notebooks edit` as described in Phase 3A.
 
 ---
 
@@ -788,17 +843,17 @@ Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_
 
 #### Pre-publish checks (single message — parallelize)
 
-**Hard rule: this skill never modifies or deletes existing evaluators.** Every published evaluator is a *new* draft. If a proposed name collides with an existing evaluator, the skill renames or skips — it never overwrites. To change an existing evaluator's prompt, sampling, or filter, the user edits it directly in the Datadog UI.
-
 For every proposed `eval_name`, call `get_llmobs_evaluator(eval_name=...)`:
 
 - **Not found** → safe to create.
-- **Found** → existing evaluator with the same name. Surface a one-line summary to the user (existing dimension / prompt direction vs. proposed) and ask:
-  > Evaluator `{name}` already exists in this ml_app. I will **not** modify it. Should I (a) **rename** the new one to `{name}_v2` and create it as a separate draft, or (b) **skip** the proposal entirely?
+- **Found** → existing evaluator with the same name. Surface a diff to the user (existing dimension/prompt vs. proposed) and ask:
+  > Evaluator `{name}` already exists. Overwrite, rename, or skip?
 
-  If **rename**: append a suffix (`_v2`, `_v3`, …) until the name is free, and treat as a new create.
+  If **overwrite**: keep the fetched config as the base and **merge** your generated fields on top, then send the **complete** object back. The MCP tool is full-replace — any field you omit (e.g. `temperature`, `max_tokens`, `filter`, `sampling_percentage`) reverts to its default. Never re-publish without round-tripping the existing config.
 
-  If **skip**: drop from the publish set. Note in the proposal summary that this dimension is already covered by `{name}`.
+  If **rename**: append a suffix (e.g. `_v2`) and treat as new.
+
+  If **skip**: drop from the publish set.
 
 #### Publishing Conventions
 
@@ -1014,7 +1069,7 @@ Either way, the evaluator is published with `enabled: false`. The user is the ga
 
 #### Publish (single message — parallelize)
 
-Issue all `create_or_update_llmobs_evaluator` calls in a **single message** (one per evaluator). Set `telemetry.intent` to a short English description like `"Bootstrap evaluator suite for ml_app=<ml_app> from production trace analysis."`.
+Issue all `create_or_update_llmobs_evaluator` calls in a **single message** (one per evaluator). Set `telemetry.intent` to a short English description like `"skill:llm-obs-eval-bootstrap — Bootstrap evaluator suite for ml_app=<ml_app> from production trace analysis."`.
 
 If any call fails, capture the error and continue with the remaining evaluators — never silently abort the batch. Report failures explicitly in the summary.
 
@@ -1051,12 +1106,12 @@ The drafts are intentionally not running yet. Walk through each one in the Datad
    - **Click into a sample span/trace** and use the test pane to dry-run the prompt against real data. Confirm the result matches your expectation.
 3. **Enable**: once each draft passes review, toggle it to enabled. Datadog starts scoring incoming spans immediately.
 4. **Wait for first scores**: with `sampling_percentage=10` (span scope) or `5` (trace scope), expect first results within minutes for high-traffic apps.
-5. **Tune sampling / filter / prompt**: any post-creation edits live in the UI. The skill never modifies or deletes evaluators it (or anyone) created earlier — re-running `/eval-bootstrap {ml_app} --publish` will detect existing names and either rename (creating a `_v2` draft) or skip them, leaving your tuned originals untouched.
+5. **Tune sampling/filter**: if results are noisy or volume is too high, reduce `sampling_percentage` or tighten the `filter` from the UI. Re-running `/eval-bootstrap {ml_app} --publish` will round-trip the existing config before overwriting — your manual tweaks survive across reruns.
 ```
 
 #### Notebook export (after summary)
 
-Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_url` was detected, or create a new standalone notebook. The notebook cell should list the published evaluators with their UI links and the `ml_app` they target.
+Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_url` was detected, or create a new standalone notebook. The notebook cell should list the published evaluators with their UI links and the `ml_app` they target. In pup mode, use `pup notebooks create` / `pup notebooks edit` as described in Phase 3A.
 
 ---
 
@@ -1066,5 +1121,67 @@ Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_
 - **Don't overfit**: Write criteria that generalize beyond the specific sampled traces. Use examples as grounding, not as the sole criteria.
 - **Show your work**: Every proposed evaluator cites at least one trace as evidence with a clickable link: `[Trace {first_8}...](https://app.datadoghq.com/llm/traces?query=trace_id:{full_32_char_id})`.
 - **New file only**: Never modify existing evaluator code or experiment configurations.
-- **Never modify or delete published evaluators**: In `publish` mode, the skill only ever **creates** new evaluators. It never overwrites, edits, or deletes an existing evaluator config — even if the user re-runs the skill on the same ml_app. Name collisions resolve to **rename** (suffix `_v2`, `_v3`, …) or **skip**, chosen by the user at the pre-publish check. Tuning a published evaluator (sampling, filter, prompt) is done by the user in the Datadog UI; the skill stays out of that loop.
 - **Honest about uncertainty**: If fewer than 5 traces support a proposed evaluator, flag it as tentative.
+
+---
+
+## Tool Reference
+
+This appendix applies only in **pup mode**. In MCP mode, use the tool names in the workflow sections directly.
+
+### Spans and traces
+
+| MCP Tool | pup Command |
+|---|---|
+| `search_llmobs_spans(query, ml_app, from, to, limit, cursor, root_spans_only, span_kind, summary)` | `pup llm-obs spans search --query "@ml_app:A [other_filters]" [--from F] [--to T] [--limit N] [--cursor C] [--root-spans-only] [--span-kind K] [--summary]` — **always use `--query "@ml_app:A"` to filter by ml_app**; the `--ml-app A` flag is unreliable and silently returns spans from other apps. |
+| `get_llmobs_span_details(trace_id, span_ids, from, to)` | `pup llm-obs spans get-details --trace-id T --span-ids S1,S2,...` |
+| `get_llmobs_span_content(trace_id, span_id, field, path)` | `pup llm-obs spans get-content --trace-id T --span-id S --field F [--path P]` |
+| `get_llmobs_trace(trace_id, include_tree)` | `pup llm-obs spans get-trace --trace-id T [--include-tree]` |
+| `get_llmobs_agent_loop(trace_id, span_id)` | `pup llm-obs spans get-agent-loop --trace-id T [--span-id S]` |
+| `find_llmobs_error_spans(trace_id)` | `pup llm-obs spans find-errors --trace-id T` |
+| `expand_llmobs_spans(trace_id, span_ids, max_depth, filter_kind)` | `pup llm-obs spans expand --trace-id T --span-ids S1,S2,... [--max-depth N] [--filter-kind K]` |
+
+### Evaluators
+
+| MCP Tool | pup Command |
+|---|---|
+| `list_llmobs_evals()` | `pup llm-obs evals list` (filter by `ml_app` client-side) |
+| `list_llmobs_evals_by_ml_app(ml_app)` | `pup llm-obs evals list-by-ml-app --ml-app A` |
+| `get_llmobs_evaluator(eval_name)` | `pup llm-obs evals get-evaluator EVAL_NAME` |
+| `get_llmobs_eval_aggregate_stats(eval_name, ml_app, from, to)` | `pup llm-obs evals get-aggregate-stats EVAL_NAME [--ml-app A] [--from F] [--to T]` |
+| `delete_llmobs_evaluator(eval_name)` | `pup llm-obs evals delete EVAL_NAME` |
+| `create_or_update_llmobs_evaluator(...)` | `pup llm-obs evals create-or-update EVAL_NAME --file /tmp/eval_EVAL_NAME.json` — see flat schema note below |
+
+#### `create_or_update_llmobs_evaluator` in pup mode
+
+pup uses a **flat** JSON file (all fields top-level). `get-evaluator` returns a **nested** object. Transform as follows:
+
+1. **Round-trip check**: Call `pup llm-obs evals get-evaluator EVAL_NAME` first. If it exists, start from its config.
+2. **Flatten `llm_provider`**: hoist `integration_provider`, `model_name`, `integration_account_id`, `temperature` to top level, dropping the `llm_provider` key.
+3. **Merge and set `enabled: false`**.
+4. **Write to temp file and call**:
+   ```bash
+   pup llm-obs evals create-or-update EVAL_NAME --file /tmp/eval_EVAL_NAME.json
+   ```
+   Use unique temp file names when publishing multiple evaluators in parallel (e.g. `/tmp/eval_toxicity.json`).
+
+| `get-evaluator` field | Flat JSON key |
+|---|---|
+| `llm_provider.integration_provider` | `integration_provider` |
+| `llm_provider.model_name` | `model_name` |
+| `llm_provider.integration_account_id` | `integration_account_id` |
+| `llm_provider.temperature` | `temperature` |
+| All other fields | Unchanged (already top-level) |
+
+### Notebooks
+
+| MCP Tool | pup Command |
+|---|---|
+| `create_datadog_notebook(name, cells, ...)` | `pup notebooks create --title "TITLE" --file /tmp/nb_cells.json` — confirm exact flags with `pup notebooks create --help` |
+| `edit_datadog_notebook(id, cells, append_only=true)` | `pup notebooks edit NOTEBOOK_ID --file /tmp/nb_cells.json` (fetches current notebook, appends provided cells, writes back) |
+
+The cells file is a JSON array of cell objects:
+```json
+[{"attributes": {"definition": {"type": "markdown", "text": "## Section\n\nContent."}}, "type": "notebook_cells"}]
+```
+- **MCP result parsing safety**: Before writing any script (Python, jq, etc.) that iterates over or accesses fields in an MCP tool result, inspect the raw structure first — check `type(result)`, top-level keys, and whether the payload is nested inside a content block (e.g. `[{'type': 'text', 'text': '<json>'}]`). Extract and `json.loads()` the inner payload if needed before parsing. Never assume MCP results are bare dicts or lists.
