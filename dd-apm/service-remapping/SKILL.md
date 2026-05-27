@@ -12,7 +12,7 @@ metadata:
 
 # APM Service Remapping
 
-> **Before acting:** Run read-only verification first — confirm `peer.service` is set on outbound spans (when remapping an inferred entity) and surface an impact preview (monitors/dashboards referencing the old service names). Variables in `## Context to resolve before acting` can be gathered alongside presenting the planned rule. Do not stall the entire flow on a single missing variable when read-only inspection can run with what the user already gave you.
+> **Before acting:** Surface an impact preview (monitors/dashboards referencing the old service name) before presenting the planned rule. For inferred-entity remaps, also confirm `peer.service` is set on outbound spans. Variables from `## Context to resolve before acting` can be gathered alongside that preview rather than blocking it.
 
 ---
 
