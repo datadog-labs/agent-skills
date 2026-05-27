@@ -12,7 +12,7 @@ metadata:
 
 # APM Service Remapping
 
-> **Before doing anything else:** Fully resolve all variables in `## Context to resolve before acting`. Do not begin Step 0 until every variable has a concrete value.
+> **Before acting:** Surface an impact preview (monitors/dashboards referencing the old service name) before presenting the planned rule. For inferred-entity remaps, also confirm `peer.service` is set on outbound spans. Variables from `## Context to resolve before acting` can be gathered alongside that preview rather than blocking it.
 
 ---
 
@@ -168,7 +168,7 @@ Wait for the user to set credentials, then re-run the check above before continu
 
 | Variable | How to resolve |
 |---|---|
-| `ENV` | Ask the user which environment to target. Do NOT assume `prod`. |
+| `ENV` | Required before creating the rule (Step 4). Ask the user — do NOT assume `prod`. Read-only verification and impact preview do not need `ENV` and should run first. |
 | `ORIGINAL_SERVICE` | Current service name(s) to remap — discover with `pup apm services list` or ask the user |
 | `ENTITY_TYPE` | Instrumented service (`rule_type: 0`) or inferred entity (`rule_type: 1`)? Ask if unclear — see Domain Knowledge |
 | `TARGET_NAME` | The desired new service name — ask the user |
@@ -205,7 +205,7 @@ If the user wants to remap an inferred entity, verify `peer.service` is set befo
 
 ### 2. Filter
 
-Write a single event-grammar query string targeting the service(s) to remap. Use the filter syntax and pattern table in Domain Knowledge to pick the right form.
+Write a single event-grammar query string targeting the service(s) to remap. Use the filter syntax and pattern table in Domain Knowledge to pick the right form. **State the filter expression verbatim in the planned-rule preview (Step 3)** — it is the user's primary way to verify the rule will match the intended entities, and they cannot evaluate the rule without it.
 
 ### 3. New name (`value`)
 
@@ -257,9 +257,9 @@ If monitors reference the old service name, ask:
 
 ## Step 3: Confirm the Rule
 
-Show the user the planned rule and confirm before creating:
+Show the user the planned rule and confirm before creating. **Batch any unresolved context variables (e.g. `ENV`) into this same prompt** — do not ask for them in a separate earlier turn. One round-trip, not two.
 
-> *"I'm going to create a service remapping rule named `<RULE_NAME>` with filter `<FILTER>` that maps `<ORIGINAL_SERVICE>` → `<TARGET_NAME>` (rule_type: `<TYPE>`). Ready to proceed?"*
+> *"I'm planning rule `<RULE_NAME>` with filter `<FILTER>` mapping `<ORIGINAL_SERVICE>` → `<TARGET_NAME>` (rule_type: `<TYPE>`). Which environment should this apply to, and is this OK to proceed?"*
 
 Wait for confirmation before continuing.
 
