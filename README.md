@@ -73,26 +73,29 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-audit-compliance-report \
   --skill dd-audit-ai-activity \
   --skill llm-obs-experiment-analyzer \
+  --skill llm-obs-experiment-py-bootstrap \
   --skill llm-obs-trace-rca \
   --skill llm-obs-eval-bootstrap \
   --skill llm-obs-eval-pipeline \
   --skill llm-obs-session-classify \
+  --skill llm-obs-onboarding-datasets-experiments \
   --skill k9-ownership-byod-setup \
   --full-depth -y
 ```
 
 ### LLM Observability (LLMO)
 
-The `dd-llmo` directory contains six skills for working with LLM Observability data:
+The `dd-llmo` directory contains seven skills for working with LLM Observability data:
 
 | Skill | Purpose |
 |-------|---------|
 | `llm-obs-experiment-analyzer` | Analyze and compare offline LLM experiments |
 | `llm-obs-experiment-py-bootstrap` | Generate self-contained Python experiment code using the `ddtrace.llmobs` SDK |
 | `llm-obs-trace-rca` | Root-cause production failures using eval judge signal or runtime errors |
-| `llm-obs-eval-bootstrap` | Generate evaluator code from traces, optionally seeded by RCA output |
+| `llm-obs-eval-bootstrap` | Generate evaluator code from traces, optionally seeded by RCA output. Also emits a dataset from traces in `--emit-dataset` mode. |
 | `llm-obs-eval-pipeline` | End-to-end pipeline: classify sessions → RCA → bootstrap evaluators |
 | `llm-obs-session-classify` | Classify whether user intent was satisfied in a session (trace + RUM signals) |
+| `llm-obs-onboarding-datasets-experiments` | Guided six-state onboarding through the datasets + experiments loop, composing the skills above |
 
 **Eval pipeline flow:**
 
@@ -125,11 +128,12 @@ cp -r dd-llmo/llm-obs-trace-rca ~/.claude/skills
 cp -r dd-llmo/llm-obs-eval-bootstrap ~/.claude/skills
 cp -r dd-llmo/llm-obs-eval-pipeline ~/.claude/skills
 cp -r dd-llmo/llm-obs-session-classify ~/.claude/skills
+cp -r dd-llmo/llm-obs-onboarding-datasets-experiments ~/.claude/skills
 ```
 
 #### MCP Requirements
 
-All six skills require the LLMO toolset:
+All seven skills require the LLMO toolset:
 
 ```bash
 claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'
@@ -169,6 +173,10 @@ Look at the errors on <ml_app> over the last 24h
 
 # Classify a session
 /eval-session-classify <session_id>
+
+# Guided onboarding through datasets + experiments (6 narrated states)
+/llm-obs-onboarding-datasets-experiments <ml_app>
+/llm-obs-onboarding-datasets-experiments <ml_app> --timeframe now-30d --trace-limit 25 --format ipynb
 ```
 
 ### Software Delivery (dd-software-delivery)
