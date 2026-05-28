@@ -174,6 +174,41 @@ Type "continue" to proceed, or give me adjustments.
 >
 > **Why this state matters**: before you curate a dataset, you want a quick read on what your app actually does in production and where its current failure modes are. That signal informs which traces are worth turning into experiment records.
 
+**Trace pool preview (MANDATORY).** Before invoking the sub-skill, build and surface a Datadog Traces UI link that opens the **exact set of root spans State 2 will sample from**. This lets the user eyeball the pool, spot outliers, or adjust `--timeframe` before any classification work runs. The link must match the filter that `llm-obs-eval-bootstrap --emit-dataset` uses in State 2 (see `dd-llmo/llm-obs-eval-bootstrap/SKILL.md` → Phase 3D → Sampling): `@ml_app:"<ml_app>" @status:ok`, root spans only.
+
+URL construction rules:
+
+1. **Host**: prepend `app.` to `DD_SITE`. If `DD_SITE` is unset, default to `app.datadoghq.com`.
+   - `datadoghq.com` → `app.datadoghq.com`
+   - `datadoghq.eu` → `app.datadoghq.eu`
+   - `us3.datadoghq.com` → `app.us3.datadoghq.com`
+   - `us5.datadoghq.com` → `app.us5.datadoghq.com`
+   - `ap1.datadoghq.com` → `app.ap1.datadoghq.com`
+   - `ap2.datadoghq.com` → `app.ap2.datadoghq.com`
+   - `datad0g.com` → `app.datad0g.com` (staging)
+2. **Path**: `/llm/traces` (the LLM Observability Traces explorer).
+3. **Query string**: URL-encode the search expression `@ml_app:"<ml_app>" @status:ok @parent_id:undefined` (the `@parent_id:undefined` clause restricts to root spans, matching `root_spans_only=true` in the sub-skill call). Bind to `query=`.
+4. **Time window**: convert the `--timeframe` value to absolute epoch milliseconds.
+   - For relative durations like `now-7d` / `now-30d` / `now-24h`: compute `end = current epoch ms`, `start = end - <duration in ms>`. Bind to `start=` and `end=`.
+   - For absolute RFC3339 timestamps: convert each to epoch ms.
+5. **Optional**: append `&paused=true` so the UI does not live-stream the result on open (less jarring for a preview).
+
+Final shape:
+
+```
+https://<app-host>/llm/traces?query=<url-encoded-query>&start=<epoch_ms>&end=<epoch_ms>&paused=true
+```
+
+Surface the link immediately before the Action block:
+
+```
+**Trace pool being analyzed** ({timeframe}, filter `@ml_app:"<ml_app>" @status:ok`, root spans only):
+
+  <full URL>
+
+State 1 will classify the first {min(20, trace-limit)} of these for orientation. State 2 will sample up to {trace-limit} from the same pool for the dataset. Click through if you want to see the pool before either runs, or adjust `--timeframe` and re-invoke if the window looks off.
+```
+
 **Action**: Invoke the **`llm-obs-session-classify`** skill in **ml_app mode**, using:
 - `ml_app` = the provided ml_app
 - `timeframe` = the provided timeframe
@@ -191,11 +226,14 @@ After the `# Session Classification Summary` is output, present:
 [verdict distribution table from session-classify]
 [failure mode frequency table from session-classify]
 
+**Trace pool for State 2's dataset sample**: <full URL from the Trace pool preview above>
+(same filter / same timeframe — open it now if you want to scan for traces you'd rather exclude)
+
 Next up — State 2 will sample traces from this ml_app and turn them into dataset records you can run experiments against.
 
 Before I continue:
 - Do these failure patterns look right?
-- Are there specific traces you'd like to exclude from the dataset sample in State 2?
+- Are there specific traces you'd like to exclude from the dataset sample in State 2? (Paste trace IDs from the link above and I'll drop them.)
 - Any quality dimension you already know you want to measure later?
 
 Type "continue" to proceed, or give me adjustments.
