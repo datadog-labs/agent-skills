@@ -1,2 +1,8 @@
 .*
 !.gitignore
+!.github
+!.github/**
+
+# Rust build artifacts (Cargo.lock is ignored because this crate is a library).
+/target
+/Cargo.lock
