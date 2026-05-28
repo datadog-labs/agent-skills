@@ -80,6 +80,32 @@ Before State 1, do a single short verification pass — do **not** announce a "s
 2. **ml_app has recent traces** — call `search_llmobs_spans(query="@ml_app:\"<ml_app>\"", root_spans_only=true, limit=1, from="<timeframe>")` (MCP) or the pup equivalent. If the result is empty, stop and tell the user the precheck failed — there is nothing to onboard against — and suggest widening `--timeframe` or confirming the ml_app name.
 3. **Resolve `project_name`** — if `--project-name` was not supplied, derive it using the resolution order documented in `dd-llmo/llm-obs-experiment-py-bootstrap/SKILL.md` (Workflow step 1). Keep this as a string in working memory; it gets used in State 4.
 4. **Ensure `--output-dir` exists** — `mkdir -p <output-dir>` via Bash. Cheap.
+5. **Resolve credentials.** Walk the discovery order below to find Datadog credentials before State 3 needs them — failing late at the publish step is bad UX. Read-only at this stage: do NOT write any new files. Do NOT print secret values to the user; only report which file was loaded and which keys were resolved.
+
+   **Discovery order** (first hit per variable wins; shell env vars always override files):
+   1. **Current shell environment** (`os.environ`) — already-exported `DD_API_KEY` / `DD_APPLICATION_KEY` / `DD_APP_KEY` / `DD_SITE` take precedence. If all required keys are already present, skip file loading entirely.
+   2. **`<output-dir>/.env`** — if the user previously ran the skill and dropped a `.env` next to past artifacts, prefer that.
+   3. **`<app-root>/.env`** — where `<app-root>` is the resolved `pyproject.toml` / `setup.cfg` / `setup.py` / `package.json` directory (or cwd if none).
+   4. **`<app-root>/.env.local`** — git-ignored local override convention.
+   5. **`<cwd>/.env`** — fallback if cwd differs from app-root.
+   6. **Parent walk**: from cwd, walk up directory by directory looking for `.env` until reaching `/` or the user's home directory. Stop at the first hit.
+   7. **`~/.datadog/credentials`** — Datadog's well-known per-user credentials file, if present.
+
+   For each file checked, parse line-by-line: skip blanks / comment lines (`#`) / malformed lines (no `=`). Strip a leading `export ` if present (so `.envrc`-style files work). Split on the first `=`. Strip surrounding quotes on the value. Only set a variable that is not already in `os.environ` — never overwrite the shell.
+
+   **Required keys**: `DD_API_KEY` AND (`DD_APPLICATION_KEY` OR `DD_APP_KEY`). `DD_SITE` is optional (defaults to `datadoghq.com`). Provider keys (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.) are validated later in States 4/5 against the introspected task — not here.
+
+   **If all required keys resolved** — record which file(s) were loaded and emit a single-line summary in the Precheck block (see template below). Continue.
+
+   **If required keys NOT found after walking every location** — stop and prompt the user with a clear, actionable message:
+
+   > "Datadog credentials were not found in your shell env or any discovered `.env` file. Two options before continuing:
+   > - **Export in your shell**: `export DD_API_KEY=…` and `export DD_APPLICATION_KEY=…` (also `DD_SITE=…` if non-default), then re-invoke this skill.
+   > - **Drop a `.env`** at `<app-root>/.env` with `DD_API_KEY=…` and `DD_APPLICATION_KEY=…` on separate lines, then re-invoke.
+   >
+   > Make sure `.env` is in your `.gitignore` before committing."
+
+   Do **not** offer to create the `.env` file for the user — secrets-on-disk decisions belong to the user, not the skill.
 
 Output a one-block precheck summary, then move directly to State 1:
 
@@ -90,9 +116,16 @@ Output a one-block precheck summary, then move directly to State 1:
 - ml_app `<ml_app>` has traces in <timeframe>: yes (<sample_count> root spans found)
 - Project name: `<project_name>`
 - Output dir: `<output-dir>` (created)
+- Credentials: <one of:
+    "loaded from shell env (DD_API_KEY, DD_APPLICATION_KEY, DD_SITE)"
+  | "loaded from <relative path to .env file> (DD_API_KEY, DD_APPLICATION_KEY[, DD_SITE])"
+  | "shell env + <relative path>: keys resolved from both (shell overrode file for <list>)"
+  >
 
 Starting State 1 of 6.
 ```
+
+The exact list of keys in the parenthetical reflects what was actually discovered (so the user can verify nothing surprising was loaded). Never print the values.
 
 ---
 
@@ -249,18 +282,62 @@ import json
 import os
 import pathlib
 
-# Load a sibling .env if present (no python-dotenv dependency).
-_env_path = pathlib.Path(__file__).resolve().parent / ".env"
-if _env_path.is_file():
-    for line in _env_path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+
+def _load_env_files() -> list[str]:
+    """Walk standard locations for .env-style files. Shell env always wins.
+
+    Mirrors the discovery order in the onboarding skill's Precheck step 5
+    (see dd-llmo/llm-obs-onboarding-datasets-experiments/SKILL.md). Order:
+    sibling dir of this script, app root, cwd, then a parent walk, then
+    ~/.datadog/credentials. Returns the absolute paths of files loaded.
+    """
+    here = pathlib.Path(__file__).resolve().parent
+    cwd = pathlib.Path.cwd().resolve()
+    candidates: list[pathlib.Path] = [
+        here / ".env",
+        here / ".env.local",
+        cwd / ".env",
+        cwd / ".env.local",
+    ]
+    # Walk up from cwd looking for any .env file in a parent dir.
+    p = cwd
+    while p != p.parent and p != pathlib.Path.home().parent:
+        candidates.append(p / ".env")
+        p = p.parent
+    candidates.append(pathlib.Path.home() / ".datadog" / "credentials")
+
+    loaded: list[str] = []
+    seen: set[pathlib.Path] = set()
+    for path in candidates:
+        try:
+            path = path.resolve()
+        except Exception:
             continue
-        k, _, v = line.partition("=")
-        k = k.strip()
-        v = v.strip().strip('"').strip("'")
-        if k and k not in os.environ:
-            os.environ[k] = v
+        if path in seen or not path.is_file():
+            continue
+        seen.add(path)
+        try:
+            text = path.read_text()
+        except Exception:
+            continue
+        for line in text.splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            if line.startswith("export "):
+                line = line[len("export "):]
+            k, _, v = line.partition("=")
+            k = k.strip()
+            v = v.strip().strip('"').strip("'")
+            if k and k not in os.environ:  # shell wins over file
+                os.environ[k] = v
+        loaded.append(str(path))
+    return loaded
+
+
+_env_files = _load_env_files()
+if _env_files:
+    print(f"Loaded credentials from: {', '.join(_env_files)}")
 
 from ddtrace.llmobs import LLMObs
 
@@ -336,14 +413,16 @@ print(f"OK dataset_name={DATASET_NAME} record_count={len(records)} url={url}")
 ```
 
 **Notes for the orchestrator:**
-- Read `DD_API_KEY` / `DD_APPLICATION_KEY` (or `DD_APP_KEY`) from the user's shell env first; if they're missing, also check for a `.env` file colocated with the publish script (the loader in the script handles this). Tell the user to set these if both paths fail.
+- Credential discovery is delegated entirely to the publish script's `_load_env_files()` helper. The script walks the same locations the Precheck already inspected (script dir, app root, cwd, parent dirs, `~/.datadog/credentials`), and surfaces the loaded file path(s) in its stdout. Shell env always wins over file-loaded values — so the user can override anything by `export DD_API_KEY=...` before re-running.
+- If the Precheck already established that credentials resolve, the script's `_load_env_files()` will just be a confirmation no-op (vars are already in `os.environ`).
 - If `_normalize_tags` printed any `WARNING:` line, surface that prominently in Checkpoint 3 — the user should know their input dataset had malformed tags so they can chase the upstream cause on re-runs.
+- If the script prints `Loaded credentials from: ...`, include that file path in Checkpoint 3 so the user knows which secrets file the publish actually used.
 
 Execution rules:
 - Use `python <path>` via Bash. Pipe stdout+stderr; surface the result to the user.
 - **Before executing**, do a precheck: run `python -c "import ddtrace.llmobs"` via Bash. If it fails, stop and tell the user:
-  > "`ddtrace` is not installed in the active Python environment. Run `pip install 'ddtrace>=4.7' python-dotenv` and re-invoke this skill from State 3 (`/llm-obs-onboarding-datasets-experiments <ml_app> --resume-state 3` is on the roadmap; for now just re-run from the top — State 1 and 2 outputs are idempotent)."
-- If the script run fails with an auth error (401/403), surface the message and stop — do not retry.
+  > "`ddtrace` is not installed in the active Python environment. Run `pip install 'ddtrace>=4.7'` and re-invoke this skill from State 3 (just re-run from the top — State 1 and 2 outputs are idempotent). The publish script has its own `.env` loader, so `python-dotenv` is no longer required."
+- If the script run fails with an auth error (401/403), surface the message and stop — do not retry. Tell the user the most likely cause is that a discovered `.env` file has a stale / wrong key, and that they can override via `export DD_API_KEY=... DD_APPLICATION_KEY=...` in their shell (which takes precedence) and re-run.
 - If it succeeds, capture the printed `dataset_name` and `url`.
 
 ### Checkpoint 3

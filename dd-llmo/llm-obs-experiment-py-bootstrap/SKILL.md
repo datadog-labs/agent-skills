@@ -34,6 +34,7 @@ All inputs are optional. If the user omits a flag, fall back to the default — 
 | `--task-source` | auto — discovered by application introspection (see Workflow step 2.5) | Explicit override: `<dotted.module.path>:<function_name>` for the function to wrap as `task_fn`. Use when you already know the entry point and want to skip the introspection scan. |
 | `--placeholder-task` | off | Opt out of application introspection and emit the generic `# TODO(user)` placeholder task. Use when scaffolding without a real app, in tests, or when the user explicitly wants to fill in the task themselves. |
 | `--app-root` | resolved from `pyproject.toml` / `setup.cfg` / `setup.py` / cwd | Root directory the introspection scan is restricted to. Skipped if `--placeholder-task` or `--task-source` is set. |
+| `--env-file` | none — generated file auto-discovers `.env` files at runtime (see Workflow step 4, section 1) | Explicit absolute path to a `.env`-style file. Generated code preloads this path **first** before the auto-discovery walk. Use when your credentials live in a non-standard location (e.g. `~/.config/dd/staging.env`). |
 
 ---
 
@@ -224,7 +225,11 @@ custom_judge = RemoteEvaluator(
 The same section sequence in both formats. In `.py` these become comment banners; in `.ipynb` each becomes one markdown cell + one code cell.
 
 ```
-1. Env setup           — load_dotenv(), os.getenv reads, hard assert keys present
+1. Env setup           — auto-discover .env files (cwd, app root, parent walk,
+                         ~/.datadog/credentials), then os.getenv reads + hard-assert
+                         required keys. NO python-dotenv dependency. Shell env wins
+                         over file-loaded values. Only the provider keys actually
+                         needed by the wired task_fn are asserted (see step 2.5).
 2. LLMObs.enable()     — explicit api_key/app_key/project_name/agentless_enabled
 3. Dataset             — inline records OR create_dataset_from_csv
 4. Task function       — REAL task function imported from the user's app (via Workflow step 2.5
@@ -364,6 +369,116 @@ The same section sequence in both formats. In `.py` these become comment banners
 
    - **Fallback to placeholder**: if `--placeholder-task` is set OR the introspection picked nothing, emit the original placeholder block (generic OpenAI call with `# TODO(user)`). This is the only path where `TODO(user)` is allowed in the task section.
 
+2.6. **Determine required credentials and emit the env-setup section.** The generated experiment must work without the user pre-exporting anything in their shell, *as long as* a discoverable `.env` lives in a standard location. Don't push setup work onto the user that the file can do itself.
+
+   **Required Datadog keys** (always): `DD_API_KEY` AND (`DD_APPLICATION_KEY` OR `DD_APP_KEY`). `DD_SITE` is optional (defaults to `datadoghq.com`).
+
+   **Required provider keys** — depend on what step 2.5 picked. Inspect the imported call site and add the matching assertion. If introspection picked nothing (placeholder fallback), assert OpenAI keys (since the placeholder makes an OpenAI call). Mapping:
+
+   | Detected SDK in task | Provider key(s) to assert |
+   |---|---|
+   | OpenAI (`openai.*`, `client.chat.completions.create`) — including the placeholder fallback | `OPENAI_API_KEY` |
+   | Azure OpenAI (`AzureOpenAI(...)`, `azure_endpoint=`) | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` |
+   | Anthropic (`anthropic.*`, `Anthropic().messages.create`) | `ANTHROPIC_API_KEY` |
+   | LiteLLM (`litellm.completion`) | Skip — LiteLLM routes to whatever provider the underlying model identifier resolves to. Emit a comment instead: `# LiteLLM auto-routes; ensure the keys for your chosen model's provider are set in .env or shell.` |
+   | LangChain (`ChatOpenAI` / `ChatAnthropic` / etc.) | Walk one level deeper — the chat client class names the provider. Assert that provider's key as above. |
+   | LlamaIndex | Same one-level walk — find the underlying LLM/embedder class and map to its provider key. |
+   | Google Gemini (`google.generativeai`) | `GEMINI_API_KEY` OR `GOOGLE_API_KEY` (assert either is present, not both) |
+   | AWS Bedrock (`boto3.client("bedrock-runtime")`) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (plus optional `AWS_SESSION_TOKEN`, `AWS_REGION`) |
+   | Custom / not-recognized SDK | Emit a `# TODO(user): set the API key(s) your task_fn needs in your .env or shell.` comment instead of an assert. Do NOT fabricate provider keys. |
+
+   **Always emit the credential loader (`_load_env_files`)** at the top of section 1 — even if the user is expected to use shell env vars. The loader is a tiny pure-Python helper (no python-dotenv dependency) that walks discovery locations and never overwrites already-set shell vars. This is the same helper used by the onboarding skill's State 3 publish script (see `dd-llmo/llm-obs-onboarding-datasets-experiments/SKILL.md` → State 3 → publish script). Copy this exact shape into section 1 of the generated file:
+
+   ```python
+   import os
+   import pathlib
+
+
+   def _load_env_files(extra: list[str] | None = None) -> list[str]:
+       """Discover .env files and import their keys into os.environ.
+
+       Walks: explicit --env-file arg → this file's dir → cwd → parent dirs →
+       ~/.datadog/credentials. Shell env always wins (we never overwrite a key
+       already in os.environ).
+
+       Returns the absolute paths actually loaded so the runner can print them.
+       """
+       here = pathlib.Path(__file__).resolve().parent
+       cwd = pathlib.Path.cwd().resolve()
+       candidates: list[pathlib.Path] = []
+       for p in extra or []:
+           candidates.append(pathlib.Path(p).expanduser())
+       candidates += [
+           here / ".env",
+           here / ".env.local",
+           cwd / ".env",
+           cwd / ".env.local",
+       ]
+       p = cwd
+       while p != p.parent and p != pathlib.Path.home().parent:
+           candidates.append(p / ".env")
+           p = p.parent
+       candidates.append(pathlib.Path.home() / ".datadog" / "credentials")
+
+       loaded: list[str] = []
+       seen: set[pathlib.Path] = set()
+       for path in candidates:
+           try:
+               path = path.resolve()
+           except Exception:
+               continue
+           if path in seen or not path.is_file():
+               continue
+           seen.add(path)
+           try:
+               text = path.read_text()
+           except Exception:
+               continue
+           for line in text.splitlines():
+               line = line.strip()
+               if not line or line.startswith("#") or "=" not in line:
+                   continue
+               if line.startswith("export "):
+                   line = line[len("export "):]
+               k, _, v = line.partition("=")
+               k = k.strip()
+               v = v.strip().strip('"').strip("'")
+               if k and k not in os.environ:
+                   os.environ[k] = v
+           loaded.append(str(path))
+       return loaded
+
+
+   # If --env-file was passed when the skill generated this file, that path is
+   # baked in as ENV_FILE_OVERRIDE so it is always tried first at runtime. Edit
+   # this constant to point at a different file without regenerating.
+   ENV_FILE_OVERRIDE: list[str] = [<resolved --env-file or []>]
+
+   _loaded_env_paths = _load_env_files(ENV_FILE_OVERRIDE)
+   if _loaded_env_paths:
+       print(f"Loaded credentials from: {', '.join(_loaded_env_paths)}")
+   ```
+
+   **Then** emit the per-key assertions, one per required key, with a clear message that mentions both override paths:
+
+   ```python
+   _required_dd_keys = ["DD_API_KEY"]  # app key handled below since the var name is split-aliased
+   for _k in _required_dd_keys:
+       assert os.getenv(_k), (
+           f"{_k} is not set. Export it in your shell or add it to a discovered "
+           f".env file (this file checked: cwd, app dir, parent dirs, "
+           f"~/.datadog/credentials)."
+       )
+   assert os.getenv("DD_APPLICATION_KEY") or os.getenv("DD_APP_KEY"), (
+       "DD_APPLICATION_KEY (or its alias DD_APP_KEY) is not set. Same fallback "
+       "paths as above."
+   )
+   # Provider keys — depend on what task_fn ended up calling (step 2.5):
+   assert os.getenv("OPENAI_API_KEY"), "OPENAI_API_KEY is required for the wired task_fn."  # only if applicable
+   ```
+
+   Generate **only** the asserts that map to the introspection result (the row in the SDK-to-key table above). Do NOT emit `assert os.getenv("OPENAI_API_KEY")` when the task uses Anthropic.
+
 3. **Pick evaluator template** based on `--evaluator-style`:
    - `function`: 3 plain functions — one trivial boolean (`exact_match`-style, bare `bool` OK), one richer rule-based check returning `EvaluatorResult` with `reasoning` + `assessment`, and one LLM-as-Judge surrogate. If `--dataset` had structured `expected_output`, add a JSON-shape check (also returning `EvaluatorResult`).
    - `class`: 2 `BaseEvaluator` subclasses with `evaluate(self, context: EvaluatorContext) -> EvaluatorResult`. Always return `EvaluatorResult` (never a bare value) — state-bearing evaluators have richer signal to surface.
@@ -453,13 +568,26 @@ Task function source:
 Syntax check: <pass | skipped: toolchain missing | fail with details>
 
 Install:
-  pip install "ddtrace>=4.7" python-dotenv openai
+  pip install "ddtrace>=4.7" <provider-sdk-if-needed>
+  # python-dotenv is NOT required — the generated file ships its own .env loader.
 
-Environment variables (required at runtime):
-  export DD_API_KEY=...
-  export DD_APPLICATION_KEY=...
-  export DD_SITE=datadoghq.com
-  export OPENAI_API_KEY=...   # only if you kept a placeholder OpenAI task
+Credentials:
+  The generated file auto-discovers .env files at runtime. Discovery order
+  (first non-empty value wins per key; shell env always overrides files):
+    1. --env-file path baked in as ENV_FILE_OVERRIDE (if --env-file was passed)
+    2. <output-file's-directory>/.env
+    3. <output-file's-directory>/.env.local
+    4. <cwd>/.env  and  <cwd>/.env.local
+    5. parent-walk from cwd up to /
+    6. ~/.datadog/credentials
+
+  Drop a .env at any of those locations with at minimum:
+    DD_API_KEY=...
+    DD_APPLICATION_KEY=...
+    DD_SITE=datadoghq.com           # only if not the US1 prod site
+    <PROVIDER>_API_KEY=...           # the provider key the wired task needs
+  Or override on a per-run basis by exporting them in your shell — the loader
+  never overwrites a value that is already in os.environ.
 
 Run:
   python <path>                  # for --format py
@@ -530,6 +658,8 @@ Never invent symbols or behaviors not present in this skill body or the docs abo
 - **SDK only.** No `requests.post`, no manual JSON:API envelope construction, no manual ID generation. If a feature seems to require those, you're solving the wrong problem — the SDK already covers it.
 - **Public imports only.** `from ddtrace.llmobs import ...`. Never `_experiment`, `_llmobs`, or any underscore-prefixed module.
 - **Env vars, not literals.** Credentials always read from `os.environ`. The generated `main()` (or the env-setup cell) must `assert` they're set with a clear message.
+- **Auto-discover, don't push setup work onto the user.** Section 1 always emits the `_load_env_files` helper (no `python-dotenv` dependency). It walks the discovery order documented in Workflow step 2.6 and prints which file(s) it loaded. Never substitute `load_dotenv()` from the third-party `python-dotenv` package — the inline helper has zero dependencies and is identical in behavior. Shell env vars always win over file-loaded values so the user can override any auto-discovered value by `export <KEY>=...` before re-running.
+- **Provider-key asserts must match the wired task.** Generate the assert for `OPENAI_API_KEY` only if the task imports / calls OpenAI; same for Anthropic / Gemini / Bedrock / etc. Per the Workflow step 2.6 table. Never emit asserts for provider keys the task does not actually need — they're confusing and cause spurious "missing key" failures.
 - **Always pass `site=` to `LLMObs.enable()`.** Read it from `os.getenv("DD_SITE", "datadoghq.com")`. Omitting `site=` silently defaults to US1 prod, which breaks every non-prod org (e.g. staging `datad0g.com`, `datadoghq.eu`). The canonical signature already includes it — never drop it.
 - **Per-record `tags` are `"key:value"` strings.** When inlining records (whether from `--dataset` JSON, CSV, or the default sample), each entry in a record's `"tags"` list must be a `"key:value"` string like `"env:prod"`, `"source:traces"`, `"category:geography"`. Bare strings (`"smoke"`, `"baseline"`) trigger `ValueError: Tag '<name>' is malformed.` at `Dataset.append()` time. If the source data has bare-string tags, namespace them — e.g. wrap `"smoke"` as `"tag:smoke"` rather than dropping it.
 - **Introspect first, placeholder last.** The default behavior is Workflow step 2.5 — scan the user's app, find the LLM entry point, wire `task_fn` to it. A `# TODO(user)` marker in the task section is only acceptable when introspection genuinely found nothing or the user passed `--placeholder-task`. Never emit a placeholder task when a real candidate exists in the project — that's the failure mode this skill exists to fix.
