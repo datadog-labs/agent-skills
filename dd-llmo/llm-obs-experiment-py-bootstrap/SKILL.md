@@ -12,7 +12,7 @@ The SDK handles lazy project/experiment creation, dataset push diffing, the 5 MB
 ## Usage
 
 ```
-/llm-obs-experiment-py-bootstrap [--format py|ipynb] [--dataset <path>] [--dataset-name <name>] [--dataset-version <int>] [--project-name <name>] [--evaluator-style function|class|remote] [--jobs <n>] [--output <path>]
+/llm-obs-experiment-py-bootstrap [--format py|ipynb] [--dataset <path>] [--dataset-name <name>] [--dataset-version <int>] [--project-name <name>] [--evaluator-style function|class|remote] [--jobs <n>] [--output <path>] [--task-source <module:function>] [--placeholder-task] [--app-root <path>]
 ```
 
 Arguments: $ARGUMENTS
@@ -31,6 +31,10 @@ All inputs are optional. If the user omits a flag, fall back to the default — 
 | `--evaluator-style` | `function` | `function` (plain functions — notebook default), `class` (`BaseEvaluator` subclasses), or `remote` (`RemoteEvaluator` instances). |
 | `--jobs` | `10` | Passed to `experiment.run(jobs=N)`. |
 | `--output` | `./experiments/experiment.<ext>` | File extension derives from `--format`: `.py` or `.ipynb`. |
+| `--task-source` | auto — discovered by application introspection (see Workflow step 2.5) | Explicit override: `<dotted.module.path>:<function_name>` for the function to wrap as `task_fn`. Use when you already know the entry point and want to skip the introspection scan. |
+| `--placeholder-task` | off | Opt out of application introspection and emit the generic `# TODO(user)` placeholder task. Use when scaffolding without a real app, in tests, or when the user explicitly wants to fill in the task themselves. |
+| `--app-root` | resolved from `pyproject.toml` / `setup.cfg` / `setup.py` / cwd | Root directory the introspection scan is restricted to. Skipped if `--placeholder-task` or `--task-source` is set. |
+| `--env-file` | none — generated file auto-discovers `.env` files at runtime (see Workflow step 4, section 1) | Explicit absolute path to a `.env`-style file. Generated code preloads this path **first** before the auto-discovery walk. Use when your credentials live in a non-standard location (e.g. `~/.config/dd/staging.env`). |
 
 ---
 
@@ -84,7 +88,9 @@ dataset = LLMObs.pull_dataset(
 )
 
 def task_fn(input_data: dict, config: dict):
-    # TODO(user): replace with your actual LLM call
+    # In real output, this is wired to the user's discovered LLM call site via
+    # Workflow step 2.5. Only emits as a generic placeholder (with # TODO(user))
+    # when --placeholder-task is set or introspection found nothing.
     ...
 
 # Plain function evaluator (default style)
@@ -124,7 +130,7 @@ print(experiment.url)
 
 ## Evaluator Styles
 
-Generated code uses **one** of three evaluator surfaces, picked by `--evaluator-style`. Whichever style is chosen, **prefer returning `EvaluatorResult` over a bare `bool`/`float`** whenever the evaluator has any signal beyond the raw value — see "Return EvaluatorResult, not bare values" below.
+Generated code uses **one** of three evaluator surfaces, picked by `--evaluator-style`. The detail for each lives in `references/evaluator-styles/<style>.md` and is loaded on demand — only the chosen style is consulted at generation time. The single piece of guidance that applies to all three is the `EvaluatorResult` rule below.
 
 ### Return `EvaluatorResult`, not bare values
 
@@ -138,79 +144,19 @@ Plain functions are allowed to return `bool` / `float` / `dict`, and `BaseEvalua
 | `metadata` | `dict[str, JSONType]` | Free-form per-record context (e.g. `{"confidence": 0.95}`); shown in record drill-down. |
 | `tags` | `dict[str, JSONType]` | Used to slice experiment results in the UI (e.g. `{"category": "accuracy"}`). |
 
-The generated code should default to `EvaluatorResult` for any evaluator richer than a one-line equality check. The trivial `exact_match` and `length_under_500` shown below are the only cases where a bare `bool` is acceptable.
+Default to `EvaluatorResult` for any evaluator richer than a one-line equality check. Trivial checks like `exact_match` and `length_under_500` are the only cases where a bare `bool` is acceptable.
 
-### `function` (default — what the notebooks use)
+### Style router
 
-Plain Python functions with the signature `(input_data, output_data, expected_output)`. Always emit at least three: a trivial boolean (returns `bool`), a richer rule-based one (returns `EvaluatorResult`), and an LLM-as-Judge surrogate (a `RemoteEvaluator` reference or a placeholder).
+When `--evaluator-style` is resolved (default `function`), read the matching reference file from `<this-skill-dir>/references/evaluator-styles/` and emit section 5 of the generated file using the code template it contains:
 
-```python
-from ddtrace.llmobs import EvaluatorResult
+| `--evaluator-style` value | Read | Best for |
+|---|---|---|
+| `function` *(default)* | `references/evaluator-styles/function.md` | Most cases — matches the canonical notebook style |
+| `class` | `references/evaluator-styles/class.md` | Evaluators that need persistent state or an async client |
+| `remote` | `references/evaluator-styles/remote.md` | Server-side LLM-as-Judge configured in the Datadog UI, reused across experiments |
 
-# Trivial check — bare bool is fine here, the result has no extra signal.
-def exact_match(input_data, output_data, expected_output) -> bool:
-    return output_data == expected_output
-
-# Richer check — use EvaluatorResult so reasoning/assessment surface in the UI.
-def response_well_formed(input_data, output_data, expected_output) -> EvaluatorResult:
-    if not isinstance(output_data, str):
-        return EvaluatorResult(
-            value=False,
-            reasoning=f"output_data was {type(output_data).__name__}, expected str",
-            assessment="fail",
-        )
-    if len(output_data) > 500:
-        return EvaluatorResult(
-            value=False,
-            reasoning=f"output exceeded 500 chars (was {len(output_data)})",
-            assessment="fail",
-            metadata={"length": len(output_data)},
-        )
-    return EvaluatorResult(value=True, assessment="pass")
-```
-
-### `class` (advanced — for evaluators that need state or async I/O)
-
-Always return `EvaluatorResult` from `evaluate()` — never a bare value. State-bearing evaluators usually have richer reasoning to surface anyway.
-
-```python
-from ddtrace.llmobs import BaseEvaluator, EvaluatorContext, EvaluatorResult
-
-class FaithfulnessJudge(BaseEvaluator):
-    def __init__(self):
-        super().__init__(name="faithfulness")
-        # TODO(user): initialize any client or state here
-
-    def evaluate(self, context: EvaluatorContext) -> EvaluatorResult:
-        # context exposes: input_data, output_data, expected_output, metadata
-        # TODO(user): replace placeholder logic with your faithfulness check
-        passed = context.output_data is not None
-        return EvaluatorResult(
-            value=1.0 if passed else 0.0,
-            reasoning="placeholder — replace with your faithfulness rubric",
-            assessment="pass" if passed else "fail",
-            metadata={"evaluator_version": "v1"},
-        )
-```
-
-### `remote` (LLM-as-Judge running server-side)
-
-```python
-from ddtrace.llmobs import RemoteEvaluator
-
-# Create the judge in Datadog UI first: LLM Observability → Evaluations → New Evaluator
-quality_judge = RemoteEvaluator(eval_name="<name-from-datadog-ui>")
-
-# Optional: customize the payload the judge receives
-custom_judge = RemoteEvaluator(
-    eval_name="<name>",
-    transform_fn=lambda ctx: {
-        "question": ctx.input_data.get("question"),
-        "answer": ctx.output_data,
-        "reference": ctx.expected_output,
-    },
-)
-```
+Do **not** load all three. Each reference file is self-contained — code template + when-to-use + when-not-to-use guidance.
 
 ---
 
@@ -219,10 +165,17 @@ custom_judge = RemoteEvaluator(
 The same section sequence in both formats. In `.py` these become comment banners; in `.ipynb` each becomes one markdown cell + one code cell.
 
 ```
-1. Env setup           — load_dotenv(), os.getenv reads, hard assert keys present
+1. Env setup           — auto-discover .env files (cwd, app root, parent walk,
+                         ~/.datadog/credentials), then os.getenv reads + hard-assert
+                         required keys. NO python-dotenv dependency. Shell env wins
+                         over file-loaded values. Only the provider keys actually
+                         needed by the wired task_fn are asserted (see step 2.5).
 2. LLMObs.enable()     — explicit api_key/app_key/project_name/agentless_enabled
 3. Dataset             — inline records OR create_dataset_from_csv
-4. Task function       — placeholder OpenAI call with # TODO(user) marker
+4. Task function       — REAL task function imported from the user's app (via Workflow step 2.5
+                         introspection) and adapted to the SDK signature. Only falls back to a
+                         placeholder OpenAI call with # TODO(user) if --placeholder-task is set or
+                         no LLM call site was found in the project.
 5. Evaluators          — 2-3 in the requested style
 6. Experiment          — LLMObs.experiment(config={..., "generated_by": "claude-code", ...}, tags={"generated_by": "claude-code", ...})
 7. Run                 — experiment.run(jobs=N); print(experiment.url)
@@ -263,6 +216,127 @@ The same section sequence in both formats. In `.py` these become comment banners
      - Fall back to the inline 3-record sample described under `--dataset`'s default, so the generated file remains runnable as-is.
 
    **Note on dataset IDs.** The public SDK's `LLMObs.pull_dataset(...)` takes a name, not an ID — so there's no `--dataset-id` flag. If a user only has a dataset ID from a Datadog UI URL (`/llm/datasets/<id>`), the workflow is: open that URL in the UI, copy the dataset name, and pass it as `--dataset-name`. The skill must not import `ddtrace.llmobs._experiment` or any other underscore module to work around this.
+
+2.5. **Discover the task function from the user's application code.** This step replaces the old "placeholder `task_fn`" behavior — an onboarding-grade experiment needs to actually exercise the user's real LLM logic. The skill must do the work, not push it onto the user.
+
+   **Skip this entire step if** `--placeholder-task` is set, OR if `--task-source <module>:<function>` is set (in which case use the provided source directly — jump to substep 2.5d). Otherwise:
+
+   **2.5a — Resolve the app root.** If `--app-root <path>` was supplied, use it. Otherwise use the directory containing whichever of these resolved during step 1 (in order): `pyproject.toml`, `setup.cfg`, `setup.py`, `package.json`. If none of those resolved, use the current working directory. **Hard cap** the scan to that directory tree; do **not** traverse `node_modules`, `.venv`, `venv`, `__pycache__`, `.git`, `dist`, `build`, `target`, `vendor`, `third_party`, or any directory matched by `.gitignore` if present. Refuse to scan if the resolved root is `/` or `~` — that means resolution failed; treat as no candidate found.
+
+   **2.5b — Candidate discovery.** Use Grep / Bash to find Python files inside the app root and identify call sites of these LLM SDKs (the union of common LLM clients):
+
+   | Module / call pattern | Signal |
+   |---|---|
+   | `openai.ChatCompletion.create`, `openai.chat.completions.create`, `client.chat.completions.create` | OpenAI chat |
+   | `openai.completions.create`, `client.completions.create` | OpenAI text |
+   | `anthropic.messages.create`, `client.messages.create`, `Anthropic(...).messages.create` | Anthropic |
+   | `litellm.completion`, `litellm.acompletion` | LiteLLM (router) |
+   | `langchain.*.invoke`, `ChatOpenAI(...)`, `ChatAnthropic(...)`, `LLMChain(...)` | LangChain |
+   | `from llama_index`, `as_query_engine`, `as_chat_engine` | LlamaIndex |
+   | `google.generativeai.GenerativeModel(...).generate_content` | Vertex/Gemini |
+   | `boto3.client("bedrock-runtime").invoke_model` | AWS Bedrock |
+   | `@LLMObs.llm`, `@LLMObs.agent`, `@LLMObs.workflow`, `@LLMObs.task`, `@workflow`, `@agent` | Already instrumented |
+
+   For each match, walk **up** to the enclosing function (`def` / `async def`) — call it the *call-site function*. Record `{file, line, function_name, is_async, signature, enclosing_class}`.
+
+   **Skip** files matching `test_*.py`, `*_test.py`, `tests/**`, `conftest.py`, `*_fixtures.py`. Skip private helpers (`def _foo` where the function is the *only* one in the file and looks like a utility — judge by whether it has a typed string input).
+
+   **2.5c — Score and rank candidates.** Score each candidate; higher is more likely to be the "core" entry point:
+
+   | Signal | Score delta |
+   |---|---|
+   | Function name in {`generate`, `chat`, `complete`, `respond`, `answer`, `handle_request`, `process_query`, `process_message`, `run`, `predict`, `infer`, `call_llm`, `query`, `agent_loop`, `main`} | **+5** |
+   | Function takes exactly one or two parameters, at least one being a `str` or `dict` | **+3** |
+   | Function is decorated with any `@LLMObs.*` / `@workflow` / `@agent` decorator | **+5** (this is the *intended* instrumentation point) |
+   | Function is at the top of its module (first non-import block) | **+2** |
+   | Module path matches `**/{main,app,api,handlers,server,routes,agent,bot,chat}.py` | **+3** |
+   | Function is a class method (`self` first arg) but the class name matches `*Agent`, `*Bot`, `*Handler`, `*Service` | **+2** |
+   | Function name starts with `_` and module has other non-underscore candidates | **−3** (likely a helper) |
+   | Function file is under `examples/`, `scripts/`, `notebooks/` | **−2** |
+   | Function uses LLM SDK at multiple lines (looks like a multi-step orchestration, not just a single call) | **+1** |
+
+   Pick the **top 3** candidates and present them to the user as a single short prompt (no `AskUserQuestion` — just a checkpoint prompt in chat):
+
+   ```
+   ## Task function discovery
+
+   Scanned `<app_root>` and found <N> LLM-calling functions. Top candidates:
+
+   1. `<module.path>:<function_name>`   score <S>   (<file>:<line>, args=<sig>)
+   2. ...
+   3. ...
+
+   I'll wire candidate **1** as the experiment's task function unless you say otherwise.
+   Reply with the number to pick a different candidate, or "placeholder" to emit a
+   generic placeholder task instead.
+   ```
+
+   Wait for confirmation. If the user is silent / says "go" / says "1", use #1. If they pick another number, use that. If they say "placeholder", set `--placeholder-task` semantics and skip to step 3. If the user supplies a different `module:function`, validate it exists, then use it.
+
+   **If zero candidates were found**, do not block the user — print a one-line note ("No LLM call sites detected under `<app_root>`. Emitting a generic placeholder task — replace it before running.") and fall through with placeholder semantics.
+
+   **2.5d — Generate the task function wrapper.** Once a target `<module>:<function>` is locked in, emit a real `task_fn` that imports and calls the user's function. This is **section 4** of the generated file ("Task function") and must NOT include `# TODO(user)` markers if introspection succeeded — the whole point is to remove that burden.
+
+   Wrapper construction rules:
+
+   - **Import**: emit `from <module> import <function_name>` at the top of section 4 (NOT at the top of the file — keeping it local makes the section self-contained and easy to swap). If the function is a class method, also import the class and instantiate it lazily inside `task_fn` (default `__init__()`, with a `# TODO: pass constructor args if needed` comment only if the constructor takes required arguments).
+   - **Signature adaptation**: the SDK's task function signature is `task_fn(input_data: dict, config: dict) -> Any`. The user's function probably has a different signature. Build a small adapter:
+
+     - If the user's function takes one parameter and the dataset's `input_data` looks like `{"<key>": <value>}` with one key, call `<function_name>(input_data["<key>"])`.
+     - If the user's function takes multiple parameters, map them by name from `input_data` keys. If a name doesn't match, fall back to positional via `input_data.values()` order but emit a one-line comment flagging the assumption.
+     - If the user's function takes `**kwargs` or a single dict, pass `input_data` through unmodified.
+     - If the user's function is `async`, wrap with `asyncio.run(...)` inside a sync `task_fn` (simplest path; lets `LLMObs.experiment(...).run()` stay sync). Alternative: emit an `async def task_fn` and use `LLMObs.async_experiment(...)` — only do this if the rest of the experiment is already async.
+   - **Config passthrough**: never silently drop the `config` argument. If the user's function takes a `config` / `model` / `temperature` parameter, wire `config.get("...")` into it.
+   - **Comment header**: emit a comment block above `task_fn` that names the source function, file, line, and notes any adaptation choices, e.g.:
+
+     ```python
+     # Task function wired to: <module.path>:<function_name>
+     #   source: <file>:<line>
+     #   adapter: input_data["<key>"] -> <function_name>(<key>=...)
+     #
+     # To experiment with prompt / model variants without editing your app, inline
+     # the call here instead of importing.
+     ```
+
+   - **Side-effect warning**: scan the chosen function (and its immediate calls within the same module) for these patterns. If any are present, print a `WARNING:` line in the next-steps output, but do NOT alter the import:
+
+     | Pattern | Warning |
+     |---|---|
+     | `os.environ[...]` reads beyond LLM API keys | "Task reads env vars beyond LLM credentials — make sure they're set when running the experiment." |
+     | `requests.`, `httpx.`, `aiohttp.` calls to non-LLM-provider URLs | "Task makes external HTTP calls — running the experiment will hit those endpoints." |
+     | DB drivers (`psycopg2`, `sqlalchemy`, `pymongo`, `redis`, `boto3` ≠ bedrock) | "Task hits a database — point at a non-prod instance before running." |
+     | File I/O writes (`open(..., 'w')`, `Path.write_*`) | "Task writes to disk — make sure the path is safe in your experiment env." |
+
+   - **Fallback to placeholder**: if `--placeholder-task` is set OR the introspection picked nothing, emit the original placeholder block (generic OpenAI call with `# TODO(user)`). This is the only path where `TODO(user)` is allowed in the task section.
+
+2.6. **Determine required credentials and emit the env-setup section.** The generated experiment must work without the user pre-exporting anything in their shell, *as long as* a discoverable `.env` lives in a standard location. Don't push setup work onto the user that the file can do itself.
+
+   **Required Datadog keys** (always): `DD_API_KEY` AND (`DD_APPLICATION_KEY` OR `DD_APP_KEY`). `DD_SITE` is optional (defaults to `datadoghq.com`).
+
+   **Required provider keys** — depend on what step 2.5 picked. Inspect the imported call site to identify the provider, then **read the matching reference file** for the exact assert lines, adapter notes, and gotchas. Only load the one that applies; do not load all of them.
+
+   | Detected SDK in task | Read |
+   |---|---|
+   | OpenAI (`openai.*`, `client.chat.completions.create`) — also the placeholder fallback | `references/providers/openai.md` |
+   | Azure OpenAI (`AzureOpenAI(...)`, `azure_endpoint=`) | `references/providers/openai.md` (Azure section) |
+   | Anthropic (`anthropic.*`, `Anthropic().messages.create`) | `references/providers/anthropic.md` |
+   | LiteLLM (`litellm.completion`, `litellm.acompletion`) | `references/providers/litellm.md` |
+   | LangChain (`ChatOpenAI` / `ChatAnthropic` / etc.) | `references/providers/langchain.md` (walks one level deeper to the underlying provider) |
+   | LlamaIndex | `references/providers/llamaindex.md` |
+   | Google Gemini (`google.generativeai`) / Vertex AI | `references/providers/gemini.md` |
+   | AWS Bedrock (`boto3.client("bedrock-runtime")`) | `references/providers/bedrock.md` |
+   | Custom / not-recognized SDK | No reference file — emit a `# TODO(user): set the API key(s) your task_fn needs in your .env or shell.` comment instead of an assert. Do NOT fabricate provider keys. |
+
+   **Emit section 1 by reading the shipped template at `<this-skill-dir>/scripts/env_setup_template.py` and substituting two placeholders.** The template ships alongside this SKILL.md (`cp -r` install handles it) and is the canonical source for the loader + assert shape — do **not** re-derive it inline. Read the file, perform the substitutions below, and emit the result verbatim as section 1 of the generated experiment file.
+
+   | Placeholder | Replacement | Example |
+   |---|---|---|
+   | `{{ENV_FILE_OVERRIDE_LIST}}` | A Python list literal of absolute paths from `--env-file` (repeatable; empty list if not passed) | `[]` or `["/Users/me/.config/dd/staging.env"]` |
+   | `{{PROVIDER_ASSERTS}}` | Zero or more `assert os.getenv(...)` lines derived from what step 2.5 wired — per the SDK-to-key table above. One line per required provider key. Empty string if the task uses LiteLLM (which auto-routes) or a custom/unrecognized SDK. | `assert os.getenv("ANTHROPIC_API_KEY"), "ANTHROPIC_API_KEY is required for the wired task_fn."` |
+
+   The exact assert line(s) to substitute into `{{PROVIDER_ASSERTS}}` live in each provider's reference file under the `## {{PROVIDER_ASSERTS}} substitution` heading. Read only the file that matches the detected SDK from the table above.
+
+   The template's discovery walk (env file → script dir → cwd → parent dirs → `~/.datadog/credentials`) and shell-overrides-file contract are stable — they live in the template, not in this skill body. If you need to change discovery semantics, edit `scripts/env_setup_template.py` directly; do not re-derive them in-prose here.
 
 3. **Pick evaluator template** based on `--evaluator-style`:
    - `function`: 3 plain functions — one trivial boolean (`exact_match`-style, bare `bool` OK), one richer rule-based check returning `EvaluatorResult` with `reasoning` + `assessment`, and one LLM-as-Judge surrogate. If `--dataset` had structured `expected_output`, add a JSON-shape check (also returning `EvaluatorResult`).
@@ -339,23 +413,48 @@ SDK calls used:
   ✓ LLMObs.experiment(...).run(jobs=<N>)     (line/cell ~<N>)
   ✓ Provenance (in config + tags): generated_by=claude-code, skill=llm-obs-experiment-py-bootstrap
 
+Task function source:
+  ✓ Wired to: <module.path>:<function_name>   (source: <file>:<line>)
+  ✓ Adapter: <one line describing the input_data → call shape mapping>
+  ✓ Sync/async: <sync | async (wrapped with asyncio.run)>
+  [WARNING lines from the side-effect scan in Workflow step 2.5d, if any]
+
+(If --placeholder-task was used or introspection found nothing:)
+Task function source:
+  ⚠ Placeholder task emitted (no real LLM call site found / opted out).
+    Replace `task_fn` with your actual LLM call before running.
+
 Syntax check: <pass | skipped: toolchain missing | fail with details>
 
 Install:
-  pip install "ddtrace>=4.7" python-dotenv openai
+  pip install "ddtrace>=4.7" <provider-sdk-if-needed>
+  # python-dotenv is NOT required — the generated file ships its own .env loader.
 
-Environment variables (required at runtime):
-  export DD_API_KEY=...
-  export DD_APPLICATION_KEY=...
-  export DD_SITE=datadoghq.com
-  export OPENAI_API_KEY=...   # only if you keep the placeholder task
+Credentials:
+  The generated file auto-discovers .env files at runtime. Discovery order
+  (first non-empty value wins per key; shell env always overrides files):
+    1. --env-file path baked in as ENV_FILE_OVERRIDE (if --env-file was passed)
+    2. <output-file's-directory>/.env
+    3. <output-file's-directory>/.env.local
+    4. <cwd>/.env  and  <cwd>/.env.local
+    5. parent-walk from cwd up to /
+    6. ~/.datadog/credentials
+
+  Drop a .env at any of those locations with at minimum:
+    DD_API_KEY=...
+    DD_APPLICATION_KEY=...
+    DD_SITE=datadoghq.com           # only if not the US1 prod site
+    <PROVIDER>_API_KEY=...           # the provider key the wired task needs
+  Or override on a per-run basis by exporting them in your shell — the loader
+  never overwrites a value that is already in os.environ.
 
 Run:
   python <path>                  # for --format py
   jupyter notebook <path>        # for --format ipynb
 
 Next steps:
-1. Replace the placeholder task_fn with your actual LLM call.
+1. Confirm the wired task_fn matches the entry point you want to evaluate (see "Task function source" above).
+   Edit the import in section 4 of the generated file if you'd rather inline the call or pick a different function.
 2. Adjust the evaluators (or wire up RemoteEvaluator names you created in the Datadog UI).
 3. Run it. The script prints experiment.url at the end.
 4. Watch the experiment: https://app.datadoghq.com/llm/experiments
@@ -418,9 +517,13 @@ Never invent symbols or behaviors not present in this skill body or the docs abo
 - **SDK only.** No `requests.post`, no manual JSON:API envelope construction, no manual ID generation. If a feature seems to require those, you're solving the wrong problem — the SDK already covers it.
 - **Public imports only.** `from ddtrace.llmobs import ...`. Never `_experiment`, `_llmobs`, or any underscore-prefixed module.
 - **Env vars, not literals.** Credentials always read from `os.environ`. The generated `main()` (or the env-setup cell) must `assert` they're set with a clear message.
+- **Auto-discover, don't push setup work onto the user.** Section 1 always emits the `_load_env_files` helper (no `python-dotenv` dependency). It walks the discovery order documented in Workflow step 2.6 and prints which file(s) it loaded. Never substitute `load_dotenv()` from the third-party `python-dotenv` package — the inline helper has zero dependencies and is identical in behavior. Shell env vars always win over file-loaded values so the user can override any auto-discovered value by `export <KEY>=...` before re-running.
+- **Provider-key asserts must match the wired task.** Generate the assert for `OPENAI_API_KEY` only if the task imports / calls OpenAI; same for Anthropic / Gemini / Bedrock / etc. Per the Workflow step 2.6 table. Never emit asserts for provider keys the task does not actually need — they're confusing and cause spurious "missing key" failures.
 - **Always pass `site=` to `LLMObs.enable()`.** Read it from `os.getenv("DD_SITE", "datadoghq.com")`. Omitting `site=` silently defaults to US1 prod, which breaks every non-prod org (e.g. staging `datad0g.com`, `datadoghq.eu`). The canonical signature already includes it — never drop it.
 - **Per-record `tags` are `"key:value"` strings.** When inlining records (whether from `--dataset` JSON, CSV, or the default sample), each entry in a record's `"tags"` list must be a `"key:value"` string like `"env:prod"`, `"source:traces"`, `"category:geography"`. Bare strings (`"smoke"`, `"baseline"`) trigger `ValueError: Tag '<name>' is malformed.` at `Dataset.append()` time. If the source data has bare-string tags, namespace them — e.g. wrap `"smoke"` as `"tag:smoke"` rather than dropping it.
-- **`# TODO(user)` markers** on the placeholder task and on at least one evaluator so reviewers can't ship the placeholder by accident.
+- **Introspect first, placeholder last.** The default behavior is Workflow step 2.5 — scan the user's app, find the LLM entry point, wire `task_fn` to it. A `# TODO(user)` marker in the task section is only acceptable when introspection genuinely found nothing or the user passed `--placeholder-task`. Never emit a placeholder task when a real candidate exists in the project — that's the failure mode this skill exists to fix.
+- **`# TODO(user)` markers on at least one evaluator** so reviewers can't ship un-customized evaluators by accident. (Evaluators stay user-owned even when the task is auto-wired.)
+- **Introspection is bounded.** The scan in Workflow step 2.5 must respect `--app-root` (or its default-resolved value), `.gitignore` if present, and the directory blocklist (`node_modules`, `.venv`, `__pycache__`, etc.). Refuse to scan `/` or `~`. If a scan would touch more than ~10k Python files, narrow the root or ask the user to point at the relevant subdirectory.
 - **Match notebook conventions.** Plain function evaluators by default; class-based only when the user opts in. Print `experiment.url` at the end of every generated file.
 - **Tag every experiment with provenance — in both `config` and `tags`.** Every `LLMObs.experiment(...)` call **must** carry `"generated_by": "claude-code"` and `"skill": "llm-obs-experiment-py-bootstrap"` as keys in **both** the `config={...}` dict (so they render in the experiment's Configuration view, which is where users actually look) **and** the `tags={...}` dict (which the SDK serializes into `metadata.tags` for future tag-filter consumers). The `tags=` path alone is not enough: the current LLM Experiments UI does not surface `metadata.tags` as filterable chips, so users won't see the provenance unless it's also in `config`. If a user later edits the generated file to add their own keys, they extend both dicts — never replace the provenance keys silently.
 - **PII scrub at the door.** If `--dataset` is given, scrub before inlining into the generated file. Never embed a record that contains an unmasked email/phone/SSN/API-key pattern.

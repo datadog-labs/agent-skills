@@ -31,16 +31,17 @@ description: Bootstrap evaluators from production traces — emit SDK code, a fr
 
 # Eval Bootstrap — Generate Evaluators from Production Traces
 
-Given a sample of production LLM traces, analyze input/output patterns and quality dimensions, then emit a ready-to-use evaluator suite. Three output modes:
+Given a sample of production LLM traces, analyze input/output patterns and quality dimensions, then emit a ready-to-use evaluator suite. Four output modes:
 
 - **`sdk_code`** *(default)* — Python `.py` file using the Datadog Evals SDK (`BaseEvaluator` / `LLMJudge`) for **offline** experiments.
 - **`data_only`** — self-contained JSON spec, framework-agnostic.
 - **`publish`** — write **online** LLM-judge evaluators directly to Datadog via `create_or_update_llmobs_evaluator`. These run automatically on matching production spans or traces (no dataset, no task function). The skill **auto-classifies** each proposed evaluator as **span-scoped** or **trace-scoped** based on what the judgment requires (a per-LLM-call tone check vs. an agent goal completion that needs the whole trace) — the user accepts or overrides the classification at the proposal checkpoint.
+- **`emit_dataset`** — sample production traces and write a `DatasetRecordRaw[]` JSON file shaped for `LLMObs.create_dataset(records=...)`. **Skips evaluator proposal and generation entirely** — this mode produces a dataset, not evaluators. Used by `llm-obs-onboarding-datasets-experiments` to seed an experiment dataset from production behavior.
 
 ## Usage
 
 ```
-/eval-bootstrap <ml_app> [--timeframe <window>] [--data-only | --publish]
+/eval-bootstrap <ml_app> [--timeframe <window>] [--data-only | --publish | --emit-dataset <path>] [--trace-limit <N>]
 ```
 
 Arguments: $ARGUMENTS
@@ -54,8 +55,10 @@ Arguments: $ARGUMENTS
 | `rca_report` | No | — | Failure taxonomy from `eval-trace-rca` skill, or a free-text failure hypothesis |
 | `--data-only` | No | off | Emit a self-contained JSON spec file instead of Python SDK code |
 | `--publish` | No | off | Publish online LLM-judge evaluators to Datadog (mutually exclusive with `--data-only`) |
+| `--emit-dataset <path>` | No | off | **Dataset-only mode.** Sample production traces and write a `DatasetRecordRaw[]` JSON to `<path>`. Skips evaluator workflow. Mutually exclusive with `--data-only` and `--publish`. |
+| `--trace-limit` | No | `20` (cap `50`) | Max traces to sample in `emit_dataset` mode |
 
-If `ml_app` is missing, ask the user before proceeding. If both `--data-only` and `--publish` are supplied, error out and ask which mode the user wants.
+If `ml_app` is missing, ask the user before proceeding. If more than one of `--data-only`, `--publish`, `--emit-dataset` are supplied, error out and ask which mode the user wants.
 
 ## Available Tools
 
@@ -310,7 +313,12 @@ If you have access to dd-trace-py locally, verify the API surface by reading the
 | **Cold Start** | Only `ml_app` provided (no RCA, no hypothesis) | Full open discovery — understand what the app does, identify quality dimensions worth measuring, propose evals for coverage |
 | **From RCA** | Conversation contains an RCA report or user provides a failure hypothesis | Skip open discovery — use existing failure taxonomy as eval targets |
 
-**Parse arguments**: Extract `ml_app` (first non-flag argument), `--timeframe` (default `now-7d`), `--data-only`, and `--publish` flags. Set `output_mode = publish` if `--publish` is set, `output_mode = data_only` if `--data-only` is set, otherwise `output_mode = sdk_code`. Error if both `--data-only` and `--publish` are present.
+**Parse arguments**: Extract `ml_app` (first non-flag argument), `--timeframe` (default `now-7d`), `--trace-limit` (default `20`), `--data-only`, `--publish`, and `--emit-dataset <path>` flags. Set `output_mode` as follows (exactly one must be true; error if more than one is set):
+
+- `--emit-dataset <path>` set → `output_mode = emit_dataset`. Skip the rest of the workflow entry-mode logic and jump directly to **Phase 3D** below.
+- `--publish` set → `output_mode = publish`.
+- `--data-only` set → `output_mode = data_only`.
+- otherwise → `output_mode = sdk_code`.
 
 **Resolution steps:**
 
@@ -554,6 +562,7 @@ Branch on `output_mode`:
 - `sdk_code` → **Phase 3A** below
 - `data_only` → skip to **Phase 3B**
 - `publish` → skip to **Phase 3C**
+- `emit_dataset` → skip to **Phase 3D** (Phases 0 step 4, 1, and 2 are bypassed — see Phase 3D for the dataset-mode workflow)
 
 ---
 
@@ -1112,6 +1121,87 @@ The drafts are intentionally not running yet. Walk through each one in the Datad
 #### Notebook export (after summary)
 
 Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_url` was detected, or create a new standalone notebook. The notebook cell should list the published evaluators with their UI links and the `ml_app` they target. In pup mode, use `pup notebooks create` / `pup notebooks edit` as described in Phase 3A.
+
+---
+
+### Phase 3D: Emit Dataset from Production Traces
+
+**Goal**: Sample production traces for `ml_app`, extract input / output pairs, and write a `DatasetRecordRaw[]` JSON file shaped for `LLMObs.create_dataset(records=...)`. **This mode does not propose or generate evaluators** — Phases 1 and 2 are bypassed. The dataset is the sole artifact.
+
+**When this mode runs**: triggered by `--emit-dataset <path>`. Skip Phase 0 step 4 (eval coverage map) — it's unrelated to dataset extraction.
+
+#### Sampling
+
+1. Call `search_llmobs_spans(query="@ml_app:\"<ml_app>\" @status:ok", root_spans_only=true, limit=<trace-limit>, from=<timeframe>)`. Filter to `@status:ok` so the resulting dataset records reflect intended app behavior (errored traces have no usable output baseline).
+2. For each sampled root span, call `get_llmobs_span_details` (group by `trace_id`) and `get_llmobs_span_content` to read the root span's `input` and `output` fields. Issue all calls for a page in a single message (parallelize).
+
+#### Record extraction
+
+For each sampled root span, build one `DatasetRecordRaw` entry:
+
+| Field | Source | Notes |
+|---|---|---|
+| `input_data` | Root span's `meta.input` | If `meta.input.value` is a plain string, wrap as `{"input": "<value>"}`. If `meta.input.messages` exists, use `{"messages": [...]}` (preserving the role/content shape). For RAG roots that also have `documents`, include `{"documents": [...]}`. |
+| `expected_output` | Root span's `meta.output.value` (or `meta.output.messages[-1].content` for LLM-kind roots) | This is the **production behavior baseline**, not ground truth. Document this clearly in the summary so the user does not over-trust it. |
+| `metadata` | `{"source": "production", "trace_id": "<id>", "span_id": "<id>", "ml_app": "<ml_app>", "extracted_at": "<ISO 8601 UTC>"}` | Trace/span IDs let the user click back to the source trace in Datadog. |
+| `tags` | `["env:prod", "source:traces", "ml_app:<ml_app>"]` | Always `"key:value"` strings — bare strings will fail `Dataset.append()`. See the per-record tag rules in `llm-obs-experiment-py-bootstrap/SKILL.md` (search "Per-record tags"). |
+
+**PII scrub.** Before writing, run the same scrub used elsewhere in the dd-llmo skill set: replace email / phone / SSN / API-key regex matches in all string values with `<REDACTED:pii-type>`. Surface a one-line warning listing affected record indices in the summary.
+
+**Tag normalization (MANDATORY pre-write step).** The SDK's `Dataset.append()` calls `validate_tags_list` which rejects any tag without a `:` separator (`Tag '<tag>' is malformed. Tags must be in 'key:value' format.`). Before writing the JSON, run this normalization on every record's `tags` list:
+
+1. **Drop** any non-string, `None`, or empty-string entries.
+2. **Already `key:value`** (`":" in tag` and both halves non-empty) → keep as-is.
+3. **Bare string** (no `:`) → wrap as `"tag:<value>"` (so e.g. `"interactive"` becomes `"tag:interactive"`). Never silently drop — the original observation is preserved under the generic `tag:` key.
+4. **Trailing or leading `:`** (e.g. `"foo:"`, `":bar"`) → wrap as `"tag:<full-original-string>"` so the malformed value is preserved without crashing the SDK.
+
+Track the count of normalizations and surface in the summary as a one-line note (`Tag normalizations applied: N (bare strings auto-prefixed with 'tag:')`). Do not write the dataset if any record's `tags` list still contains a non-`key:value` string after normalization — that's a bug in this step.
+
+**Skip records** where:
+- `meta.output` is empty or missing (nothing usable as a baseline).
+- The root span's I/O is purely structural (e.g. only tool calls, no natural-language output). Record the count of skipped records and surface in the summary.
+
+#### Write the file
+
+1. Write the JSON array (2-space indented) to `<path>` using the Write tool. The path was supplied by the user via `--emit-dataset <path>` — use it verbatim.
+2. **Do not** push to Datadog from this mode. Publishing to Datadog is the next step in the onboarding flow (`LLMObs.create_dataset(records=...)`) and is handled by the caller (the onboarding orchestrator or the user directly).
+
+#### Summary
+
+After writing, print:
+
+```
+## Generated Dataset
+
+Wrote `<path>` — {N} records sampled from `<ml_app>` ({timeframe}).
+
+| Stat | Value |
+|---|---|
+| Records emitted | {N} |
+| Records skipped (no output) | {M} |
+| PII redactions applied | {P} (indices: {list or "none"}) |
+| Tag normalizations applied | {T} (bare strings auto-prefixed with `tag:`) |
+
+**Important**: `expected_output` is the **current production behavior baseline**, not ground truth. Use this dataset for regression-style experiments (does my refactor change observed outputs?) before promoting it to a labelled gold set.
+
+### Next Steps
+
+1. **Review**: open `<path>` and spot-check a few records. Adjust `expected_output` where the production output was wrong.
+2. **Publish to Datadog**:
+   ```python
+   from ddtrace.llmobs import LLMObs
+   import json, os
+   LLMObs.enable(api_key=os.getenv("DD_API_KEY"), app_key=os.getenv("DD_APPLICATION_KEY"),
+                 site=os.getenv("DD_SITE", "datadoghq.com"),
+                 project_name="<your-project>", agentless_enabled=True)
+   records = json.load(open("<path>"))
+   ds = LLMObs.create_dataset(dataset_name="<your-name>", records=records)
+   print(ds)
+   ```
+3. **Run an experiment** against the published dataset via `llm-obs-experiment-py-bootstrap --dataset-name <your-name>`.
+```
+
+Skip the notebook export prompt in this mode — datasets aren't well-served by a markdown summary in a notebook, and the next step (experiment generation) will produce its own artifacts.
 
 ---
 
