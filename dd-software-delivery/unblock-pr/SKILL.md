@@ -24,7 +24,7 @@ Requires: `dd-pup` skill (pup CLI installed and authenticated), `triage-flaky-te
 1. If the user passed `--backend pup` anywhere → use **pup mode** immediately. Skip steps 2–4.
 2. Check whether `search_datadog_ci_pipeline_events` appears in your available tools.
 3. If present → use **MCP mode** throughout. Call tools exactly as named in this skill's workflow sections.
-4. If absent → check whether `pup` is executable: run `pup --version` via Bash. A JSON response containing `"version"` confirms pup is available.
+4. If absent → check whether `pup` is executable: run `pup --version` via Bash. If the command exits successfully (exit code 0), pup is available.
 5. If pup responds → use **pup mode** throughout. Translate every tool call using the Tool Reference appendix at the bottom of this file.
 6. If neither is available → stop and tell the user:
    > "Neither the Datadog MCP server nor the pup CLI is available. Connect the MCP server or install pup (`brew install datadog-labs/pack/pup`)."
@@ -186,7 +186,7 @@ All three lines always appear. Use "No data available" when a tool returned no d
 
 **regression** → Prompt user to investigate their code changes. No write action available.
 
-**flaky** → Load `triage-flaky-test` skill for deep investigation. That skill will:
+**flaky** → Load `triage-flaky-test` skill for deep investigation. Invoke it once per distinct failing test name classified as flaky, passing the test name (from `@test.name` in STEP 1 results) and the derived repository as inputs. That skill will:
 - Attempt an agent-native fix using `flaky_category` + stack trace
 - Propose quarantine via `update_datadog_flaky_test_states` if a quick fix isn't possible
 
@@ -203,7 +203,7 @@ If transient:
 - `@ci.job.id` → job_id
 - event `id` field → event_uuid (optional)
 
-For `pipeline_id`: use `@ci.pipeline.id` if it contains a dash (e.g. `26027867390-1`). If bare, combine with `@github.run_attempt`: `"{@ci.pipeline.id}-{@github.run_attempt}"`. Fallback: parse `@ci.pipeline.url` for `runs/{run_id}/attempts/{attempt}`.
+For `pipeline_id`: use `@ci.pipeline.id` directly if it matches `^\d+-[1-9]\d*$` (e.g. `26027867390-1`). If it is a bare numeric run ID, combine it with `@github.run_attempt` from the same event: `"{@ci.pipeline.id}-{@github.run_attempt}"`. Fallback: parse `@ci.pipeline.url` — extract `{run_id}` and `{attempt}` from `runs/{run_id}/attempts/{attempt}`.
 
 After retry returns, confirm via `search_datadog_ci_pipeline_events` (`query: @ci.job.name:"<job>" @git.branch:<branch>`, from: now-5m) that a new run appears.
 
