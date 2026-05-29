@@ -116,28 +116,94 @@ ERROR: Architecture is `armv7l` (32-bit ARM) or unsupported OS — stop. Datadog
 
 ## Phase 2: Install the Datadog Agent with SSI
 
-Run for each host that does not already have the agent installed.
+Install via the host's native package manager (apt or yum) against Datadog's
+official package repos. This avoids fetching and executing a remote shell
+script — every package is GPG-signed and version-pinned by the repo index, so
+the install is auditable end-to-end.
+
+### Step 2a: Detect the host's package manager
 
 ### Claude runs
 
 ```bash
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
-  "DD_API_KEY=${DD_API_KEY} DD_SITE=${DD_SITE} DD_APM_INSTRUMENTATION_ENABLED=host bash -c \"\$(curl -L https://install.datadoghq.com/scripts/install_script_agent7.sh)\""
+  ". /etc/os-release && echo \"\$ID \$ID_LIKE\""
 ```
 
-`DD_APM_INSTRUMENTATION_ENABLED=host` causes the install script to also install `datadog-apm-inject` and language library packages under `/opt/datadog-packages/` in one pass.
+Match the output to one of these paths:
+- `ubuntu`, `debian`, or `ID_LIKE` contains `debian` → run **Step 2b (APT)** below.
+- `rhel`, `centos`, `amzn`, `rocky`, `almalinux`, or `ID_LIKE` contains `rhel` / `fedora` → run **Step 2b (YUM)** below.
+- Anything else (Alpine, SUSE, etc.) — stop. Have the user follow [Datadog's Linux install docs](https://docs.datadoghq.com/agent/supported_platforms/linux/) manually for their distro.
 
-If the script completes without errors — proceed to Phase 2.
+---
 
-ERROR: `curl: command not found`:
+### Step 2b (APT — Debian/Ubuntu): set up the Datadog apt repo and install
+
+### Claude runs
+
 ```bash
-ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
-  "apt-get install -y curl 2>/dev/null || yum install -y curl"
+ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> "\
+  sudo apt-get install -y apt-transport-https curl gnupg && \
+  sudo install -m 0755 -d /usr/share/keyrings && \
+  sudo curl -fsSL https://keys.datadoghq.com/DATADOG_APT_KEY_CURRENT.public -o /tmp/dd-apt-key.pub && \
+  sudo gpg --no-default-keyring --keyring /usr/share/keyrings/datadog-archive-keyring.gpg --import --batch /tmp/dd-apt-key.pub && \
+  sudo rm -f /tmp/dd-apt-key.pub && \
+  echo 'deb [signed-by=/usr/share/keyrings/datadog-archive-keyring.gpg] https://apt.datadoghq.com/ stable 7' | sudo tee /etc/apt/sources.list.d/datadog.list && \
+  sudo apt-get update && \
+  sudo apt-get install -y datadog-agent datadog-signing-keys datadog-apm-inject datadog-apm-library-java datadog-apm-library-python datadog-apm-library-js datadog-apm-library-dotnet datadog-apm-library-ruby"
 ```
 
-ERROR: Permission error — ensure the SSH user has sudo access. The install script requires root.
+The single `curl` here only writes Datadog's public GPG key to a file; `gpg --import` validates and stores it. From that point on, every package install is verified against the keyring — there are no remote scripts executed.
 
-ERROR: Script fails with GPG key error — retry; if it persists, check the host's DNS resolution for `keys.datadoghq.com`.
+---
+
+### Step 2b (YUM — RHEL/CentOS/Amazon/Rocky/Alma): set up the Datadog yum repo and install
+
+### Claude runs
+
+```bash
+ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> bash <<'EOF'
+sudo tee /etc/yum.repos.d/datadog.repo > /dev/null <<'REPO'
+[datadog]
+name = Datadog, Inc.
+baseurl = https://yum.datadoghq.com/stable/7/$basearch/
+enabled = 1
+gpgcheck = 1
+repo_gpgcheck = 1
+gpgkey = https://keys.datadoghq.com/DATADOG_RPM_KEY_CURRENT.public
+       https://keys.datadoghq.com/DATADOG_RPM_KEY_FD4BF915.public
+       https://keys.datadoghq.com/DATADOG_RPM_KEY_B01082D3.public
+       https://keys.datadoghq.com/DATADOG_RPM_KEY_E09422B3.public
+REPO
+sudo yum -y makecache
+sudo yum -y install datadog-agent datadog-apm-inject datadog-apm-library-java datadog-apm-library-python datadog-apm-library-js datadog-apm-library-dotnet datadog-apm-library-ruby
+EOF
+```
+
+`yum` fetches and validates the listed GPG keys before installing any package. No remote scripts run.
+
+---
+
+### Step 2c: Configure API key, site, and start the agent
+
+### Claude runs
+
+```bash
+ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> "\
+  sudo sed -i \"s/api_key:.*/api_key: ${DD_API_KEY}/\" /etc/datadog-agent/datadog.yaml && \
+  sudo sed -i \"s/^# site:.*/site: ${DD_SITE}/\" /etc/datadog-agent/datadog.yaml && \
+  (sudo systemctl restart datadog-agent 2>/dev/null || sudo service datadog-agent restart)"
+```
+
+The `datadog-apm-inject` package's postinstall writes the launcher into `/etc/ld.so.preload`, so SSI is active for any new process. Pre-existing processes need to be restarted (see Phase 4).
+
+If the install completes without errors — proceed to Phase 3.
+
+ERROR: Permission error — ensure the SSH user has sudo access. Installation requires root.
+
+ERROR: `Connection refused` to `apt.datadoghq.com` / `yum.datadoghq.com` — check outbound network access and any corporate proxy.
+
+ERROR: GPG / signature verification failure — verify `keys.datadoghq.com` is reachable from the host.
 
 ---
 
@@ -177,11 +243,11 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
 
 If `/opt/datadog-packages/datadog-apm-inject` exists — injection is available.
 
-ERROR: Directory missing or empty — `datadog-installer status` may show the package as registered while its directory is actually empty (stale registration). Reinstall:
+ERROR: Directory missing or empty — `datadog-installer status` may show the package as registered while its directory is actually empty (stale registration). Reinstall the apm-inject package via the host's package manager (one of these will succeed depending on the distro):
 ```bash
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
-  "sudo datadog-installer remove datadog-apm-inject && \
-   DD_API_KEY=${DD_API_KEY} DD_SITE=${DD_SITE} DD_APM_INSTRUMENTATION_ENABLED=host bash -c \"\$(curl -L https://install.datadoghq.com/scripts/install_script_agent7.sh)\""
+  "sudo apt-get install --reinstall -y datadog-apm-inject 2>/dev/null \
+   || sudo yum reinstall -y datadog-apm-inject"
 ```
 
 **Verify hostname registration** — the Agent must resolve and register its hostname for the host to appear in Datadog. DNS lookup failures are common in containers and minimal VMs:

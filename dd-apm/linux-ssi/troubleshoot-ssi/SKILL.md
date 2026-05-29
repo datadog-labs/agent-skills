@@ -351,9 +351,10 @@ If the conclusion doesn't hold up, return to Step 2 with new hypotheses.
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo datadog-installer remove datadog-apm-library-<LANG>"
 
-# Re-run install — now it will actually download and extract
+# Reinstall via the host's package manager — apt or yum, whichever applies
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
-  "DD_API_KEY=${DD_API_KEY} DD_SITE=${DD_SITE} DD_APM_INSTRUMENTATION_ENABLED=host bash -c \"\$(curl -L https://install.datadoghq.com/scripts/install_script_agent7.sh)\""
+  "sudo apt-get install --reinstall -y datadog-apm-library-<LANG> 2>/dev/null \
+   || sudo yum reinstall -y datadog-apm-library-<LANG>"
 ```
 
 If re-running the install script is sufficient (package files are intact), use `remove` first only if the script reports success but the problem persists.
