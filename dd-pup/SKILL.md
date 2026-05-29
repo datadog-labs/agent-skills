@@ -58,7 +58,7 @@ pup auth refresh        # Refresh expired token (no browser)
 pup auth logout         # Clear credentials
 ```
 
-**⚠ Tokens expire (~1 hour)**. If a command fails with 401/403 mid-conversation:
+**Tokens expire (~1 hour)**. If a command fails with 401/403 mid-conversation:
 
 ```bash
 pup auth refresh        # Try refresh first
