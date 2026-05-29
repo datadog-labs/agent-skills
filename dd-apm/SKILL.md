@@ -24,7 +24,7 @@ Match the user's request to one of the entries below. Each entry has the same sh
 
 **Immediately read** `.claude/skills/dd-apm/k8s-ssi/agent-install/SKILL.md` now, then `.claude/skills/dd-apm/k8s-ssi/enable-ssi/SKILL.md`, then `.claude/skills/dd-apm/k8s-ssi/verify-ssi/SKILL.md` — do not proceed from memory.
 
-> ⚠️ **Common wrong approaches that LOOK like they work but silently fail:**
+> **Common wrong approaches that LOOK like they work but silently fail:**
 > - `helm install datadog datadog/datadog` — the standard chart does NOT support SSI via DatadogAgent CR.
 > - Adding `ddtrace` imports or `ddtrace-run` to the app — SSI auto-instruments WITHOUT any code changes.
 > - `admission.datadoghq.com/enabled` annotations — that's admission controller config injection, not SSI init container injection.
@@ -35,7 +35,7 @@ Match the user's request to one of the entries below. Each entry has the same sh
 
 **Immediately read** `.claude/skills/dd-apm/linux-ssi/agent-install/SKILL.md` now, then `.claude/skills/dd-apm/linux-ssi/enable-ssi/SKILL.md`, then `.claude/skills/dd-apm/linux-ssi/verify-ssi/SKILL.md` — do not proceed from memory.
 
-> ⚠️ **Do NOT** install the agent via plain `apt-get install datadog-agent` (or yum equivalent) and assume SSI follows — host auto-instrumentation requires the install script with the SSI flags, which the sub-skill walks through.
+> **Do NOT** install the agent via plain `apt-get install datadog-agent` (or yum equivalent) and assume SSI follows — host auto-instrumentation requires the install script with the SSI flags, which the sub-skill walks through.
 
 ---
 
@@ -43,7 +43,7 @@ Match the user's request to one of the entries below. Each entry has the same sh
 
 **Immediately read** `.claude/skills/dd-apm/service-remapping/SKILL.md` now — do not proceed from memory.
 
-> ⚠️ **Do NOT** change `tags.datadoghq.com/service` labels or `DD_SERVICE` env vars to rename a service in Datadog. That requires a rollout and only affects new data. Use a service remapping rule — it rewrites the name at ingestion time with no deployment change.
+> **Do NOT** change `tags.datadoghq.com/service` labels or `DD_SERVICE` env vars to rename a service in Datadog. That requires a rollout and only affects new data. Use a service remapping rule — it rewrites the name at ingestion time with no deployment change.
 
 ---
 

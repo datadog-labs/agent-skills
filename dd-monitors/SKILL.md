@@ -65,7 +65,7 @@ pup downtime create --file downtime.json
 pup downtime cancel <downtime_id>
 ```
 
-## ⚠️ Monitor Creation Best Practices
+## Monitor Creation Best Practices
 
 ### 1. Avoid Alert Fatigue
 
@@ -129,7 +129,7 @@ Threshold: {{threshold}}
 """
 ```
 
-## ⚠️ NEVER Delete Monitors Directly
+## NEVER Delete Monitors Directly
 
 Use safe deletion workflow (same as dashboards):
 
