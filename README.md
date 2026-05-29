@@ -78,14 +78,13 @@ npx skills add datadog-labs/agent-skills \
   --skill llm-obs-eval-bootstrap \
   --skill llm-obs-eval-pipeline \
   --skill llm-obs-session-classify \
-  --skill llm-obs-onboarding-datasets-experiments \
   --skill k9-ownership-byod-setup \
   --full-depth -y
 ```
 
 ### LLM Observability (LLMO)
 
-The `dd-llmo` directory contains seven skills for working with LLM Observability data:
+The `dd-llmo` directory contains six skills for working with LLM Observability data:
 
 | Skill | Purpose |
 |-------|---------|
@@ -93,9 +92,8 @@ The `dd-llmo` directory contains seven skills for working with LLM Observability
 | `llm-obs-experiment-py-bootstrap` | Generate self-contained Python experiment code using the `ddtrace.llmobs` SDK |
 | `llm-obs-trace-rca` | Root-cause production failures using eval judge signal or runtime errors |
 | `llm-obs-eval-bootstrap` | Generate evaluator code from traces, optionally seeded by RCA output. Also emits a dataset from traces in `--emit-dataset` mode. |
-| `llm-obs-eval-pipeline` | End-to-end pipeline: classify sessions → RCA → bootstrap evaluators |
+| `llm-obs-eval-pipeline` | Eight-phase pipeline: classify → RCA → bootstrap evaluators → create dataset → publish → generate experiment → run → analyze. Stop early with `--stop-after`. |
 | `llm-obs-session-classify` | Classify whether user intent was satisfied in a session (trace + RUM signals) |
-| `llm-obs-onboarding-datasets-experiments` | Guided six-state onboarding through the datasets + experiments loop, composing the skills above |
 
 **Eval pipeline flow:**
 
@@ -128,12 +126,11 @@ cp -r dd-llmo/llm-obs-trace-rca ~/.claude/skills
 cp -r dd-llmo/llm-obs-eval-bootstrap ~/.claude/skills
 cp -r dd-llmo/llm-obs-eval-pipeline ~/.claude/skills
 cp -r dd-llmo/llm-obs-session-classify ~/.claude/skills
-cp -r dd-llmo/llm-obs-onboarding-datasets-experiments ~/.claude/skills
 ```
 
 #### MCP Requirements
 
-All seven skills require the LLMO toolset:
+All six skills require the LLMO toolset:
 
 ```bash
 claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'
