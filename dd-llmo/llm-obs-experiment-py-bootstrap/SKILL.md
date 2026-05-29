@@ -130,7 +130,7 @@ print(experiment.url)
 
 ## Evaluator Styles
 
-Generated code uses **one** of three evaluator surfaces, picked by `--evaluator-style`. Whichever style is chosen, **prefer returning `EvaluatorResult` over a bare `bool`/`float`** whenever the evaluator has any signal beyond the raw value — see "Return EvaluatorResult, not bare values" below.
+Generated code uses **one** of three evaluator surfaces, picked by `--evaluator-style`. The detail for each lives in `references/evaluator-styles/<style>.md` and is loaded on demand — only the chosen style is consulted at generation time. The single piece of guidance that applies to all three is the `EvaluatorResult` rule below.
 
 ### Return `EvaluatorResult`, not bare values
 
@@ -144,79 +144,19 @@ Plain functions are allowed to return `bool` / `float` / `dict`, and `BaseEvalua
 | `metadata` | `dict[str, JSONType]` | Free-form per-record context (e.g. `{"confidence": 0.95}`); shown in record drill-down. |
 | `tags` | `dict[str, JSONType]` | Used to slice experiment results in the UI (e.g. `{"category": "accuracy"}`). |
 
-The generated code should default to `EvaluatorResult` for any evaluator richer than a one-line equality check. The trivial `exact_match` and `length_under_500` shown below are the only cases where a bare `bool` is acceptable.
+Default to `EvaluatorResult` for any evaluator richer than a one-line equality check. Trivial checks like `exact_match` and `length_under_500` are the only cases where a bare `bool` is acceptable.
 
-### `function` (default — what the notebooks use)
+### Style router
 
-Plain Python functions with the signature `(input_data, output_data, expected_output)`. Always emit at least three: a trivial boolean (returns `bool`), a richer rule-based one (returns `EvaluatorResult`), and an LLM-as-Judge surrogate (a `RemoteEvaluator` reference or a placeholder).
+When `--evaluator-style` is resolved (default `function`), read the matching reference file from `<this-skill-dir>/references/evaluator-styles/` and emit section 5 of the generated file using the code template it contains:
 
-```python
-from ddtrace.llmobs import EvaluatorResult
+| `--evaluator-style` value | Read | Best for |
+|---|---|---|
+| `function` *(default)* | `references/evaluator-styles/function.md` | Most cases — matches the canonical notebook style |
+| `class` | `references/evaluator-styles/class.md` | Evaluators that need persistent state or an async client |
+| `remote` | `references/evaluator-styles/remote.md` | Server-side LLM-as-Judge configured in the Datadog UI, reused across experiments |
 
-# Trivial check — bare bool is fine here, the result has no extra signal.
-def exact_match(input_data, output_data, expected_output) -> bool:
-    return output_data == expected_output
-
-# Richer check — use EvaluatorResult so reasoning/assessment surface in the UI.
-def response_well_formed(input_data, output_data, expected_output) -> EvaluatorResult:
-    if not isinstance(output_data, str):
-        return EvaluatorResult(
-            value=False,
-            reasoning=f"output_data was {type(output_data).__name__}, expected str",
-            assessment="fail",
-        )
-    if len(output_data) > 500:
-        return EvaluatorResult(
-            value=False,
-            reasoning=f"output exceeded 500 chars (was {len(output_data)})",
-            assessment="fail",
-            metadata={"length": len(output_data)},
-        )
-    return EvaluatorResult(value=True, assessment="pass")
-```
-
-### `class` (advanced — for evaluators that need state or async I/O)
-
-Always return `EvaluatorResult` from `evaluate()` — never a bare value. State-bearing evaluators usually have richer reasoning to surface anyway.
-
-```python
-from ddtrace.llmobs import BaseEvaluator, EvaluatorContext, EvaluatorResult
-
-class FaithfulnessJudge(BaseEvaluator):
-    def __init__(self):
-        super().__init__(name="faithfulness")
-        # TODO(user): initialize any client or state here
-
-    def evaluate(self, context: EvaluatorContext) -> EvaluatorResult:
-        # context exposes: input_data, output_data, expected_output, metadata
-        # TODO(user): replace placeholder logic with your faithfulness check
-        passed = context.output_data is not None
-        return EvaluatorResult(
-            value=1.0 if passed else 0.0,
-            reasoning="placeholder — replace with your faithfulness rubric",
-            assessment="pass" if passed else "fail",
-            metadata={"evaluator_version": "v1"},
-        )
-```
-
-### `remote` (LLM-as-Judge running server-side)
-
-```python
-from ddtrace.llmobs import RemoteEvaluator
-
-# Create the judge in Datadog UI first: LLM Observability → Evaluations → New Evaluator
-quality_judge = RemoteEvaluator(eval_name="<name-from-datadog-ui>")
-
-# Optional: customize the payload the judge receives
-custom_judge = RemoteEvaluator(
-    eval_name="<name>",
-    transform_fn=lambda ctx: {
-        "question": ctx.input_data.get("question"),
-        "answer": ctx.output_data,
-        "reference": ctx.expected_output,
-    },
-)
-```
+Do **not** load all three. Each reference file is self-contained — code template + when-to-use + when-not-to-use guidance.
 
 ---
 
@@ -373,111 +313,30 @@ The same section sequence in both formats. In `.py` these become comment banners
 
    **Required Datadog keys** (always): `DD_API_KEY` AND (`DD_APPLICATION_KEY` OR `DD_APP_KEY`). `DD_SITE` is optional (defaults to `datadoghq.com`).
 
-   **Required provider keys** — depend on what step 2.5 picked. Inspect the imported call site and add the matching assertion. If introspection picked nothing (placeholder fallback), assert OpenAI keys (since the placeholder makes an OpenAI call). Mapping:
+   **Required provider keys** — depend on what step 2.5 picked. Inspect the imported call site to identify the provider, then **read the matching reference file** for the exact assert lines, adapter notes, and gotchas. Only load the one that applies; do not load all of them.
 
-   | Detected SDK in task | Provider key(s) to assert |
+   | Detected SDK in task | Read |
    |---|---|
-   | OpenAI (`openai.*`, `client.chat.completions.create`) — including the placeholder fallback | `OPENAI_API_KEY` |
-   | Azure OpenAI (`AzureOpenAI(...)`, `azure_endpoint=`) | `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT` |
-   | Anthropic (`anthropic.*`, `Anthropic().messages.create`) | `ANTHROPIC_API_KEY` |
-   | LiteLLM (`litellm.completion`) | Skip — LiteLLM routes to whatever provider the underlying model identifier resolves to. Emit a comment instead: `# LiteLLM auto-routes; ensure the keys for your chosen model's provider are set in .env or shell.` |
-   | LangChain (`ChatOpenAI` / `ChatAnthropic` / etc.) | Walk one level deeper — the chat client class names the provider. Assert that provider's key as above. |
-   | LlamaIndex | Same one-level walk — find the underlying LLM/embedder class and map to its provider key. |
-   | Google Gemini (`google.generativeai`) | `GEMINI_API_KEY` OR `GOOGLE_API_KEY` (assert either is present, not both) |
-   | AWS Bedrock (`boto3.client("bedrock-runtime")`) | `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` (plus optional `AWS_SESSION_TOKEN`, `AWS_REGION`) |
-   | Custom / not-recognized SDK | Emit a `# TODO(user): set the API key(s) your task_fn needs in your .env or shell.` comment instead of an assert. Do NOT fabricate provider keys. |
+   | OpenAI (`openai.*`, `client.chat.completions.create`) — also the placeholder fallback | `references/providers/openai.md` |
+   | Azure OpenAI (`AzureOpenAI(...)`, `azure_endpoint=`) | `references/providers/openai.md` (Azure section) |
+   | Anthropic (`anthropic.*`, `Anthropic().messages.create`) | `references/providers/anthropic.md` |
+   | LiteLLM (`litellm.completion`, `litellm.acompletion`) | `references/providers/litellm.md` |
+   | LangChain (`ChatOpenAI` / `ChatAnthropic` / etc.) | `references/providers/langchain.md` (walks one level deeper to the underlying provider) |
+   | LlamaIndex | `references/providers/llamaindex.md` |
+   | Google Gemini (`google.generativeai`) / Vertex AI | `references/providers/gemini.md` |
+   | AWS Bedrock (`boto3.client("bedrock-runtime")`) | `references/providers/bedrock.md` |
+   | Custom / not-recognized SDK | No reference file — emit a `# TODO(user): set the API key(s) your task_fn needs in your .env or shell.` comment instead of an assert. Do NOT fabricate provider keys. |
 
-   **Always emit the credential loader (`_load_env_files`)** at the top of section 1 — even if the user is expected to use shell env vars. The loader is a tiny pure-Python helper (no python-dotenv dependency) that walks discovery locations and never overwrites already-set shell vars. This is the same helper used by the onboarding skill's State 3 publish script (see `dd-llmo/llm-obs-onboarding-datasets-experiments/SKILL.md` → State 3 → publish script). Copy this exact shape into section 1 of the generated file:
+   **Emit section 1 by reading the shipped template at `<this-skill-dir>/scripts/env_setup_template.py` and substituting two placeholders.** The template ships alongside this SKILL.md (`cp -r` install handles it) and is the canonical source for the loader + assert shape — do **not** re-derive it inline. Read the file, perform the substitutions below, and emit the result verbatim as section 1 of the generated experiment file.
 
-   ```python
-   import os
-   import pathlib
+   | Placeholder | Replacement | Example |
+   |---|---|---|
+   | `{{ENV_FILE_OVERRIDE_LIST}}` | A Python list literal of absolute paths from `--env-file` (repeatable; empty list if not passed) | `[]` or `["/Users/me/.config/dd/staging.env"]` |
+   | `{{PROVIDER_ASSERTS}}` | Zero or more `assert os.getenv(...)` lines derived from what step 2.5 wired — per the SDK-to-key table above. One line per required provider key. Empty string if the task uses LiteLLM (which auto-routes) or a custom/unrecognized SDK. | `assert os.getenv("ANTHROPIC_API_KEY"), "ANTHROPIC_API_KEY is required for the wired task_fn."` |
 
+   The exact assert line(s) to substitute into `{{PROVIDER_ASSERTS}}` live in each provider's reference file under the `## {{PROVIDER_ASSERTS}} substitution` heading. Read only the file that matches the detected SDK from the table above.
 
-   def _load_env_files(extra: list[str] | None = None) -> list[str]:
-       """Discover .env files and import their keys into os.environ.
-
-       Walks: explicit --env-file arg → this file's dir → cwd → parent dirs →
-       ~/.datadog/credentials. Shell env always wins (we never overwrite a key
-       already in os.environ).
-
-       Returns the absolute paths actually loaded so the runner can print them.
-       """
-       here = pathlib.Path(__file__).resolve().parent
-       cwd = pathlib.Path.cwd().resolve()
-       candidates: list[pathlib.Path] = []
-       for p in extra or []:
-           candidates.append(pathlib.Path(p).expanduser())
-       candidates += [
-           here / ".env",
-           here / ".env.local",
-           cwd / ".env",
-           cwd / ".env.local",
-       ]
-       p = cwd
-       while p != p.parent and p != pathlib.Path.home().parent:
-           candidates.append(p / ".env")
-           p = p.parent
-       candidates.append(pathlib.Path.home() / ".datadog" / "credentials")
-
-       loaded: list[str] = []
-       seen: set[pathlib.Path] = set()
-       for path in candidates:
-           try:
-               path = path.resolve()
-           except Exception:
-               continue
-           if path in seen or not path.is_file():
-               continue
-           seen.add(path)
-           try:
-               text = path.read_text()
-           except Exception:
-               continue
-           for line in text.splitlines():
-               line = line.strip()
-               if not line or line.startswith("#") or "=" not in line:
-                   continue
-               if line.startswith("export "):
-                   line = line[len("export "):]
-               k, _, v = line.partition("=")
-               k = k.strip()
-               v = v.strip().strip('"').strip("'")
-               if k and k not in os.environ:
-                   os.environ[k] = v
-           loaded.append(str(path))
-       return loaded
-
-
-   # If --env-file was passed when the skill generated this file, that path is
-   # baked in as ENV_FILE_OVERRIDE so it is always tried first at runtime. Edit
-   # this constant to point at a different file without regenerating.
-   ENV_FILE_OVERRIDE: list[str] = [<resolved --env-file or []>]
-
-   _loaded_env_paths = _load_env_files(ENV_FILE_OVERRIDE)
-   if _loaded_env_paths:
-       print(f"Loaded credentials from: {', '.join(_loaded_env_paths)}")
-   ```
-
-   **Then** emit the per-key assertions, one per required key, with a clear message that mentions both override paths:
-
-   ```python
-   _required_dd_keys = ["DD_API_KEY"]  # app key handled below since the var name is split-aliased
-   for _k in _required_dd_keys:
-       assert os.getenv(_k), (
-           f"{_k} is not set. Export it in your shell or add it to a discovered "
-           f".env file (this file checked: cwd, app dir, parent dirs, "
-           f"~/.datadog/credentials)."
-       )
-   assert os.getenv("DD_APPLICATION_KEY") or os.getenv("DD_APP_KEY"), (
-       "DD_APPLICATION_KEY (or its alias DD_APP_KEY) is not set. Same fallback "
-       "paths as above."
-   )
-   # Provider keys — depend on what task_fn ended up calling (step 2.5):
-   assert os.getenv("OPENAI_API_KEY"), "OPENAI_API_KEY is required for the wired task_fn."  # only if applicable
-   ```
-
-   Generate **only** the asserts that map to the introspection result (the row in the SDK-to-key table above). Do NOT emit `assert os.getenv("OPENAI_API_KEY")` when the task uses Anthropic.
+   The template's discovery walk (env file → script dir → cwd → parent dirs → `~/.datadog/credentials`) and shell-overrides-file contract are stable — they live in the template, not in this skill body. If you need to change discovery semantics, edit `scripts/env_setup_template.py` directly; do not re-derive them in-prose here.
 
 3. **Pick evaluator template** based on `--evaluator-style`:
    - `function`: 3 plain functions — one trivial boolean (`exact_match`-style, bare `bool` OK), one richer rule-based check returning `EvaluatorResult` with `reasoning` + `assessment`, and one LLM-as-Judge surrogate. If `--dataset` had structured `expected_output`, add a JSON-shape check (also returning `EvaluatorResult`).
