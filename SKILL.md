@@ -75,7 +75,7 @@ pup auth status         # Check token
 pup auth refresh        # Refresh expired token
 ```
 
-**⚠️ Token Expiry**: OAuth tokens expire (~1 hour). Run `pup auth refresh` if commands fail with 401/403.
+**Token Expiry**: OAuth tokens expire (~1 hour). Run `pup auth refresh` if commands fail with 401/403.
 
 ## More Skills
 
