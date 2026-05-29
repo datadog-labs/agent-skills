@@ -24,7 +24,7 @@ Requires: `dd-pup` skill (pup CLI installed and authenticated).
 1. If the user passed `--backend pup` anywhere → use **pup mode** immediately. Skip steps 2–4.
 2. Check whether `get_datadog_flaky_tests` appears in your available tools.
 3. If present → use **MCP mode** throughout. Call tools exactly as named in this skill's workflow sections.
-4. If absent → check whether `pup` is executable: run `pup --version` via Bash. A JSON response containing `"version"` confirms pup is available.
+4. If absent → check whether `pup` is executable: run `pup --version` via Bash. If the command exits successfully (exit code 0), pup is available.
 5. If pup responds → use **pup mode** throughout. Translate every tool call using the Tool Reference appendix at the bottom of this file.
 6. If neither is available → stop and tell the user:
    > "Neither the Datadog MCP server nor the pup CLI is available. Connect the MCP server or install pup (`brew install datadog-labs/pack/pup`)."
