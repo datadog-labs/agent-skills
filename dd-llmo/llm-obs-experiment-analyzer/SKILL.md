@@ -140,7 +140,7 @@ Found N metrics. Full breakdown:
 
 | Metric | Mean | Class |
 |--------|------|-------|
-| <label> | <mean> | ⚠️ Struggling |
+| <label> | <mean> | ⚠ Struggling |
 | <label> | <mean> | Interesting |
 | <label> | <mean> | Saturated |
 | <label> | 1.000 | Perfect (no signal) |

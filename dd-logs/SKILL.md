@@ -101,7 +101,7 @@ pup logs custom-destinations list
 }
 ```
 
-## ⚠️ Exclusion Filters (Cost Control)
+## ⚠ Exclusion Filters (Cost Control)
 
 **Index only what matters:**
 
@@ -167,7 +167,7 @@ pup logs metrics list
 pup logs metrics get api.errors.count
 ```
 
-**⚠️ Cardinality warning:** Group by bounded values only.
+**⚠ Cardinality warning:** Group by bounded values only.
 
 ## Sensitive Data
 
