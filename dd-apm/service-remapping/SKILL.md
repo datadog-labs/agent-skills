@@ -436,4 +436,3 @@ Exit when ALL of the following are true:
 - Never create or delete a rule without explicit user confirmation — show the full rule before creating
 - Never assume `prod` as the environment — always confirm with the user
 - Never run DELETE without showing the user the rule's name and filter first
-- Never enable `enabled_org_wide` without explicit user confirmation — it affects the entire org
