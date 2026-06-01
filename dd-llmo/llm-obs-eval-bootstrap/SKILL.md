@@ -1,6 +1,6 @@
 ---
 name: llm-obs-eval-bootstrap
-description: Bootstrap evaluators from production traces — emit SDK code, a framework-agnostic JSON spec, or publish online LLM-judge evaluators directly to Datadog. Use when user says "bootstrap evaluators", "generate evaluators", "create evals from traces", "eval bootstrap", "write evaluators", "build eval suite", "publish evaluators", or wants to generate BaseEvaluator/LLMJudge code or online judge configs from production LLM trace data. Works with ml_app and optional RCA report or failure hypothesis.
+description: Bootstrap evaluators from production traces — by default propose online LLM-judge evaluators and, after you confirm, create them in Datadog as disabled drafts (never auto-enabled); on request emit Python SDK code or a framework-agnostic JSON spec instead. Use when user says "bootstrap evaluators", "generate evaluators", "create evals from traces", "eval bootstrap", "write evaluators", "build eval suite", "publish evaluators", or wants to generate BaseEvaluator/LLMJudge code or online judge configs from production LLM trace data. Works with ml_app and optional RCA report or failure hypothesis.
 ---
 
 ## Backend
@@ -31,16 +31,18 @@ description: Bootstrap evaluators from production traces — emit SDK code, a fr
 
 # Eval Bootstrap — Generate Evaluators from Production Traces
 
-Given a sample of production LLM traces, analyze input/output patterns and quality dimensions, then emit a ready-to-use evaluator suite. Three output modes:
+Given a sample of production LLM traces, analyze input/output patterns and quality dimensions, then propose a ready-to-use evaluator suite. Three output modes — **online evaluators are the default**; SDK code and the JSON spec are produced on request:
 
-- **`sdk_code`** *(default)* — Python `.py` file using the Datadog Evals SDK (`BaseEvaluator` / `LLMJudge`) for **offline** experiments.
-- **`data_only`** — self-contained JSON spec, framework-agnostic.
-- **`publish`** — write **online** LLM-judge evaluators directly to Datadog via `create_or_update_llmobs_evaluator`. These run automatically on matching production spans, traces, or sessions (no dataset, no task function). The skill **auto-classifies** each proposed evaluator as **span-scoped**, **trace-scoped**, or **session-scoped** based on what the judgment requires (a per-LLM-call tone check vs. an agent goal completion that needs the whole trace vs. user satisfaction across a whole multi-trace conversation) — the user accepts or overrides the classification at the proposal checkpoint. Session-scoped evaluators are only proposed when the app's spans carry a `session_id` (verified by a probe in Phase 1).
+- **`publish`** *(default)* — propose **online** LLM-judge evaluators, then — **only after you confirm the suite** — write them to Datadog via `create_or_update_llmobs_evaluator` as **disabled drafts** (`enabled: false`). Nothing is created until you confirm at the Phase 2 checkpoint, and nothing scores any spans until **you** enable it in the UI — the skill never auto-publishes a live evaluator. Once you enable a draft, it runs automatically on matching production spans, traces, or sessions (no dataset, no task function). The skill **auto-classifies** each proposed evaluator as **span-scoped**, **trace-scoped**, or **session-scoped** based on what the judgment requires (a per-LLM-call tone check vs. an agent goal completion that needs the whole trace vs. user satisfaction across a whole multi-trace conversation) — you accept or override the classification at that checkpoint. Session-scoped evaluators are only proposed when the app's spans carry a `session_id` (verified by a probe in Phase 1).
+- **`sdk_code`** *(on request — `--sdk-code`, or ask after a publish run)* — Python `.py` file using the Datadog Evals SDK (`BaseEvaluator` / `LLMJudge`) for **offline** experiments.
+- **`data_only`** *(on request — `--data-only`)* — self-contained JSON spec, framework-agnostic.
+
+After a publish run, if the user wants the same suite as offline code or a portable spec, they just ask — the skill regenerates the **already-confirmed** suite in `sdk_code` / `data_only` mode without re-exploring (see "On-request code generation" in Phase 3).
 
 ## Usage
 
 ```
-/eval-bootstrap <ml_app> [--timeframe <window>] [--data-only | --publish]
+/eval-bootstrap <ml_app> [--timeframe <window>] [--sdk-code | --data-only]
 ```
 
 Arguments: $ARGUMENTS
@@ -52,10 +54,10 @@ Arguments: $ARGUMENTS
 | `ml_app` | Yes | — | ML application to scope traces |
 | `timeframe` | No | `now-7d` | How far back to look |
 | `rca_report` | No | — | Failure taxonomy from `eval-trace-rca` skill, or a free-text failure hypothesis |
-| `--data-only` | No | off | Emit a self-contained JSON spec file instead of Python SDK code |
-| `--publish` | No | off | Publish online LLM-judge evaluators to Datadog (mutually exclusive with `--data-only`) |
+| `--sdk-code` | No | off | Emit a Python SDK `.py` file for offline experiments instead of publishing online (mutually exclusive with `--data-only`) |
+| `--data-only` | No | off | Emit a self-contained JSON spec file instead of publishing online (mutually exclusive with `--sdk-code`) |
 
-If `ml_app` is missing, ask the user before proceeding. If both `--data-only` and `--publish` are supplied, error out and ask which mode the user wants.
+If `ml_app` is missing, ask the user before proceeding. With no mode flag, the skill defaults to **`publish`** — it proposes online evaluators and, only after you confirm, creates them as disabled drafts (it never auto-enables them). If both `--sdk-code` and `--data-only` are supplied, error out and ask which mode the user wants.
 
 ## Available Tools
 
@@ -312,7 +314,7 @@ If you have access to dd-trace-py locally, verify the API surface by reading the
 | **Cold Start** | Only `ml_app` provided (no RCA, no hypothesis) | Full open discovery — understand what the app does, identify quality dimensions worth measuring, propose evals for coverage |
 | **From RCA** | Conversation contains an RCA report or user provides a failure hypothesis | Skip open discovery — use existing failure taxonomy as eval targets |
 
-**Parse arguments**: Extract `ml_app` (first non-flag argument), `--timeframe` (default `now-7d`), `--data-only`, and `--publish` flags. Set `output_mode = publish` if `--publish` is set, `output_mode = data_only` if `--data-only` is set, otherwise `output_mode = sdk_code`. Error if both `--data-only` and `--publish` are present.
+**Parse arguments**: Extract `ml_app` (first non-flag argument), `--timeframe` (default `now-7d`), `--sdk-code`, and `--data-only` flags. Set `output_mode = sdk_code` if `--sdk-code` is set, `output_mode = data_only` if `--data-only` is set, otherwise `output_mode = publish` (the default). Error if both `--sdk-code` and `--data-only` are present.
 
 **Resolution steps:**
 
@@ -466,7 +468,7 @@ Before building the proposal, apply the coverage map from Phase 0. **Coverage is
 For each proposed evaluator:
 
 - **Name**: Must match `^[a-zA-Z0-9_-]+$` (alphanumeric, underscore, hyphen only)
-- **Type**: `LLMJudge` (Boolean/Score/Categorical/custom JSON schema), built-in (`JSONEvaluator`, `RegexMatchEvaluator`, etc.), or `BaseEvaluator` subclass. *In `publish` mode, only LLM-judge evaluators are supported by the MCP tool — code-based checks must NOT be silently dropped. List them in the same proposal table with `Type` set to the code-based class, mark them under a "Not publishable in this mode" subsection of the proposal, and tell the user to run the skill again in default `sdk_code` mode (or `--data-only`) to capture them. Treat the code-based proposals as part of the suite for counting and coverage purposes.*
+- **Type**: `LLMJudge` (Boolean/Score/Categorical/custom JSON schema), built-in (`JSONEvaluator`, `RegexMatchEvaluator`, etc.), or `BaseEvaluator` subclass. *In `publish` mode, only LLM-judge evaluators are supported by the MCP tool — code-based checks must NOT be silently dropped. List them in the same proposal table with `Type` set to the code-based class, mark them under a "Not publishable in this mode" subsection of the proposal, and tell the user they can get them as offline code on request (`--sdk-code`, or ask after the publish run) or as a `--data-only` spec. Treat the code-based proposals as part of the suite for counting and coverage purposes.*
 - **What it measures**: 1-2 sentence plain-language description
 - **Target span**: Which span's data the evaluator was designed for (e.g., "root agent span", "LLM sub-span `anthropic.request`", "all `llm` spans"). If the root span's I/O is too lossy for the quality dimension (e.g., tool call results aren't visible), note this and specify which sub-span has the signal. *In `publish` mode this maps to a combination of `eval_scope` (`span`/`trace`/`session`), `root_spans_only`, and the EVP `filter` query (e.g. `@meta.span.kind:llm` or `service:web`).*
 - **Pass/fail criteria**: `pass_when=True`, `min_threshold=7`, `pass_values=["correct"]`, or "no automatic assessment" for custom JSON schema
@@ -574,10 +576,10 @@ For each evaluator:
 {Only in publish mode, when the suite contains code-based evaluators (JSONEvaluator, RegexMatchEvaluator, LengthEvaluator, StringCheckEvaluator, BaseEvaluator). Required when any code-based proposal exists.}
 
 **Not publishable in this mode** (code-based evaluators — the publish API is LLM-judge only):
-- `{name}` ({type}) — {what it would check}. Re-run `/eval-bootstrap {ml_app}` in default mode to emit as offline SDK code, or `/eval-bootstrap {ml_app} --data-only` for a framework-agnostic JSON spec.
+- `{name}` ({type}) — {what it would check}. Ask me to emit these as offline SDK code (or run `/eval-bootstrap {ml_app} --sdk-code`), or `/eval-bootstrap {ml_app} --data-only` for a framework-agnostic JSON spec.
 ```
 
-**Which evaluators should I generate?** Treat the proposal as a candidate set — the suite below is intentionally broad so you can pick what matters for your team's quality bar. Reply with **which to keep, which to drop, and which to rename**; not every domain-specific proposal will fit your priorities. In `sdk_code` mode you may also add custom evaluators or change provider/model. In `publish` mode you may override `integration_provider`, `model_name`, `sampling_percentage`, `eval_scope`, `root_spans_only`, or `filter` per evaluator.
+**Which evaluators should I generate?** Treat the proposal as a candidate set — the suite below is intentionally broad so you can pick what matters for your team's quality bar. Reply with **which to keep, which to drop, and which to rename**; not every domain-specific proposal will fit your priorities. In `sdk_code` mode you may also add custom evaluators or change provider/model. In `publish` mode you may override `integration_provider`, `model_name`, `sampling_percentage`, `eval_scope`, `root_spans_only`, or `filter` per evaluator. (In the default `publish` mode these are created as **online drafts** in Datadog on confirmation — you review and enable them in the UI. Prefer offline SDK code or a JSON spec instead? Say so and I'll generate the confirmed suite that way.)
 
 Do NOT proceed to code generation until the user confirms.
 
@@ -587,9 +589,17 @@ Do NOT proceed to code generation until the user confirms.
 
 Branch on `output_mode`:
 
+- `publish` *(default)* → skip to **Phase 3C**
 - `sdk_code` → **Phase 3A** below
 - `data_only` → skip to **Phase 3B**
-- `publish` → skip to **Phase 3C**
+
+#### On-request code generation (after a publish run)
+
+The default path publishes **online** evaluators. If the user then asks for the suite as offline code or a portable spec (e.g. "now generate the SDK code for these", "give me a JSON spec"), **do not re-run Phase 1–2**. Reuse the **already-confirmed** evaluator suite and jump straight to **Phase 3A** (`sdk_code`) or **Phase 3B** (`data_only`), translating each published online evaluator into the offline form:
+- The online prompt template (span/trace/session placeholders) becomes an offline LLMJudge with generic `{{input_data}}` / `{{output_data}}` placeholders (offline data comes from the user's dataset/task function, not spans — see the EvaluatorContext note), preserving the rubric and pass criteria.
+- Code-based checks that couldn't be published online (the "Not publishable in this mode" set) are emitted as real `BaseEvaluator` / built-in evaluators here.
+
+This works the other way too: a user who started with `--sdk-code` can ask to publish the confirmed suite online (Phase 3C).
 
 ---
 
@@ -873,9 +883,11 @@ Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_
 
 ---
 
-### Phase 3C: Publish Online Evaluators to Datadog
+### Phase 3C: Publish Online Evaluators to Datadog (as disabled drafts)
 
-**Goal**: For each confirmed evaluator, write an LLM-judge configuration to Datadog via `create_or_update_llmobs_evaluator` so it runs automatically on matching production spans.
+**Reached only after the user confirms the suite at the Phase 2 checkpoint — nothing below is written to Datadog before that.**
+
+**Goal**: For each confirmed evaluator, write an LLM-judge configuration to Datadog via `create_or_update_llmobs_evaluator` as a **disabled draft** (`enabled: false`). It scores **no** spans until the user reviews and enables it in the UI; once enabled, it runs automatically on matching production spans.
 
 #### Pre-publish checks (single message — parallelize)
 
@@ -1169,7 +1181,7 @@ Wrote {N} online evaluators to ml_app `{ml_app}`. **All published as drafts (`en
 
 {If any code-based proposals were dropped:}
 **Not published** (code-based, not supported by online evaluator API):
-- `{name}` ({type}) — consider running offline via `/eval-bootstrap {ml_app}` (SDK mode).
+- `{name}` ({type}) — ask me to emit it as offline SDK code, or run `/eval-bootstrap {ml_app} --sdk-code`.
 
 ### Next Steps — review and activate in the UI
 
@@ -1182,7 +1194,8 @@ The drafts are intentionally not running yet. Walk through each one in the Datad
    - **Click into a sample span/trace** and use the test pane to dry-run the prompt against real data. Confirm the result matches your expectation.
 3. **Enable**: once each draft passes review, toggle it to enabled. Datadog starts scoring incoming spans immediately.
 4. **Wait for first scores**: with `sampling_percentage=10` (span scope) or `5` (trace / session scope), expect first results within minutes for high-traffic apps — except **session scope**, where the first result appears only after the session's 30-minute inactivity window closes.
-5. **Tune sampling/filter**: if results are noisy or volume is too high, reduce `sampling_percentage` or tighten the `filter` from the UI. Re-running `/eval-bootstrap {ml_app} --publish` will round-trip the existing config before overwriting — your manual tweaks survive across reruns.
+5. **Tune sampling/filter**: if results are noisy or volume is too high, reduce `sampling_percentage` or tighten the `filter` from the UI. Re-running `/eval-bootstrap {ml_app}` will round-trip the existing config before overwriting — your manual tweaks survive across reruns.
+6. **Prefer offline code?** These evaluators run online in Datadog. If you'd rather iterate on the same suite as offline SDK code (`sdk_code`) or a portable JSON spec (`data_only`), just ask — I'll regenerate the **confirmed** suite without re-exploring.
 ```
 
 #### Notebook export (after summary)
