@@ -59,6 +59,11 @@ If zero results — the tracer is not setting `peer.service`. Ask the user to ad
 | All services containing a string | `service:*payments*` |
 | All inferred services under a domain | `peer.service:*.shopify.com` |
 | Service in one environment only | `service:payments AND env:prod` |
+| Multiple possible values | `service:(payments OR billing)` |
+| Tag must exist | `_exists_:kube_container` |
+| Tag must not exist | `_missing_:kube_container` |
+
+> **Supported operations only:** The above forms — exact match, wildcards, `AND`/`OR`, `_exists_`, `_missing_` — are the only accepted operations. More advanced query syntax (CIDR ranges, numeric comparisons, fuzzy matching, etc.) is not supported and will be rejected by the API with a filter syntax error.
 
 **New name syntax** — the `value` field in `rewrite_tag_rules`:
 
@@ -72,6 +77,8 @@ If zero results — the tracer is not setting `peer.service`. Ask the user to ad
 - Maximum **1 capture group** per expression
 - **No greedy quantifiers inside capture groups** — use non-greedy variants: `(.+?)` not `(.+)`, `(.*?)` not `(.*)`
 - Quantifiers on capture groups themselves (e.g. `(foo)+`) are not allowed
+- **No capture group** → the entire match is used as the replacement value
+- **Capture group spanning the entire match** (e.g. `^(.*)$`) will be rejected by the API — if you want the full tag value, use tag interpolation (`{{service}}`) instead of a regex
 
 **Five remapping patterns:**
 
@@ -195,6 +202,16 @@ Use the output to help the user identify exact service names. Ask the user to co
 
 Work through each component before writing any JSON.
 
+### 0. Check for integration override names
+
+Some service names (e.g. `grpc-client`, `net/http`, `aws.s3`, `redis`) are **integration-generated overrides** — the tracer auto-tags spans with them based on the library being used, not a user-set `service` tag. Remapping these with a service remapping rule is the wrong tool: the override is injected per-span by the integration, so the remapped name will keep re-appearing unless the override itself is removed.
+
+**How to detect:** if the service name looks like a well-known integration name (single-word library names, `<protocol>-<client>` patterns, `<vendor>.<resource>` patterns), ask the user:
+
+> *"The name `<SERVICE>` looks like an integration override — a name the tracer sets automatically on spans from the `<LIBRARY>` integration, not a user-configured service name. Service remapping won't stick here because the override is re-applied on every span. The right fix is **integration override removal**, which strips these auto-names so the parent service's name propagates instead. This is currently only configurable in the Datadog UI under APM → Setup → Service Remapping → Integration Override Removal. Do you want to handle it there, or proceed with a remapping rule anyway?"*
+
+If the user confirms it is an integration override, stop here and direct them to the UI. Do not create a remapping rule.
+
 ### 1. Entity type
 
 [DECISION: entity type — ask the user if unclear]
@@ -249,6 +266,17 @@ Report to the user:
 | **Monitors** | Any monitor referencing the old service name will silently break after remapping. List them and offer to update. |
 | **Dashboards** | Any dashboard with the old service name in its title will have stale references after remapping. List them and offer to update. |
 | **Conflicting rules** | Existing rules targeting the same service may be overridden. Show conflicts and ask the user to confirm. |
+
+**Known gaps — Claude cannot verify these automatically:**
+
+Remapping a service name can also break the following. Claude has no `pup` commands to check them today, so surface this as a manual checklist for the user before they confirm:
+
+> *"Before I create this rule, please verify `<ORIGINAL_SERVICE>` is not referenced in any of the following — they won't update automatically after remapping:*
+> - *Spans-to-metrics rules (APM → Setup → Generate Metrics)*
+> - *Trace-to-metrics rules*
+> - *Span retention filters (APM → Setup → Retention Filters)*
+> - *Logs-to-metrics rules (Logs → Generate Metrics)*
+> - *Any pipeline, alert, or SLO that acts on the service name*"
 
 If monitors reference the old service name, ask:
 > *"I found `<N>` monitor(s) referencing `<ORIGINAL_SERVICE>`. After remapping, they'll need to be updated to use `<TARGET_NAME>`. Want me to update them now?"*
