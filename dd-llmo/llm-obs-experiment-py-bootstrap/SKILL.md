@@ -12,7 +12,7 @@ The SDK handles lazy project/experiment creation, dataset push diffing, the 5 MB
 ## Usage
 
 ```
-/llm-obs-experiment-py-bootstrap [--format py|ipynb] [--dataset <path>] [--dataset-name <name>] [--dataset-version <int>] [--project-name <name>] [--evaluator-style function|class|remote] [--jobs <n>] [--output <path>] [--task-source <module:function>] [--placeholder-task] [--app-root <path>]
+/llm-obs-experiment-py-bootstrap [--purpose <free text>] [--format py|ipynb] [--dataset <path>] [--dataset-name <name>] [--dataset-version <int>] [--project-name <name>] [--evaluator-style function|class|remote] [--jobs <n>] [--output <path>] [--task-source <module:function>] [--placeholder-task] [--app-root <path>] [--env-file <path>]
 ```
 
 Arguments: $ARGUMENTS
@@ -35,6 +35,7 @@ All inputs are optional. If the user omits a flag, fall back to the default — 
 | `--placeholder-task` | off | Opt out of application introspection and emit the generic `# TODO(user)` placeholder task. Use when scaffolding without a real app, in tests, or when the user explicitly wants to fill in the task themselves. |
 | `--app-root` | resolved from `pyproject.toml` / `setup.cfg` / `setup.py` / cwd | Root directory the introspection scan is restricted to. Skipped if `--placeholder-task` or `--task-source` is set. |
 | `--env-file` | none — generated file auto-discovers `.env` files at runtime (see Workflow step 4, section 1) | Explicit absolute path to a `.env`-style file. Generated code preloads this path **first** before the auto-discovery walk. Use when your credentials live in a non-standard location (e.g. `~/.config/dd/staging.env`). |
+| `--purpose` | auto — prompted via `AskUserQuestion` in Workflow step 2.0 if not set or inferable from the invocation message | Free-form string describing what the experiment is meant to validate (e.g. `"test that the agent picks the right tool for ambiguous user requests"`, `"verify SQL output always parses"`, `"regression-test prompt v3 against prod baseline"`). Used as reasoning context — biases candidate ranking in Workflow step 2.5, shapes the wrapper return type in 2.5d, seeds evaluator selection in step 3, and is embedded in the generated file's header comment. NOT a fixed taxonomy — Claude reads the string and decides effects dynamically per invocation. |
 
 ---
 
@@ -111,14 +112,16 @@ experiment = LLMObs.experiment(
         # does not surface as chips — config is what users actually see.
         "generated_by": "claude-code",
         "skill": "llm-obs-experiment-py-bootstrap",
+        "purpose": "<one-line purpose from step 2.4>",
     },
-    description="<optional>",
+    description="<one-line purpose from step 2.4>",
     tags={
         # Same provenance, sent to experiment metadata.tags for any future
         # tag-filter UI / API consumers. Always emitted alongside the
         # config copy — never one without the other.
         "generated_by": "claude-code",
         "skill": "llm-obs-experiment-py-bootstrap",
+        "purpose": "<one-line purpose from step 2.4>",
     },
 )
 
@@ -165,6 +168,7 @@ Do **not** load all three. Each reference file is self-contained — code templa
 The same section sequence in both formats. In `.py` these become comment banners; in `.ipynb` each becomes one markdown cell + one code cell.
 
 ```
+0. File header docstring — name, generated_at, purpose (from step 2.4), provider, wired task source.
 1. Env setup           — auto-discover .env files (cwd, app root, parent walk,
                          ~/.datadog/credentials), then os.getenv reads + hard-assert
                          required keys. NO python-dotenv dependency. Shell env wins
@@ -176,8 +180,8 @@ The same section sequence in both formats. In `.py` these become comment banners
                          introspection) and adapted to the SDK signature. Only falls back to a
                          placeholder OpenAI call with # TODO(user) if --placeholder-task is set or
                          no LLM call site was found in the project.
-5. Evaluators          — 2-3 in the requested style
-6. Experiment          — LLMObs.experiment(config={..., "generated_by": "claude-code", ...}, tags={"generated_by": "claude-code", ...})
+5. Evaluators          — 2-3 in the requested style, semantics seeded by the purpose (step 3)
+6. Experiment          — LLMObs.experiment(config={..., "generated_by": "claude-code", "purpose": "...", ...}, tags={...})
 7. Run                 — experiment.run(jobs=N); print(experiment.url)
 8. Results inspection  — experiment.as_dataframe() if pandas, else print
 ```
@@ -217,6 +221,46 @@ The same section sequence in both formats. In `.py` these become comment banners
 
    **Note on dataset IDs.** The public SDK's `LLMObs.pull_dataset(...)` takes a name, not an ID — so there's no `--dataset-id` flag. If a user only has a dataset ID from a Datadog UI URL (`/llm/datasets/<id>`), the workflow is: open that URL in the UI, copy the dataset name, and pass it as `--dataset-name`. The skill must not import `ddtrace.llmobs._experiment` or any other underscore module to work around this.
 
+2.4. **Determine the experiment's purpose.** Capture a one-sentence statement of what the experiment is meant to validate. This becomes a *reasoning input* that biases every downstream step (introspection ranking in 2.5, wrapper shape in 2.5d, evaluator selection in step 3, file header in step 4). It is **not** a fixed taxonomy — the user types whatever describes their goal, and Claude reads it and applies judgment per invocation.
+
+   **Resolution order**:
+
+   1. If `--purpose "<text>"` was passed → use it verbatim. Skip to 2.5.
+   2. If the user's original invocation message contains a clear purpose statement (e.g. *"set up an experiment to test my tool selection logic"*, *"validate that SQL output is always parseable"*, *"regression-test prompt v3"*), extract it and present it back for confirmation via `AskUserQuestion` with the extracted text as a single option labeled "Use the purpose I described" plus "Pick a different purpose" and "Other". If confirmed, use the extracted text. Skip to 2.5.
+   3. Otherwise, prompt with `AskUserQuestion`. The options are **seed prompts**, not a constrained taxonomy — they exist to give the user something to react to. Each "label" maps to a starter sentence that the user can refine; selecting an option uses its starter sentence as `purpose` unless the user provides notes/free text instead.
+
+   **`AskUserQuestion` payload** (use these 5 options verbatim — they cover the common cases without locking the user into them):
+
+   ```
+   question: "What is this experiment meant to validate?"
+   header:   "Purpose"
+   options:
+     - label: "Output accuracy / answer quality"
+       description: "Verify the model produces correct answers compared to expected outputs. Most common starting point."
+     - label: "Tool call correctness"
+       description: "For agent apps — validate the agent picks the right tool with the right arguments. Useful when tool routing is the failure surface."
+     - label: "Structured output / schema validity"
+       description: "Verify the output always conforms to a required shape (JSON, SQL, citation format, etc.)."
+     - label: "Retrieval / RAG faithfulness"
+       description: "Verify the answer is grounded in retrieved documents — no hallucinations beyond the retrieved context."
+     - label: "Refactor / regression test"
+       description: "Check whether a prompt or code change preserves observed behavior. Uses the dataset's expected_output as the ground-truth baseline."
+   ```
+
+   The user picks an option (which becomes the starter sentence), or picks "Other" and writes their own. Either way, the resulting string is the `purpose` carried forward.
+
+   **What to do with the purpose downstream** — Claude reads it and reasons about effects, no static mapping:
+
+   - **In step 2.5 (introspection ranking)**: read the purpose; if it mentions tools / agents → boost candidates with `@LLMObs.agent`, `@workflow`, LangChain `ReActAgent`, or tool-using shapes. If it mentions retrieval / RAG / grounding → boost candidates that import vector stores or call `retrieve`/`query_engine`. If it mentions schema / JSON / SQL → boost candidates that use `response_format`, pydantic, or structured-output APIs. Apply judgment — there's no hardcoded mapping.
+   - **In step 2.5d (wrapper generation)**: if the purpose needs richer signal than just the final output (tool calls, retrieved docs, intermediate state), emit a wrapper that captures it *if the user's function exposes it*. Otherwise emit a `# Note:` comment explaining what the wrapper would ideally return and why a richer return shape would help — do not refactor the user's actual function.
+   - **In step 3 (evaluator template)**: read the purpose and seed the evaluator list to match. Accuracy → standard `exact_match` + LLMJudge. Tool calls → an LLMJudge with a tool-correctness rubric, or a `RemoteEvaluator` if the user has one configured. Schema → `JSONEvaluator(required_keys=[...])` or `RegexMatchEvaluator`. Retrieval → an LLMJudge for groundedness. Regression → `exact_match` + a near-match check. The `--evaluator-style` flag (function / class / remote) still picks the SURFACE; the purpose picks the SEMANTICS.
+   - **In step 4 (file emission)**: include the purpose as a `# Purpose:` comment in the file's docstring header so the user (and reviewers) can see what the experiment was scaffolded for.
+   - **In Output (next-steps)**: surface the resolved purpose in the next-steps block so it's part of the run-summary record.
+
+   **If the user is silent / picks the default option without notes**, use the starter sentence as-is. Never block on this step — there should always be a `purpose` string moving forward, even if it's a generic "Output accuracy / answer quality".
+
+---
+
 2.5. **Discover the task function from the user's application code.** This step replaces the old "placeholder `task_fn`" behavior — an onboarding-grade experiment needs to actually exercise the user's real LLM logic. The skill must do the work, not push it onto the user.
 
    **Skip this entire step if** `--placeholder-task` is set, OR if `--task-source <module>:<function>` is set (in which case use the provided source directly — jump to substep 2.5d). Otherwise:
@@ -255,6 +299,8 @@ The same section sequence in both formats. In `.py` these become comment banners
    | Function file is under `examples/`, `scripts/`, `notebooks/` | **−2** |
    | Function uses LLM SDK at multiple lines (looks like a multi-step orchestration, not just a single call) | **+1** |
 
+   **Apply the experiment purpose from step 2.4 as an additional soft bias on top of these scores.** Read the purpose string and bump candidates whose shape matches what the user is trying to test — agent / tool-using functions for tool-correctness purposes; retrieval / vector-store users for RAG / grounding purposes; structured-output users for schema purposes; etc. Use judgment, not a hardcoded mapping. A purpose-aligned candidate should typically beat a generically-better-named one (+3 to +5 effective bias is reasonable). See step 2.4 "What to do with the purpose downstream" for examples.
+
    Pick the **top 3** candidates and present them to the user as a single short prompt (no `AskUserQuestion` — just a checkpoint prompt in chat):
 
    ```
@@ -287,16 +333,24 @@ The same section sequence in both formats. In `.py` these become comment banners
      - If the user's function takes `**kwargs` or a single dict, pass `input_data` through unmodified.
      - If the user's function is `async`, wrap with `asyncio.run(...)` inside a sync `task_fn` (simplest path; lets `LLMObs.experiment(...).run()` stay sync). Alternative: emit an `async def task_fn` and use `LLMObs.async_experiment(...)` — only do this if the rest of the experiment is already async.
    - **Config passthrough**: never silently drop the `config` argument. If the user's function takes a `config` / `model` / `temperature` parameter, wire `config.get("...")` into it.
-   - **Comment header**: emit a comment block above `task_fn` that names the source function, file, line, and notes any adaptation choices, e.g.:
+   - **Comment header**: emit a comment block above `task_fn` that names the source function, file, line, the experiment purpose (from step 2.4), and any adaptation choices, e.g.:
 
      ```python
      # Task function wired to: <module.path>:<function_name>
-     #   source: <file>:<line>
+     #   source:  <file>:<line>
+     #   purpose: <one-line purpose from step 2.4>
      #   adapter: input_data["<key>"] -> <function_name>(<key>=...)
      #
      # To experiment with prompt / model variants without editing your app, inline
      # the call here instead of importing.
      ```
+
+   - **Richer-return shape when the purpose demands it**: read the purpose from step 2.4. If validating just the final output string is too lossy for what the user is testing (e.g. they're checking tool-call selection — the final string says "I'll book that for you" but the *interesting* signal is which tool was called with which args), emit a wrapper that captures the richer signal **only if the user's function exposes it**. Two cases:
+
+     - **The function already returns richer data** (e.g. `{"output": str, "tool_calls": [...]}`, or a LangChain `AgentExecutor.invoke()` result with `intermediate_steps`): wire `task_fn` to return that shape directly. Evaluators in step 3 will receive it as `output_data`.
+     - **The function returns just a string** but the purpose needs more: emit a `# Note:` comment above `task_fn` explaining what richer shape would help, and how the user could expose it (e.g. *"To capture tool calls for evaluation, refactor `respond(query)` to also return the `intermediate_steps` from your AgentExecutor."*). **Do not refactor the user's function** — emit a note, ship the simple wrapper, let the user choose.
+
+   Never invent a richer return shape that the user's function doesn't actually provide. The wrapper is plumbing, not surgery.
 
    - **Side-effect warning**: scan the chosen function (and its immediate calls within the same module) for these patterns. If any are present, print a `WARNING:` line in the next-steps output, but do NOT alter the import:
 
@@ -338,10 +392,24 @@ The same section sequence in both formats. In `.py` these become comment banners
 
    The template's discovery walk (env file → script dir → cwd → parent dirs → `~/.datadog/credentials`) and shell-overrides-file contract are stable — they live in the template, not in this skill body. If you need to change discovery semantics, edit `scripts/env_setup_template.py` directly; do not re-derive them in-prose here.
 
-3. **Pick evaluator template** based on `--evaluator-style`:
+3. **Pick evaluator template** based on `--evaluator-style` AND the purpose from step 2.4.
+
+   `--evaluator-style` decides the **surface** (function / class / remote — see `references/evaluator-styles/<style>.md` for the syntax shape). The purpose decides the **semantics** — what each evaluator actually measures. Both inputs apply together.
+
+   Default shape (purpose: accuracy / unspecified):
    - `function`: 3 plain functions — one trivial boolean (`exact_match`-style, bare `bool` OK), one richer rule-based check returning `EvaluatorResult` with `reasoning` + `assessment`, and one LLM-as-Judge surrogate. If `--dataset` had structured `expected_output`, add a JSON-shape check (also returning `EvaluatorResult`).
    - `class`: 2 `BaseEvaluator` subclasses with `evaluate(self, context: EvaluatorContext) -> EvaluatorResult`. Always return `EvaluatorResult` (never a bare value) — state-bearing evaluators have richer signal to surface.
    - `remote`: 1-2 `RemoteEvaluator(eval_name=...)` instances with a comment instructing the user to create the judge in the Datadog UI first.
+
+   **Purpose-driven amendments** (read the purpose string from step 2.4 and adjust the default seed accordingly — use natural-language judgment, not a hardcoded lookup):
+
+   - If the purpose mentions **tool calls / agent routing / tool selection**: replace the LLM-as-Judge surrogate with a `tool_calls_correct` LLMJudge whose rubric checks the right-tool-with-right-args question. The rubric should reference `output_data["tool_calls"]` if the wrapper from 2.5d captured them; otherwise check the textual output for the tool name.
+   - If the purpose mentions **groundedness / faithfulness / RAG**: add a `groundedness` LLMJudge that takes `input_data` (the question + retrieved docs) and `output_data` (the answer) and checks that every claim in the answer traces to the docs. Make the rubric explicit about hallucinations being a fail.
+   - If the purpose mentions **structured output / JSON / SQL / schema**: lean into `JSONEvaluator(required_keys=[...])` or `RegexMatchEvaluator(pattern=r"...")` from the built-in set. Add a richer `EvaluatorResult` check for semantic schema-fit if the user's structured output has constraints beyond shape (e.g. enum values, numeric ranges).
+   - If the purpose mentions **regression / refactor / preserve behavior**: prefer `exact_match` as the primary signal, plus a near-match check (`difflib.SequenceMatcher.ratio()` ≥ 0.95 returning `EvaluatorResult` with assessment="partial" between 0.7 and 0.95). Drop the LLMJudge surrogate — regression tests want determinism, not model judgment.
+   - For purposes the SKILL.md doesn't recognize verbatim: read the user's purpose string, reason about what evaluator shape would best measure it, and write the evaluator from scratch. Cite the purpose in a comment above the evaluator so the user can see the link. Never invent a `RemoteEvaluator(eval_name=...)` for a name that may not exist in their Datadog org — when in doubt emit an LLMJudge with an inline rubric instead.
+
+   Whatever you emit, the **count of evaluators stays 2–3** to keep the generated file lean. The user can add more after the first run.
 
    **In all styles**: any evaluator with non-trivial logic must return `EvaluatorResult` populating at minimum `value` + `reasoning` + `assessment` (see the "Return `EvaluatorResult`, not bare values" section). The compare UI uses `reasoning` for per-record drill-downs and `assessment` to determine whether a metric trend is an improvement.
 
@@ -405,19 +473,25 @@ Generated SDK experiment: <format>
 Path: <path>
 Lines: <count>   (or Cells: <count> for .ipynb)
 
+Purpose:
+  "<resolved purpose string from step 2.4>"
+  (sourced via: --purpose flag | extracted from invocation message | AskUserQuestion default | AskUserQuestion + free text)
+
 SDK calls used:
   ✓ LLMObs.enable(...)                       (line/cell ~<N>)
   ✓ LLMObs.<create_dataset|create_dataset_from_csv|pull_dataset>(...)  (line/cell ~<N>)
   ✓ task_fn(input_data, config)              (line/cell ~<N>)
-  ✓ <N> evaluators (style: <function|class|remote>)
+  ✓ <N> evaluators (style: <function|class|remote>, semantics seeded by purpose)
   ✓ LLMObs.experiment(...).run(jobs=<N>)     (line/cell ~<N>)
-  ✓ Provenance (in config + tags): generated_by=claude-code, skill=llm-obs-experiment-py-bootstrap
+  ✓ Provenance (in config + tags): generated_by=claude-code, skill=llm-obs-experiment-py-bootstrap, purpose=...
 
 Task function source:
   ✓ Wired to: <module.path>:<function_name>   (source: <file>:<line>)
   ✓ Adapter: <one line describing the input_data → call shape mapping>
+  ✓ Return shape: <plain string | {output, tool_calls} | {answer, retrieved_docs} | etc.>
   ✓ Sync/async: <sync | async (wrapped with asyncio.run)>
   [WARNING lines from the side-effect scan in Workflow step 2.5d, if any]
+  [Note line if the purpose requested richer return shape but the function only exposes a string]
 
 (If --placeholder-task was used or introspection found nothing:)
 Task function source:
@@ -455,9 +529,13 @@ Run:
 Next steps:
 1. Confirm the wired task_fn matches the entry point you want to evaluate (see "Task function source" above).
    Edit the import in section 4 of the generated file if you'd rather inline the call or pick a different function.
-2. Adjust the evaluators (or wire up RemoteEvaluator names you created in the Datadog UI).
-3. Run it. The script prints experiment.url at the end.
-4. Watch the experiment: https://app.datadoghq.com/llm/experiments
+2. Confirm the purpose ("<purpose string>") matches what you actually want to measure — section 0 of the
+   file documents it, section 5's evaluators were seeded against it, and section 6's experiment carries
+   it as a config tag. Re-run this skill with `--purpose "<new text>"` to regenerate against a different
+   target without changing your code.
+3. Adjust the evaluators if needed (or wire up RemoteEvaluator names you created in the Datadog UI).
+4. Run it. The script prints experiment.url at the end.
+5. Watch the experiment: https://app.datadoghq.com/llm/experiments
 ```
 
 ---
@@ -521,11 +599,13 @@ Never invent symbols or behaviors not present in this skill body or the docs abo
 - **Provider-key asserts must match the wired task.** Generate the assert for `OPENAI_API_KEY` only if the task imports / calls OpenAI; same for Anthropic / Gemini / Bedrock / etc. Per the Workflow step 2.6 table. Never emit asserts for provider keys the task does not actually need — they're confusing and cause spurious "missing key" failures.
 - **Always pass `site=` to `LLMObs.enable()`.** Read it from `os.getenv("DD_SITE", "datadoghq.com")`. Omitting `site=` silently defaults to US1 prod, which breaks every non-prod org (e.g. staging `datad0g.com`, `datadoghq.eu`). The canonical signature already includes it — never drop it.
 - **Per-record `tags` are `"key:value"` strings.** When inlining records (whether from `--dataset` JSON, CSV, or the default sample), each entry in a record's `"tags"` list must be a `"key:value"` string like `"env:prod"`, `"source:traces"`, `"category:geography"`. Bare strings (`"smoke"`, `"baseline"`) trigger `ValueError: Tag '<name>' is malformed.` at `Dataset.append()` time. If the source data has bare-string tags, namespace them — e.g. wrap `"smoke"` as `"tag:smoke"` rather than dropping it.
+- **Always resolve a purpose before generating.** Step 2.4 must produce a non-empty `purpose` string before steps 2.5 / 3 / 4 run. If the user provides one via `--purpose` or in their invocation, use it. Otherwise prompt via `AskUserQuestion` with the 5 seed options + Other. Never skip the prompt; never proceed with a blank purpose. A weak purpose ("test it") is still better than no purpose — generic accuracy semantics will at least seed reasonable defaults.
+- **Treat the purpose as reasoning input, not a switch statement.** There is no hardcoded mapping from purpose strings to evaluator code or wrapper shape. Read the purpose, reason about what's being measured, and emit appropriately. The same purpose string may produce different output for two different apps (a tool-call purpose in a LangChain app generates different wrapper code than in a raw OpenAI app) — that's expected.
 - **Introspect first, placeholder last.** The default behavior is Workflow step 2.5 — scan the user's app, find the LLM entry point, wire `task_fn` to it. A `# TODO(user)` marker in the task section is only acceptable when introspection genuinely found nothing or the user passed `--placeholder-task`. Never emit a placeholder task when a real candidate exists in the project — that's the failure mode this skill exists to fix.
 - **`# TODO(user)` markers on at least one evaluator** so reviewers can't ship un-customized evaluators by accident. (Evaluators stay user-owned even when the task is auto-wired.)
 - **Introspection is bounded.** The scan in Workflow step 2.5 must respect `--app-root` (or its default-resolved value), `.gitignore` if present, and the directory blocklist (`node_modules`, `.venv`, `__pycache__`, etc.). Refuse to scan `/` or `~`. If a scan would touch more than ~10k Python files, narrow the root or ask the user to point at the relevant subdirectory.
 - **Match notebook conventions.** Plain function evaluators by default; class-based only when the user opts in. Print `experiment.url` at the end of every generated file.
-- **Tag every experiment with provenance — in both `config` and `tags`.** Every `LLMObs.experiment(...)` call **must** carry `"generated_by": "claude-code"` and `"skill": "llm-obs-experiment-py-bootstrap"` as keys in **both** the `config={...}` dict (so they render in the experiment's Configuration view, which is where users actually look) **and** the `tags={...}` dict (which the SDK serializes into `metadata.tags` for future tag-filter consumers). The `tags=` path alone is not enough: the current LLM Experiments UI does not surface `metadata.tags` as filterable chips, so users won't see the provenance unless it's also in `config`. If a user later edits the generated file to add their own keys, they extend both dicts — never replace the provenance keys silently.
+- **Tag every experiment with provenance + purpose — in both `config` and `tags`.** Every `LLMObs.experiment(...)` call **must** carry `"generated_by": "claude-code"`, `"skill": "llm-obs-experiment-py-bootstrap"`, AND `"purpose": "<step 2.4 string>"` as keys in **both** the `config={...}` dict (so they render in the experiment's Configuration view, which is where users actually look) **and** the `tags={...}` dict (which the SDK serializes into `metadata.tags` for future tag-filter consumers). The `tags=` path alone is not enough: the current LLM Experiments UI does not surface `metadata.tags` as filterable chips, so users won't see the values unless they're also in `config`. The `purpose` field is what makes future runs of the same experiment discoverable by intent — without it, users see ten experiments with cryptic names and no idea what each was testing. Also set `description="<purpose>"` on the experiment so the UI list view shows it.
 - **PII scrub at the door.** If `--dataset` is given, scrub before inlining into the generated file. Never embed a record that contains an unmasked email/phone/SSN/API-key pattern.
 - **Don't generate `requirements.txt` or `pyproject.toml`.** Print the `pip install` command in the next-steps message instead — most users already have a venv.
 - **No silent fallbacks.** If `--format` is unsupported, error out with the valid choices.
