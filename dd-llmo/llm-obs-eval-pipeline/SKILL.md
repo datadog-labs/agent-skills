@@ -60,7 +60,11 @@ This skill is **pure orchestration plus pedagogy** — no new analytical logic. 
 /llm-obs-eval-pipeline <ml_app> [--project-name <name>] [--timeframe <window>] [--trace-limit <N>]
                                 [--format py|ipynb] [--evaluator-style function|class|remote]
                                 [--data-only | --publish]
+                                [--start-at classify|rca|eval-bootstrap|dataset|publish|experiment|run|analyze]
                                 [--stop-after classify|rca|eval-bootstrap|dataset|publish|experiment|run|analyze]
+                                [--classification-summary <path>] [--rca-report <path>]
+                                [--dataset-file <path>] [--dataset-name <name>]
+                                [--experiment-file <path>] [--experiment-id <uuid> | --experiment-url <url>]
                                 [--app-root <path>] [--env-file <path>] [--output-dir <dir>]
                                 [--backend pup]
 ```
@@ -80,6 +84,14 @@ Arguments: $ARGUMENTS
 | `--data-only` | No | off | Phase 3 pass-through to `llm-obs-eval-bootstrap`: emit JSON spec instead of Python SDK code. |
 | `--publish` | No | off | Phase 3 pass-through to `llm-obs-eval-bootstrap`: publish online LLM-judge evaluators to Datadog. |
 | `--stop-after <phase>` | No | `analyze` (run everything) | Stop after the named phase completes. `classify` = Phase 1 only. `rca` = through Phase 2. `eval-bootstrap` = through Phase 3 (matches the classic eval-pipeline). `dataset` = through Phase 4. `publish` = through Phase 5. `experiment` = through Phase 6 (file generated, not run). `run` = through Phase 7 (skip analyzer). `analyze` = all eight phases (default). |
+| `--start-at <phase>` | No | `classify` (start at the top) | Skip earlier phases and start at the named phase. Same vocabulary as `--stop-after`. The skill auto-loads any required prior-phase artifacts from `<output-dir>/state/` (see "State persistence and entry/exit" section). For phases that need an artifact the auto-load can't find, supply it via one of the override flags below. Combinable with `--stop-after` to run a contiguous slice of the pipeline. |
+| `--classification-summary <path>` | No | auto-loaded from `<output-dir>/state/01-classification.md` if `--start-at rca` or later | Override the Phase 1 output that Phase 2 consumes. Useful when the prior state file is missing or you want to point at a hand-edited version. |
+| `--rca-report <path>` | No | auto-loaded from `<output-dir>/state/02-rca-report.md` if `--start-at eval-bootstrap` or later | Override the Phase 2 output that Phase 3 consumes. |
+| `--dataset-file <path>` | No | auto-loaded from `<output-dir>/state/04-dataset.json` (or the most recent `<output-dir>/dataset_<ml_app>_*.json`) if `--start-at publish` | The local `DatasetRecordRaw[]` JSON that Phase 5 publishes. |
+| `--dataset-name <name>` | No | auto-loaded from `<output-dir>/state/05-published-dataset.json` if `--start-at experiment` | The name of a published Datadog dataset that Phase 6 wires the experiment to. |
+| `--experiment-file <path>` | No | auto-loaded from `<output-dir>/state/06-experiment.json` (which points at the actual `.py` / `.ipynb`) if `--start-at run` | The generated experiment file Phase 7 executes. |
+| `--experiment-id <uuid>` | No | auto-loaded from `<output-dir>/state/07-experiment-run.json` if `--start-at analyze` | The Datadog experiment ID Phase 8 analyzes. Mutually exclusive with `--experiment-url`. |
+| `--experiment-url <url>` | No | auto-loaded as above | Alternative to `--experiment-id`. The skill parses the trailing UUID out of the URL. |
 | `--app-root` | No | resolved from cwd / `pyproject.toml` etc. | Restricts `llm-obs-experiment-py-bootstrap`'s task-function introspection to this directory tree. |
 | `--env-file` | No | none (auto-discovery walks standard locations) | Explicit `.env` path for credential loading. Surfaced in the Precheck and baked into the generated experiment as `ENV_FILE_OVERRIDE`. |
 | `--output-dir` | No | `./experiments` | Where the dataset JSON, publish script, and generated experiment file are written. |
@@ -101,7 +113,7 @@ Before Phase 1, run a single short verification pass — do **not** announce a "
 
    **Project creation semantics**: the project is created lazily by the Datadog SDK the first time `LLMObs.enable(project_name=...)` is called against the org (in Phase 5's publish script and Phase 6's generated experiment). The user does not need to pre-create anything in the UI. Surface the chosen project name in the Precheck output so the user can override before Phase 5 if it isn't what they wanted.
 
-4. **Ensure `--output-dir` exists** — `mkdir -p <output-dir>` via Bash. Cheap.
+4. **Ensure `--output-dir` and `<output-dir>/state/` exist** — `mkdir -p <output-dir>/state` via Bash. Cheap. The `state/` subdirectory is where phase outputs get persisted (see "State persistence and entry/exit" below).
 
 5. **Resolve credentials.** Walk the discovery order below to find Datadog credentials before Phase 5 needs them — failing late at the publish step is bad UX. Read-only at this stage: do NOT write any new files. Do NOT print secret values to the user; only report which file was loaded and which keys were resolved.
 
@@ -171,6 +183,11 @@ Every phase below uses this exact template. Do not deviate — the deterministic
 
 <full sub-skill output OR execution log reproduced here — do NOT summarize or truncate>
 
+<after the action completes successfully, Write the phase output to
+`<output-dir>/state/0N-<name>.{md,json}` per the State persistence contract — see
+"State persistence and entry/exit" section. This happens BEFORE the checkpoint
+so the file is on disk even if the user types `stop` next.>
+
 ---
 
 ### Checkpoint <N>
@@ -180,7 +197,7 @@ Every phase below uses this exact template. Do not deviate — the deterministic
 Before I continue to Phase N+1 (<next title>):
 - <2–3 phase-specific review prompts the user can answer>
 
-Type "continue" to proceed, or give me adjustments.
+Type `continue` to proceed, `stop` to exit cleanly (state is saved), `redo` to re-run this phase, or give me adjustments.
 ```
 
 **Never auto-advance.** Always pause at the checkpoint and wait for explicit user input. The whole point of this skill is determinism — that includes determinism over *when* the user moves on.
@@ -255,7 +272,7 @@ Before I continue:
 - Any traces you'd like to exclude from the dataset sample in Phase 4? (Paste trace IDs from the link above and I'll drop them.)
 - Any quality dimension you already know you want to measure later?
 
-Type "continue" to proceed, or give me adjustments.
+Type `continue` to proceed, `stop` to exit cleanly (state is saved), `redo` to re-run this phase, or give me adjustments.
 ```
 
 Wait for explicit user confirmation. If the user excludes specific traces, mark them as "excluded by user" — drop them from Phase 2's failure bucket and from Phase 4's sampling. Do NOT re-classify.
@@ -292,7 +309,7 @@ Before I continue:
 - Any failure modes to add, remove, or reframe?
 - Which root causes should the evaluators target? (Default: all of them.)
 
-Type "continue" to proceed, or give me adjustments.
+Type `continue` to proceed, `stop` to exit cleanly (state is saved), `redo` to re-run this phase, or give me adjustments.
 ```
 
 Wait for explicit user confirmation. If the user adjusts the taxonomy, incorporate the changes before continuing.
@@ -339,7 +356,7 @@ Before I continue:
 - Do the generated evaluators look right?
 - Any to drop or rename before they're referenced in the experiment?
 
-Type "continue" to proceed, or give me adjustments.
+Type `continue` to proceed, `stop` to exit cleanly (state is saved), `redo` to re-run this phase, or give me adjustments.
 ```
 
 Wait for explicit user confirmation. If `--stop-after eval-bootstrap` is set, this is where the pipeline ends — emit the Stop summary instead of the Checkpoint and exit.
@@ -388,7 +405,7 @@ Before I continue:
 - Happy with the proposed dataset name `<ml_app>_seed_<YYYYMMDD>`, or pick another?
 - Any records you want me to drop?
 
-Type "continue" to proceed, or give me adjustments.
+Type `continue` to proceed, `stop` to exit cleanly (state is saved), `redo` to re-run this phase, or give me adjustments.
 ```
 
 Wait for confirmation. The proposed `dataset_name` defaults to `<ml_app>_seed_<YYYYMMDD>` but the user can override — carry the final chosen name into Phase 5.
@@ -453,7 +470,7 @@ Before I continue:
 - Confirm you can see the dataset in the Datadog UI (LLM Observability → Datasets → search `<dataset_name>`)?
 - Any second thoughts on the dataset records (we can re-emit before generating the experiment)?
 
-Type "continue" to proceed, or give me adjustments.
+Type `continue` to proceed, `stop` to exit cleanly (state is saved), `redo` to re-run this phase, or give me adjustments.
 ```
 
 Wait for confirmation.
@@ -511,7 +528,7 @@ Then confirm:
 - Have you set `DD_API_KEY`, `DD_APPLICATION_KEY`, `DD_SITE` (if non-default), and the provider key your task needs (the generated file's section 1 asserts only the right one — check what it expects)?
 - Ready to run?
 
-Type "continue" to proceed, or give me adjustments.
+Type `continue` to proceed, `stop` to exit cleanly (state is saved), `redo` to re-run this phase, or give me adjustments.
 ```
 
 Wait for confirmation.
@@ -555,7 +572,7 @@ Before I continue:
 - Take a look at the experiment in the UI (link above). Do the per-record scores roughly match your expectations?
 - Any specific question you want Phase 8 to focus on? (Optional — leaving it open runs an exploratory analysis.)
 
-Type "continue" to proceed, or give me adjustments.
+Type `continue` to proceed, `stop` to exit cleanly (state is saved), `redo` to re-run this phase, or give me adjustments.
 ```
 
 Wait for confirmation. If the user provides a focus question, carry it to Phase 8 as the analyzer's `question` argument.
@@ -660,11 +677,96 @@ This makes `--stop-after eval-bootstrap` a drop-in replacement for the old `llm-
 
 ---
 
+## State persistence and entry/exit
+
+The pipeline persists every phase's primary output to `<output-dir>/state/` so that subsequent invocations can resume mid-flow with `--start-at <phase>` instead of starting from Phase 1 every time.
+
+### State file contract
+
+After every successful phase completion (i.e. after the user types `continue` past its checkpoint, OR before the Stop summary if `--stop-after` matches), **write the phase output to `<output-dir>/state/0N-<name>.{md,json}`**. Schema is fixed per phase:
+
+| Phase | State file | Schema |
+|---|---|---|
+| 1 classify | `state/01-classification.md` | The full `# Session Classification Summary` block plus all per-unit compact blocks, verbatim from `llm-obs-session-classify`. Markdown. |
+| 2 rca | `state/02-rca-report.md` | The full Phase 6 RCA report from `llm-obs-trace-rca`, verbatim. Markdown. |
+| 3 eval-bootstrap | `state/03-evaluators.json` | `{"mode": "sdk_code\|data_only\|publish", "output_path": "<path>", "evaluator_names": [...], "ml_app": "<ml_app>", "generated_at": "<ISO 8601>"}`. The actual evaluator code/JSON stays where the sub-skill wrote it. |
+| 4 dataset | `state/04-dataset.json` | The same `DatasetRecordRaw[]` content as `<output-dir>/dataset_<ml_app>_<YYYYMMDD>.json`. Treat this as a symlink-or-copy — both paths must point at the same content. |
+| 5 publish | `state/05-published-dataset.json` | `{"dataset_name": "<name>", "project_name": "<name>", "version": <int>, "url": "<datadog url>", "record_count": <int>, "published_at": "<ISO 8601>"}` |
+| 6 experiment | `state/06-experiment.json` | `{"experiment_file": "<path>", "format": "py\|ipynb", "dataset_name": "<name>", "task_source": "<module:function>\|placeholder", "purpose": "<text>", "generated_at": "<ISO 8601>"}` |
+| 7 run | `state/07-experiment-run.json` | `{"experiment_id": "<uuid>", "experiment_url": "<datadog url>", "records_processed": <int>, "duration_seconds": <float>, "ran_at": "<ISO 8601>"}` |
+| 8 analyze | `state/08-analysis.md` | The full analyzer report from `llm-obs-experiment-analyzer`. Markdown. |
+
+`<output-dir>/state/` should be created via `mkdir -p` at the top of the Precheck (alongside the existing `<output-dir>` creation). Never write state files outside this directory.
+
+### `--start-at` resolution
+
+At the top of the run, after the Precheck, branch on `--start-at`:
+
+1. If `--start-at` is not set or equals `classify`, proceed normally with Phase 1.
+2. Otherwise, for every phase strictly before the start phase, **load the state file** corresponding to that phase. If an override flag was passed (`--classification-summary`, `--rca-report`, `--dataset-file`, `--dataset-name`, `--experiment-file`, `--experiment-id`, `--experiment-url`), it takes precedence over the state file.
+3. If a required state file is missing AND no override flag was supplied, **fail fast** with a clear message:
+
+   > "Can't `--start-at <phase>` — Phase <N-1>'s state file at `<output-dir>/state/0(N-1)-<name>.{md,json}` is missing and no `--<prior-phase>-override <path>` flag was supplied. Either re-run from an earlier phase or pass the override flag explicitly."
+
+4. For each loaded state file or override, print a one-line "Loaded prior state: <phase> from <path>" in the Precheck output so the user can see what's being reused.
+5. Skip directly to the start phase. The first phase to actually run prints its full banner; the earlier phases get a one-line note in the Precheck.
+
+The Precheck output gets an extra line at the bottom when `--start-at` is in effect:
+
+```
+- Resumed from: --start-at <phase> (loaded state for phases 1..N-1)
+```
+
+### Mid-run exit at any checkpoint
+
+Every Checkpoint accepts these inputs (case-insensitive, leading/trailing whitespace OK):
+
+| User types | Behavior |
+|---|---|
+| `continue`, `c`, `go`, `yes`, `y`, `next`, or just `<Enter>` with no text | Advance to the next phase. |
+| `stop`, `exit`, `done`, `quit`, `q`, `cancel` | Emit the **Stop summary** here and end the run. Same shape as if `--stop-after <current-phase>` had been set from the top. State for completed phases is preserved on disk, so the user can `--start-at <next-phase>` later. |
+| `redo` (optionally followed by adjustment notes like `redo with --trace-limit 50`) | Re-run the current phase only. Do **not** re-run earlier phases — their state on disk is unchanged. Apply any adjustment notes the user appended. |
+| `back` (optionally followed by a phase name) | Move backward one phase (or to the named phase) and re-run from there. Discard state for the affected phases on disk so they're regenerated. |
+| anything else | Treat as adjustment / question. Reason about it in context; if the user is asking a clarifying question, answer and re-show the checkpoint prompt. If the user is requesting a phase modification, apply it and re-run the phase. |
+
+The Phase Template's "Type 'continue' to proceed" line should be updated to:
+
+> Type `continue` to proceed, `stop` to exit cleanly (state is saved — you can resume with `--start-at <next-phase>` later), `redo` to re-run this phase, or give me adjustments.
+
+### Practical re-entry examples
+
+```bash
+# First-time, full run end-to-end
+/llm-obs-eval-pipeline lux --project-name lux
+
+# (user typed 'stop' at Checkpoint 5)
+# Later, pick up where they left off:
+/llm-obs-eval-pipeline lux --project-name lux --start-at experiment
+
+# Already have a dataset published; want to scaffold + run an experiment around it
+/llm-obs-eval-pipeline lux --project-name lux --start-at experiment --dataset-name lux_seed_v3
+
+# Re-analyze a previous experiment without re-running it
+/llm-obs-eval-pipeline lux --start-at analyze --experiment-id 8a3f9c2b-...
+
+# Slice — just classify + RCA, leave the rest for later
+/llm-obs-eval-pipeline lux --stop-after rca
+
+# Continue from the slice above without redoing classify
+/llm-obs-eval-pipeline lux --start-at eval-bootstrap --stop-after eval-bootstrap
+```
+
+`--start-at` and `--stop-after` compose freely. Internally, `--start-at X --stop-after Y` runs exactly phases X through Y inclusive (and the run is invalid if Y < X — error out at argument parse time).
+
+---
+
 ## Orchestration Rules
 
 - **Always run the precheck, even on re-invocations.** It's cheap and it catches a stale `ml_app` argument, an expired auth token, or a typo in `--project-name` before you waste a sub-skill call.
 - **Always emit the precheck block.** Even though it isn't a "phase", users have learned to look for it as the first output.
-- **Never auto-advance between phases.** Every checkpoint waits for explicit user input. If the user says something other than "continue" (e.g. "skip ahead", "redo phase 2"), interpret and act — but never silently move on.
+- **Never auto-advance between phases.** Every checkpoint waits for explicit user input. The recognized checkpoint vocabulary is `continue` / `stop` / `redo` / `back` plus free-text adjustments — see "State persistence and entry/exit → Mid-run exit at any checkpoint" for the full table.
+- **Persist phase output before showing the checkpoint.** Every phase writes its primary output to `<output-dir>/state/0N-<name>.{md,json}` *before* the checkpoint prompt is rendered. This way `stop` at any point leaves a re-enterable artifact on disk — the user can resume later with `--start-at <next-phase>` and the skill will load the prior state without re-running anything.
+- **Honor `--start-at` precisely.** When `--start-at <phase>` is set, load every prior phase's state file (or its override flag if supplied), print a one-line confirmation per loaded phase in the Precheck, and begin from the named phase. If a required state file is missing and no override was passed, fail fast — do not silently re-run the missing phase.
 - **Never truncate sub-skill output.** The user is here to learn what the sub-skills do; if you summarize their output, you defeat the pedagogical purpose. Reproduce verbatim. Downstream phases also depend on the full text being in context (Phase 2 detects Phase 1's classification summary; Phase 3 detects Phase 2's failure taxonomy).
 - **The phase envelope is invariant.** The banner ("You are here. Phase N of 8…"), the entity block, the action label, and the checkpoint header must appear identically across every phase. The *content inside* may differ; the envelope must not. This is the determinism the skill promises.
 - **Execute only at Phases 5 and 7.** No other phase runs code on the user's machine. If a sub-skill output suggests the user should run something themselves, hand it off — don't quietly execute it.
