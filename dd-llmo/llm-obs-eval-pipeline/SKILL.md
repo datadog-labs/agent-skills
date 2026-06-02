@@ -1,6 +1,6 @@
 ---
 name: llm-obs-eval-pipeline
-description: End-to-end LLM Observability pipeline for an instrumented ml_app — classify production traces, root-cause failures, bootstrap evaluators, then (optionally) sample a dataset, publish it, generate an experiment, run it, and analyze results. Eight narrated phases with a standardized banner and a "continue" checkpoint between each. Pure orchestration over the dd-llmo sub-skills (`llm-obs-session-classify`, `llm-obs-trace-rca`, `llm-obs-eval-bootstrap`, `llm-obs-experiment-py-bootstrap`, `llm-obs-experiment-analyzer`). Use when user says "run the eval pipeline", "go from traces to evals", "bootstrap evals end to end", "classify then RCA then bootstrap", "build an eval set from scratch", "onboard me to datasets and experiments", "walk me through experiments", "I have an ml_app, now what", "LLM Obs onboarding", "guided experiment setup", "from traces to experiments", or wants a deterministic, narrated tour from production data through evaluators, datasets, and experiments. Stop early with `--stop-after <phase>` to short-circuit at evaluators / dataset / experiment.
+description: End-to-end LLM Observability pipeline for an instrumented ml_app — classify production traces, root-cause failures, bootstrap evaluators, then (optionally) sample + publish a dataset, generate + run an experiment, and analyze results. Six narrated phases with a standardized banner and a "continue" checkpoint between each. Pure orchestration over the dd-llmo sub-skills (`llm-obs-session-classify`, `llm-obs-trace-rca`, `llm-obs-eval-bootstrap`, `llm-obs-experiment-py-bootstrap`, `llm-obs-experiment-analyzer`). Use when user says "run the eval pipeline", "go from traces to evals", "bootstrap evals end to end", "classify then RCA then bootstrap", "build an eval set from scratch", "onboard me to datasets and experiments", "walk me through experiments", "I have an ml_app, now what", "LLM Obs onboarding", "guided experiment setup", "from traces to experiments", or wants a deterministic, narrated tour from production data through evaluators, datasets, and experiments. Stop early with `--stop-after <phase>` to short-circuit at evaluators or dataset, or resume mid-flow with `--start-at <phase>`.
 ---
 
 ## Backend
@@ -17,7 +17,7 @@ description: End-to-end LLM Observability pipeline for an instrumented ml_app �
 
 `--backend pup` is accepted anywhere in the invocation arguments. Strip it from args before passing to sub-skills, but carry the pup-mode decision forward — every sub-skill must also operate in pup mode for the entire pipeline run.
 
-**Sub-skill backend propagation**: The backend detected at startup applies to all sub-skills invoked across the eight phases. Do not re-detect per phase. Announce once at startup:
+**Sub-skill backend propagation**: The backend detected at startup applies to all sub-skills invoked across the six phases. Do not re-detect per phase. Announce once at startup:
 - MCP mode: "(Running in MCP mode — all features available.)"
 - pup mode: "(Running in pup mode — pup commands used throughout. All features available.)"
 
@@ -29,27 +29,24 @@ description: End-to-end LLM Observability pipeline for an instrumented ml_app �
 
 # LLM Obs Eval Pipeline — Classify → RCA → Eval Bootstrap → Dataset → Experiment → Analyze
 
-A deterministic, eight-phase guided pipeline for an already-instrumented `ml_app` owner. Each phase has the same envelope — a banner that names the entity being produced, an explanation of its purpose, the action (a sub-skill call or a small executable step), and a checkpoint. **You always know where you are.**
+A deterministic, six-phase guided pipeline for an already-instrumented `ml_app` owner. Each phase has the same envelope — a banner that names the entity being produced, an explanation of its purpose, the action (a sub-skill call or a small executable step), and a checkpoint. **You always know where you are.**
 
 ```
 [Precheck] verify ml_app, project, backend, credentials, output dir
    ↓
-[Phase 1: Classify ml_app traces]      entity: ml_app, trace, span
+[Phase 1: Classify ml_app traces]        entity: ml_app, trace, span
    ↓
-[Phase 2: Root cause analysis]         entity: failure mode, root cause
+[Phase 2: Root cause analysis]           entity: failure mode, root cause
    ↓
-[Phase 3: Bootstrap evaluators]        entity: evaluator, LLM judge
-   ↓                                   (stop here with --stop-after eval-bootstrap
-   ↓                                    for the classic eval-pipeline behavior)
-[Phase 4: Create dataset from traces]  entity: dataset record
-   ↓
-[Phase 5: Publish dataset]             entity: published dataset, dataset_name
-   ↓
-[Phase 6: Generate experiment code]    entity: experiment, task, evaluator
-   ↓
-[Phase 7: Run experiment]              entity: experiment run, experiment.url
-   ↓
-[Phase 8: Analyze experiment]          entity: metric, comparison, recommendation
+[Phase 3: Bootstrap evaluators]          entity: evaluator, LLM judge
+   ↓                                     (stop here with --stop-after eval-bootstrap
+   ↓                                      for the classic eval-pipeline behavior)
+[Phase 4: Create + publish dataset]      entity: dataset record, published dataset
+   ↓                                     (executes: LLMObs.create_dataset)
+[Phase 5: Generate + run experiment]     entity: experiment, task, evaluator, run
+   ↓                                     (executes: python <generated_file>)
+   ↓                                     (in-phase review beat before run)
+[Phase 6: Analyze experiment]            entity: metric, comparison, recommendation
 ```
 
 This skill is **pure orchestration plus pedagogy** — no new analytical logic. The work happens inside the sub-skills (`llm-obs-session-classify`, `llm-obs-trace-rca`, `llm-obs-eval-bootstrap`, `llm-obs-experiment-py-bootstrap`, `llm-obs-experiment-analyzer`). What this skill adds is the deterministic envelope: every phase has the same shape, the same checkpoint contract, and the same entity-explanation banner — so the user gets a consistent, narrated experience regardless of how they phrased the original request.
@@ -60,8 +57,8 @@ This skill is **pure orchestration plus pedagogy** — no new analytical logic. 
 /llm-obs-eval-pipeline <ml_app> [--project-name <name>] [--timeframe <window>] [--trace-limit <N>]
                                 [--format py|ipynb] [--evaluator-style function|class|remote]
                                 [--data-only | --publish]
-                                [--start-at classify|rca|eval-bootstrap|dataset|publish|experiment|run|analyze]
-                                [--stop-after classify|rca|eval-bootstrap|dataset|publish|experiment|run|analyze]
+                                [--start-at classify|rca|eval-bootstrap|dataset|experiment|analyze]
+                                [--stop-after classify|rca|eval-bootstrap|dataset|experiment|analyze]
                                 [--classification-summary <path>] [--rca-report <path>]
                                 [--dataset-file <path>] [--dataset-name <name>]
                                 [--experiment-file <path>] [--experiment-id <uuid> | --experiment-url <url>]
@@ -79,18 +76,18 @@ Arguments: $ARGUMENTS
 | `--project-name` | No | derived from `pyproject.toml` / `setup.cfg` / `setup.py` / `package.json` / cwd (same order as `llm-obs-experiment-py-bootstrap`); falls back to `experiment-sdk-default` | The Datadog **project** the pipeline writes datasets and experiments into. The SDK lazily creates the project on first use via `LLMObs.enable(project_name=...)`. Surface this in the Precheck so the user can confirm before anything is created. |
 | `--timeframe` | No | `now-7d` | Lookback window for Phase 1 classification and Phase 4 dataset sampling. |
 | `--trace-limit` | No | `20` | Sampling cap for Phase 4. Phase 1 internally uses `min(20, --trace-limit)` for the classification sample. |
-| `--format` | No | `py` | Passed to `llm-obs-experiment-py-bootstrap` in Phase 6: `py` (script) or `ipynb` (Jupyter notebook). |
-| `--evaluator-style` | No | `function` | Passed to `llm-obs-eval-bootstrap` (Phase 3) and `llm-obs-experiment-py-bootstrap` (Phase 6): `function`, `class`, or `remote`. |
+| `--format` | No | `py` | Passed to `llm-obs-experiment-py-bootstrap` in Phase 5: `py` (script) or `ipynb` (Jupyter notebook). |
+| `--evaluator-style` | No | `function` | Passed to `llm-obs-eval-bootstrap` (Phase 3) and `llm-obs-experiment-py-bootstrap` (Phase 5): `function`, `class`, or `remote`. |
 | `--data-only` | No | off | Phase 3 pass-through to `llm-obs-eval-bootstrap`: emit JSON spec instead of Python SDK code. |
 | `--publish` | No | off | Phase 3 pass-through to `llm-obs-eval-bootstrap`: publish online LLM-judge evaluators to Datadog. |
-| `--stop-after <phase>` | No | `analyze` (run everything) | Stop after the named phase completes. `classify` = Phase 1 only. `rca` = through Phase 2. `eval-bootstrap` = through Phase 3 (matches the classic eval-pipeline). `dataset` = through Phase 4. `publish` = through Phase 5. `experiment` = through Phase 6 (file generated, not run). `run` = through Phase 7 (skip analyzer). `analyze` = all eight phases (default). |
+| `--stop-after <phase>` | No | `analyze` (run everything) | Stop after the named phase completes. `classify` = Phase 1 only. `rca` = through Phase 2. `eval-bootstrap` = through Phase 3 (matches the classic eval-pipeline). `dataset` = through Phase 4 (dataset created + published). `experiment` = through Phase 5 (experiment generated + run). `analyze` = all six phases (default). |
 | `--start-at <phase>` | No | `classify` (start at the top) | Skip earlier phases and start at the named phase. Same vocabulary as `--stop-after`. The skill auto-loads any required prior-phase artifacts from `<output-dir>/state/` (see "State persistence and entry/exit" section). For phases that need an artifact the auto-load can't find, supply it via one of the override flags below. Combinable with `--stop-after` to run a contiguous slice of the pipeline. |
 | `--classification-summary <path>` | No | auto-loaded from `<output-dir>/state/01-classification.md` if `--start-at rca` or later | Override the Phase 1 output that Phase 2 consumes. Useful when the prior state file is missing or you want to point at a hand-edited version. |
 | `--rca-report <path>` | No | auto-loaded from `<output-dir>/state/02-rca-report.md` if `--start-at eval-bootstrap` or later | Override the Phase 2 output that Phase 3 consumes. |
-| `--dataset-file <path>` | No | auto-loaded from `<output-dir>/state/04-dataset.json` (or the most recent `<output-dir>/dataset_<ml_app>_*.json`) if `--start-at publish` | The local `DatasetRecordRaw[]` JSON that Phase 5 publishes. |
-| `--dataset-name <name>` | No | auto-loaded from `<output-dir>/state/05-published-dataset.json` if `--start-at experiment` | The name of a published Datadog dataset that Phase 6 wires the experiment to. |
-| `--experiment-file <path>` | No | auto-loaded from `<output-dir>/state/06-experiment.json` (which points at the actual `.py` / `.ipynb`) if `--start-at run` | The generated experiment file Phase 7 executes. |
-| `--experiment-id <uuid>` | No | auto-loaded from `<output-dir>/state/07-experiment-run.json` if `--start-at analyze` | The Datadog experiment ID Phase 8 analyzes. Mutually exclusive with `--experiment-url`. |
+| `--dataset-file <path>` | No | auto-loaded from `<output-dir>/state/04-published-dataset.json`'s `dataset_file` field (or the most recent `<output-dir>/dataset_<ml_app>_*.json`) | The local `DatasetRecordRaw[]` JSON. Used by Phase 4's publish sub-step when re-publishing without re-sampling. |
+| `--dataset-name <name>` | No | auto-loaded from `<output-dir>/state/04-published-dataset.json` if `--start-at experiment` | The name of a published Datadog dataset that Phase 5 wires the experiment to. |
+| `--experiment-file <path>` | No | auto-loaded from `<output-dir>/state/05-experiment-run.json`'s `experiment_file` field if `--start-at experiment` and the file already exists | The generated experiment file. When present, Phase 5 skips the codegen sub-step (5a) and goes straight to the review beat (5b) → run (5c). |
+| `--experiment-id <uuid>` | No | auto-loaded from `<output-dir>/state/05-experiment-run.json` if `--start-at analyze` | The Datadog experiment ID Phase 6 analyzes. Mutually exclusive with `--experiment-url`. |
 | `--experiment-url <url>` | No | auto-loaded as above | Alternative to `--experiment-id`. The skill parses the trailing UUID out of the URL. |
 | `--app-root` | No | resolved from cwd / `pyproject.toml` etc. | Restricts `llm-obs-experiment-py-bootstrap`'s task-function introspection to this directory tree. |
 | `--env-file` | No | none (auto-discovery walks standard locations) | Explicit `.env` path for credential loading. Surfaced in the Precheck and baked into the generated experiment as `ENV_FILE_OVERRIDE`. |
@@ -111,11 +108,11 @@ Before Phase 1, run a single short verification pass — do **not** announce a "
 
 3. **Resolve `project_name`** — if `--project-name <name>` was supplied, use it verbatim. Otherwise derive using the same resolution order as `llm-obs-experiment-py-bootstrap` (Workflow step 1): `pyproject.toml` → `setup.cfg` → `setup.py` → `package.json` → cwd basename (slugified). Final value is `experiment-<service-name>`; fall back to `experiment-sdk-default` if nothing resolves and emit a warning telling the user to set `--project-name` explicitly.
 
-   **Project creation semantics**: the project is created lazily by the Datadog SDK the first time `LLMObs.enable(project_name=...)` is called against the org (in Phase 5's publish script and Phase 6's generated experiment). The user does not need to pre-create anything in the UI. Surface the chosen project name in the Precheck output so the user can override before Phase 5 if it isn't what they wanted.
+   **Project creation semantics**: the project is created lazily by the Datadog SDK the first time `LLMObs.enable(project_name=...)` is called against the org (in Phase 4's publish script, and again in Phase 5's generated experiment). The user does not need to pre-create anything in the UI. Surface the chosen project name in the Precheck output so the user can override before Phase 4 if it isn't what they wanted.
 
 4. **Ensure `--output-dir` and `<output-dir>/state/` exist** — `mkdir -p <output-dir>/state` via Bash. Cheap. The `state/` subdirectory is where phase outputs get persisted (see "State persistence and entry/exit" below).
 
-5. **Resolve credentials.** Walk the discovery order below to find Datadog credentials before Phase 5 needs them — failing late at the publish step is bad UX. Read-only at this stage: do NOT write any new files. Do NOT print secret values to the user; only report which file was loaded and which keys were resolved.
+5. **Resolve credentials.** Walk the discovery order below to find Datadog credentials before Phase 4 needs them — failing late at the publish step is bad UX. Read-only at this stage: do NOT write any new files. Do NOT print secret values to the user; only report which file was loaded and which keys were resolved.
 
    **Discovery order** (first hit per variable wins; shell env vars always override files):
    1. **`--env-file <path>`** override if supplied — always tried first.
@@ -150,7 +147,7 @@ Output the precheck summary, then start Phase 1:
 
 - Backend: <MCP | pup>
 - ml_app `<ml_app>` has traces in <timeframe>: yes (<sample_count> root spans found)
-- Project name: `<project_name>` (created lazily on first LLMObs.enable() call in Phase 5)
+- Project name: `<project_name>` (created lazily on first LLMObs.enable() call in Phase 4)
 - Output dir: `<output-dir>` (created)
 - Credentials: <one of:
     "loaded from shell env (DD_API_KEY, DD_APPLICATION_KEY, DD_SITE)"
@@ -159,7 +156,7 @@ Output the precheck summary, then start Phase 1:
   >
 - Stop-after: <phase from --stop-after, default `analyze`>
 
-Starting Phase 1 of 8.
+Starting Phase 1 of 6.
 ```
 
 The exact list of keys in the credentials parenthetical reflects what was actually discovered (so the user can verify nothing surprising was loaded). Never print the values.
@@ -171,9 +168,9 @@ The exact list of keys in the credentials parenthetical reflects what was actual
 Every phase below uses this exact template. Do not deviate — the deterministic envelope is what makes the pipeline experience consistent across invocations.
 
 ```
-## Phase N of 8: <Title>
+## Phase N of 6: <Title>
 
-**You are here.** Phase N of 8 — <one-line position summary>.
+**You are here.** Phase N of 6 — <one-line position summary>.
 
 **What this phase produces**: <Entity name>
 **What a <entity> is**: <2-3 sentence definition tailored to this phase>
@@ -363,112 +360,82 @@ Wait for explicit user confirmation. If `--stop-after eval-bootstrap` is set, th
 
 ---
 
-## Phase 4: Create dataset from prod traces
+## Phase 4: Create and publish dataset
 
-**Entity**: `dataset`, `dataset record`.
+**Entity**: `dataset`, `dataset record`, published dataset (Datadog-side), `dataset_name`, version.
 
 **Pedagogy banner**:
 
-> **What a dataset is**: a named collection of records that an experiment runs against. Each record has `input_data` (what the task receives) and optionally `expected_output` (what you expect back). Datasets live in Datadog under your project and have a version — every time you push changes, a new version is created.
+> **What a dataset is**: a named collection of records that an experiment runs against. Each record has `input_data` (what the task receives) and optionally `expected_output` (what you expect back). Datasets live in Datadog under your project and have a version — every push that changes records produces a new version.
 >
 > **What a record is**: a single `(input_data, expected_output)` pair, optionally with `metadata` and `tags`. One record = one experiment row.
 >
-> **Why this phase matters**: experiments need a stable input set. Sampling production traces gives you a realistic starting dataset — the inputs your app actually sees — without making you write fixtures by hand.
+> **What "publishing" means**: pushing the local records to Datadog so the dataset becomes addressable by name across all subsequent experiments. After publish, anyone in your org (with access) can pull it with `LLMObs.pull_dataset(dataset_name="…")` — including the experiment code we generate in Phase 5.
+>
+> **Why this phase matters**: experiments need a stable, addressable input set. Sampling production traces gives you a realistic starting dataset (the inputs your app actually sees), and publishing it under your project makes it the contract between dataset curation and the experiments that consume it.
 
-**Action**: Follow the **`llm-obs-eval-bootstrap`** skill in **`--emit-dataset` mode**:
+**This phase executes code on your machine** (the publish step writes to Datadog via `LLMObs.create_dataset(...)`). The dataset-create step is read-only; the publish step is the one that changes state.
+
+**Action — two sub-steps, no intermediate checkpoint:**
+
+**4a — Sample traces into a `DatasetRecordRaw[]` JSON.** Follow the **`llm-obs-eval-bootstrap`** skill in **`--emit-dataset` mode**:
 
 ```
 /eval-bootstrap <ml_app> --timeframe <timeframe> --trace-limit <trace-limit> --emit-dataset <output-dir>/dataset_<ml_app>_<YYYYMMDD>.json
 ```
 
-This mode samples root spans, extracts `(input_data, expected_output)` pairs from each, applies a PII scrub, and writes a `DatasetRecordRaw[]` JSON file. **It does not propose or generate evaluators in this mode** — the dataset is the sole artifact. See `dd-llmo/llm-obs-eval-bootstrap/SKILL.md` → Phase 3D for the full spec.
+This mode samples root spans, extracts `(input_data, expected_output)` pairs, applies a PII scrub, and writes the JSON. **It does not propose or generate evaluators** — the dataset is the sole artifact. See `dd-llmo/llm-obs-eval-bootstrap/SKILL.md` → Phase 3D for the full spec.
 
 If the user excluded specific traces in Checkpoint 1, pass that exclusion list along (sub-skill drops them during sampling — do NOT re-classify).
 
 Reproduce the sub-skill's `## Generated Dataset` summary verbatim.
 
-### Checkpoint 4
-
-```
-## Phase 4 complete — local dataset file ready
-
-- File: `<path>`
-- Records: <N> (skipped: <M> with no usable output)
-- PII redactions: <P>
-- Tag normalizations: <T>
-- Caveat: `expected_output` is the **current production behavior baseline**, not ground truth. Spot-check a few records before publishing.
-
-Next up — Phase 5 will publish this dataset to Datadog under project `<project_name>` so an experiment can pull it by name.
-
-Before I continue:
-- Want to open the file and edit any records first? (recommended — spot-check at least 3–5)
-- Happy with the proposed dataset name `<ml_app>_seed_<YYYYMMDD>`, or pick another?
-- Any records you want me to drop?
-
-Type `continue` to proceed, `stop` to exit cleanly (state is saved), `redo` to re-run this phase, or give me adjustments.
-```
-
-Wait for confirmation. The proposed `dataset_name` defaults to `<ml_app>_seed_<YYYYMMDD>` but the user can override — carry the final chosen name into Phase 5.
-
----
-
-## Phase 5: Publish dataset
-
-**Entity**: published dataset (Datadog-side), `dataset_name`, version.
-
-**Pedagogy banner**:
-
-> **What "publishing" means**: pushing the local records to Datadog so the dataset becomes addressable by name across all subsequent experiments. After publish, anyone in your org (with access) can pull it with `LLMObs.pull_dataset(dataset_name="…")` — including the experiment code we generate in Phase 6.
->
-> **What a dataset version is**: every push that changes records produces a new version. You can pin an experiment to a specific version (`pull_dataset(version=N)`) so a refactor of the dataset doesn't silently change which inputs your experiment runs on.
->
-> **Why this phase matters**: a published, named dataset is the contract between your dataset curation work (which lives in code/JSON) and the experiments that consume it. Without this phase, the experiment in Phase 6 has no input.
-
-**This is one of the two phases in this pipeline where executable code is run.** The user is in "publish" mode and that's the clear, expected signal.
-
-**Action**: Invoke the pre-shipped publish helper at `<this-skill-dir>/scripts/publish_dataset.py` via Bash. **Do not** inline the script content into this SKILL.md or re-write it from scratch — the helper is the source of truth for the publish flow (credential discovery, tag normalization, project creation, error handling). It accepts CLI args, so no placeholder substitution is needed.
-
-Invocation:
+**4b — Publish to Datadog.** Immediately invoke the pre-shipped publish helper at `<this-skill-dir>/scripts/publish_dataset.py` via Bash. **Do not** inline the script content into this SKILL.md or re-write it from scratch — the helper is the source of truth for the publish flow (credential discovery, tag normalization, project creation, error handling). It accepts CLI args, so no placeholder substitution is needed.
 
 ```bash
 python <skill-dir>/scripts/publish_dataset.py \
-  --records <absolute path to dataset JSON from Phase 4> \
-  --dataset-name <chosen dataset_name from Checkpoint 4> \
+  --records <absolute path to JSON from 4a> \
+  --dataset-name <chosen dataset_name, default <ml_app>_seed_<YYYYMMDD>> \
   --project-name <resolved project_name from Precheck> \
   [--env-file <path>]   # repeatable; takes precedence over auto-discovery
 ```
 
-`<skill-dir>` resolves to wherever the skill is installed (e.g., `~/.claude/skills/llm-obs-eval-pipeline/`). The script bundles two sibling modules — `scripts/load_env.py` (the env-file discovery walker, identical to the one the generated experiment file ships with) and inline tag normalization — and prints either:
+`<skill-dir>` resolves to wherever the skill is installed (e.g., `~/.claude/skills/llm-obs-eval-pipeline/`). The script prints either:
 
 - `Loaded credentials from: <file paths>` (if any `.env` files contributed values), then
 - `OK dataset_name=<name> record_count=<N> url=<url>` (on success), or
 - `ERROR: <message>` on stderr with a non-zero exit (auth, missing keys, ddtrace import failure, etc.).
 
 **Notes for the orchestrator:**
-- Before invoking, do an import-availability precheck: `python -c "import ddtrace.llmobs"` via Bash. If it fails, stop and tell the user:
-  > "`ddtrace` is not installed in the active Python environment. Run `pip install 'ddtrace>=4.7'` and re-invoke this skill (re-run from the top — Phases 1–4 outputs are idempotent)."
-- The script's discovery walk mirrors the Precheck. If the Precheck already loaded credentials, the script's `_load_env_files()` will just be a confirmation no-op (the keys are already in `os.environ`).
-- `LLMObs.enable(project_name=...)` inside the script is where the `--project-name` from the Precheck actually materializes — the Datadog project is created lazily on first call.
-- If the script prints a `WARNING:` line about tag normalization, surface it in Checkpoint 5 so the user knows their upstream dataset had malformed tags.
-- If the script prints `Loaded credentials from: ...`, include that file path in Checkpoint 5.
-- If the script exits non-zero with an auth error (401/403), surface the stderr and stop — do not retry. Tell the user the most likely cause is a stale `.env` value, and that `export DD_API_KEY=... DD_APPLICATION_KEY=...` in their shell takes precedence and can be used to override.
-- On success, capture the printed `dataset_name` and `url` and carry them into Phase 6.
 
-### Checkpoint 5
+- Before invoking the publish helper, do an import-availability precheck: `python -c "import ddtrace.llmobs"` via Bash. If it fails, stop and tell the user:
+  > "`ddtrace` is not installed in the active Python environment. Run `pip install 'ddtrace>=4.7'` and re-invoke this skill (re-run from the top — Phases 1–3 outputs are idempotent)."
+- `LLMObs.enable(project_name=...)` inside the script is where the `--project-name` from the Precheck actually materializes — the Datadog project is created lazily on first call.
+- If the script prints a `WARNING:` line about tag normalization, surface it in Checkpoint 4 so the user knows their upstream dataset had malformed tags.
+- If the script prints `Loaded credentials from: ...`, include that file path in Checkpoint 4.
+- If the script exits non-zero with an auth error (401/403), surface the stderr and stop — do not retry. Tell the user the most likely cause is a stale `.env` value, and that `export DD_API_KEY=... DD_APPLICATION_KEY=...` in their shell takes precedence and can be used to override.
+- On success, capture the printed `dataset_name` and `url` and carry them into Phase 5. Write both to the Phase 4 state file (see State persistence section).
+
+**Why no intermediate checkpoint between 4a and 4b?** The local JSON is auto-extracted from traces and goes straight into `LLMObs.create_dataset(records=...)` — there is essentially no editable surface between the two steps in the common case. Users who want to inspect or edit the JSON before publish should run `eval-bootstrap --emit-dataset` standalone, edit the JSON, then re-enter this pipeline with `--start-at experiment --dataset-name <name>` once they've published manually.
+
+### Checkpoint 4
 
 ```
-## Phase 5 complete — dataset published
+## Phase 4 complete — dataset created and published
 
-- Dataset name: `<dataset_name>`
-- Project: `<project_name>` <(created if it did not exist)>
-- Records published: <N>
+- Local file: `<path>` (kept for inspection / re-publish)
+- Records emitted: <N> (skipped: <M> with no usable output)
+- PII redactions: <P>
+- Tag normalizations: <T>
+- Published as: `<dataset_name>` in project `<project_name>` <(created if it did not exist)>
 - Datadog UI: <url or "open LLM Observability → Datasets to confirm">
+- Caveat: `expected_output` is the **current production behavior baseline**, not ground truth. Treat the dataset as a regression-style baseline before promoting it to a labelled gold set.
 
-Next up — Phase 6 will generate a Python experiment script that pulls this dataset and runs your task code (auto-discovered) against it.
+Next up — Phase 5 will generate a Python experiment script that pulls `<dataset_name>` and runs your task code (auto-discovered) against it.
 
 Before I continue:
 - Confirm you can see the dataset in the Datadog UI (LLM Observability → Datasets → search `<dataset_name>`)?
-- Any second thoughts on the dataset records (we can re-emit before generating the experiment)?
+- Any second thoughts on the records (we can re-emit and re-publish before generating the experiment)?
 
 Type `continue` to proceed, `stop` to exit cleanly (state is saved), `redo` to re-run this phase, or give me adjustments.
 ```
@@ -477,9 +444,9 @@ Wait for confirmation.
 
 ---
 
-## Phase 6: Generate experiment code
+## Phase 5: Generate and run experiment
 
-**Entity**: `experiment`, `task` function, `evaluator`.
+**Entity**: `experiment`, `task` function, `evaluator`, experiment run, `experiment.url`, metric stream.
 
 **Pedagogy banner**:
 
@@ -489,9 +456,15 @@ Wait for confirmation.
 >
 > **What an evaluator is**: covered in Phase 3 above. The generated experiment ships placeholder evaluators by default; if you ran Phase 3 with `--evaluator-style remote`, you can wire those names in here.
 >
-> **Why this phase matters**: this is the artifact you'll actually run. Everything before this phase was prep work.
+> **What `experiment.url` is**: the deep link to the run in the Datadog Experiments UI. Phase 6 uses this to analyze results.
+>
+> **Why this phase matters**: this is where your code actually executes against the dataset and produces measurements. Generation is the cheap part; running is what costs provider tokens and produces signal.
 
-**Action**: Follow the **`llm-obs-experiment-py-bootstrap`** skill:
+**This phase executes code on your machine** (Python file is run end-to-end after an in-phase review beat).
+
+**Action — three sub-steps with an in-phase review beat between codegen and run:**
+
+**5a — Generate the experiment file.** Follow the **`llm-obs-experiment-py-bootstrap`** skill:
 
 ```
 /llm-obs-experiment-py-bootstrap \
@@ -504,82 +477,66 @@ Wait for confirmation.
   --output <output-dir>/experiment_<ml_app>_<YYYYMMDD>.<py|ipynb>
 ```
 
-Reproduce the sub-skill's full output (including the generated SDK calls summary, the "Task function source" block, the credential discovery section, and the Next steps block) verbatim. Do not summarize. The "Task function source" block tells the user which `module:function` was auto-wired — that's load-bearing for Checkpoint 6.
+Reproduce the sub-skill's full output (including the generated SDK calls summary, the "Task function source" block, the credential discovery section, and the Next steps block) verbatim. Do not summarize. The "Task function source" block tells the user which `module:function` was auto-wired — that's load-bearing for the next sub-step.
 
-### Checkpoint 6
+**5b — In-phase review beat (MANDATORY).** After the sub-skill output, **pause** with a brief inline prompt (this is NOT a full checkpoint with a new banner — it's a single-line review beat *inside* Phase 5):
 
 ```
-## Phase 6 complete — experiment file ready to run
+## Phase 5 — review the generated experiment before running
 
 - File: `<path>`
-- Format: <py | ipynb>
 - Wired to dataset: `<dataset_name>` (pulled at runtime via LLMObs.pull_dataset)
-- Task function source: <line lifted from the sub-skill — names the discovered module:function, or notes the placeholder fallback>
-- Evaluators: <list the 2–3 evaluator names from the sub-skill output>
+- Task function source: <line lifted from the sub-skill output — module:function, or "placeholder fallback">
+- Evaluators: <2–3 evaluator names>
 
-Next up — Phase 7 will run this file end-to-end against the published dataset.
+**Open the file and check three things before I run it:**
+1. The wired `task_fn` (section 4) — confirm the sub-skill picked the right entry point. If it picked a helper or deprecated path, edit the import to point at the right function. If it fell back to a placeholder, replace it with a real call.
+2. The placeholder evaluators (section 5) — these are starting points. If Phase 3 produced online evaluators via `--publish`, swap one of the placeholders for a `RemoteEvaluator(eval_name="...")`.
+3. The `experiment.run(jobs=<N>)` parallelism (section 7) — defaults to 10; lower it if you're worried about rate limits.
 
-**Before continuing — open the file and look at three things**:
-1. The wired `task_fn` (section 4 of the generated file). The sub-skill introspected your app and imported the most likely entry point — **confirm it picked the right function**. If it picked a sibling helper or a deprecated path, edit the import in section 4 to point at the function you actually want to evaluate. If the sub-skill fell back to a placeholder (no LLM call site found in `<app-root>`), this is the phase where you replace it with a real call.
-2. The placeholder evaluators — these are starting points. You can leave them for the first run, or refine. If Phase 3 produced online evaluators via `--publish`, swap one of the placeholders for a `RemoteEvaluator(eval_name="...")` referencing your judge.
-3. The `experiment.run(jobs=<N>)` parallelism — defaults to 10; lower it if you're worried about rate limits.
-
-Then confirm:
-- Have you set `DD_API_KEY`, `DD_APPLICATION_KEY`, `DD_SITE` (if non-default), and the provider key your task needs (the generated file's section 1 asserts only the right one — check what it expects)?
-- Ready to run?
-
-Type `continue` to proceed, `stop` to exit cleanly (state is saved), `redo` to re-run this phase, or give me adjustments.
+Type **`run`** to execute the file as-is, **`edit`** to pause here so you can edit and re-run this skill, or **`stop`** to exit cleanly. State for Phase 4 and earlier is preserved.
 ```
 
-Wait for confirmation.
+Wait for the user's reply.
 
----
+- If `run`: proceed to 5c.
+- If `edit`: tell the user the file is at `<path>` and they can re-invoke this skill with `--start-at experiment` once they're satisfied. End the run cleanly. The generated file path is written to the state file so `--start-at experiment` can resume codegen-free (just re-run sub-step 5c).
+- If `stop`: emit the Stop summary and end. State for completed phases (including the generated experiment file) is preserved on disk.
+- Anything else: treat as adjustment / question. Reason about it, answer, then re-show the review prompt.
 
-## Phase 7: Run experiment
-
-**Entity**: experiment run, `experiment.url`, metric stream.
-
-**Pedagogy banner**:
-
-> **What "running the experiment" means**: iterating over every record in the dataset, calling your `task` function, then calling each evaluator on the result, and streaming the scores to Datadog. The SDK creates the experiment in Datadog the first time it runs and updates the same experiment record on re-runs (if you keep the same `name=`).
->
-> **What `experiment.url` is**: the deep link to the run in the Datadog Experiments UI. Phase 8 uses this to analyze results.
->
-> **Why this phase matters**: until you actually run the experiment, the dataset and the code are just plumbing. The run is what produces the first measurements.
-
-**This is the second of the two phases in this pipeline where executable code is run.** Clearly signal it.
-
-**Action**: Execute the generated experiment file.
+**5c — Execute the file.**
 
 - For `--format py`: `python <generated_path>` via Bash. Stream output to the user.
 - For `--format ipynb`: tell the user the generated file is a notebook and ask whether to (a) execute it via `jupyter nbconvert --to notebook --execute --inplace <path>` (requires `jupyter` installed), or (b) hand off — the user opens it in JupyterLab and runs cells manually. Default to (a) if `jupyter` is on PATH; otherwise (b).
 - Capture the printed `experiment.url` from the run's stdout — the generated file always ends with `print(experiment.url)`. If you can't find it, parse stdout for the substring `https://app.datadoghq.com/llm/experiments/` (account for non-default `DD_SITE` hosts).
 - If the run fails: do NOT retry automatically. Surface the full traceback, identify the failure category (auth, missing dep, dataset not found, task function raised, evaluator raised) in a one-line diagnosis, and ask the user whether to fix and re-run.
 
-### Checkpoint 7
+### Checkpoint 5
 
 ```
-## Phase 7 complete — experiment run published
+## Phase 5 complete — experiment generated and run
 
+- File: `<path>`
 - Experiment URL: <experiment.url>
 - Records processed: <N>
 - Duration: <wall-clock seconds>
+- Task function: <module:function>
 - Evaluator score summary (from stdout, if printed): <table or "open the UI">
 
-Next up — Phase 8 will pull the experiment results back from Datadog and produce an analysis report (struggling metrics, qualitative examples, root-cause hypotheses).
+Next up — Phase 6 will pull the experiment results back from Datadog and produce an analysis report (struggling metrics, qualitative examples, root-cause hypotheses).
 
 Before I continue:
 - Take a look at the experiment in the UI (link above). Do the per-record scores roughly match your expectations?
-- Any specific question you want Phase 8 to focus on? (Optional — leaving it open runs an exploratory analysis.)
+- Any specific question you want Phase 6 to focus on? (Optional — leaving it open runs an exploratory analysis.)
 
 Type `continue` to proceed, `stop` to exit cleanly (state is saved), `redo` to re-run this phase, or give me adjustments.
 ```
 
-Wait for confirmation. If the user provides a focus question, carry it to Phase 8 as the analyzer's `question` argument.
+Wait for confirmation. If the user provides a focus question, carry it to Phase 6 as the analyzer's `question` argument.
 
 ---
 
-## Phase 8: Analyze experiment
+## Phase 6: Analyze experiment
 
 **Entity**: experiment `metric`, segment comparison, recommendation.
 
@@ -597,7 +554,7 @@ Wait for confirmation. If the user provides a focus question, carry it to Phase 
 /llm-obs-experiment-analyzer <experiment_id_from_url> [<focus question if any>] --output agent
 ```
 
-Extract the `<experiment_id>` from the URL captured in Phase 7 (the trailing UUID after `/llm/experiments/`).
+Extract the `<experiment_id>` from the URL captured in Phase 5 (the trailing UUID after `/llm/experiments/`).
 
 Reproduce the analyzer's full report verbatim.
 
@@ -615,17 +572,15 @@ After the analyzer report, emit the closing summary — this replaces the per-ph
 | 1. Classify ml_app | <N> traces classified (<F> failures) |
 | 2. Root cause analysis | <K> failure modes, <M> root causes |
 | 3. Bootstrap evaluators | <J> evaluators → `<path>` (or "<N> drafts published to Datadog") |
-| 4. Create dataset | <K> records → `<dataset_path>` |
-| 5. Publish dataset | `<dataset_name>` (v1) in project `<project_name>` |
-| 6. Generate experiment code | `<experiment_file_path>` |
-| 7. Run experiment | <experiment.url> |
-| 8. Analyze experiment | <2–3 bullet headline findings from the analyzer> |
+| 4. Create + publish dataset | <K> records → `<dataset_path>`, published as `<dataset_name>` (v1) in project `<project_name>` |
+| 5. Generate + run experiment | `<experiment_file_path>` → <experiment.url> (<N> records, <duration>s) |
+| 6. Analyze experiment | <2–3 bullet headline findings from the analyzer> |
 
 ## What you learned
 
 - The five core entities you touched: **ml_app**, **failure mode**, **evaluator**, **dataset**, **experiment**. Each has a dedicated docs page — see Datadog Documentation below.
 - The loop you can now repeat: **edit dataset → re-run experiment → compare in the UI**. Pull-by-name + auto-versioning makes the loop cheap.
-- The reusable artifacts you produced: an evaluator suite (Phase 3), a published dataset (Phase 5), and an experiment script (Phase 6). All three survive beyond this pipeline run.
+- The reusable artifacts you produced: an evaluator suite (Phase 3), a published dataset (Phase 4), and an experiment script (Phase 5). All three survive beyond this pipeline run.
 
 ## Recommended next steps
 
@@ -647,18 +602,16 @@ After the analyzer report, emit the closing summary — this replaces the per-ph
 
 ## Stop-after handling
 
-`--stop-after <phase>` lets the user exit cleanly before the full eight-phase pipeline completes. Valid values map to the phase numbers:
+`--stop-after <phase>` lets the user exit cleanly before the full six-phase pipeline completes. Valid values map to the phase numbers:
 
 | Value | Stop after | Use case |
 |---|---|---|
 | `classify` | Phase 1 | "I just want to see what's going on in my ml_app." |
 | `rca` | Phase 2 | "I want to understand failure modes — I'll write evaluators myself." |
 | `eval-bootstrap` | Phase 3 | **Matches the classic `llm-obs-eval-pipeline` behavior.** Use for "I want evaluators, not experiments." |
-| `dataset` | Phase 4 | "I want a dataset JSON to inspect / edit before publishing." |
-| `publish` | Phase 5 | "I want the dataset live in Datadog but I'll wire up the experiment myself." |
-| `experiment` | Phase 6 | "Generate the experiment file but don't run it yet." |
-| `run` | Phase 7 | "Run the experiment; I'll do the analysis manually." |
-| `analyze` | Phase 8 (default) | Full pipeline. |
+| `dataset` | Phase 4 | "I want the dataset created and published, but I'll generate / run / analyze the experiment myself." |
+| `experiment` | Phase 5 | "Generate and run the experiment; I'll analyze the results myself." |
+| `analyze` | Phase 6 (default) | Full pipeline. |
 
 When the current phase matches the stop value, **replace the Checkpoint at the bottom of that phase with a Stop summary**:
 
@@ -666,7 +619,7 @@ When the current phase matches the stop value, **replace the Checkpoint at the b
 ## Pipeline stopped — `--stop-after <phase>`
 
 Completed phases: <list 1..stop>
-Skipped: <list stop+1..8 with one-line descriptions>
+Skipped: <list stop+1..6 with one-line descriptions>
 
 Artifacts produced: <list with paths / URLs>
 
@@ -690,11 +643,9 @@ After every successful phase completion (i.e. after the user types `continue` pa
 | 1 classify | `state/01-classification.md` | The full `# Session Classification Summary` block plus all per-unit compact blocks, verbatim from `llm-obs-session-classify`. Markdown. |
 | 2 rca | `state/02-rca-report.md` | The full Phase 6 RCA report from `llm-obs-trace-rca`, verbatim. Markdown. |
 | 3 eval-bootstrap | `state/03-evaluators.json` | `{"mode": "sdk_code\|data_only\|publish", "output_path": "<path>", "evaluator_names": [...], "ml_app": "<ml_app>", "generated_at": "<ISO 8601>"}`. The actual evaluator code/JSON stays where the sub-skill wrote it. |
-| 4 dataset | `state/04-dataset.json` | The same `DatasetRecordRaw[]` content as `<output-dir>/dataset_<ml_app>_<YYYYMMDD>.json`. Treat this as a symlink-or-copy — both paths must point at the same content. |
-| 5 publish | `state/05-published-dataset.json` | `{"dataset_name": "<name>", "project_name": "<name>", "version": <int>, "url": "<datadog url>", "record_count": <int>, "published_at": "<ISO 8601>"}` |
-| 6 experiment | `state/06-experiment.json` | `{"experiment_file": "<path>", "format": "py\|ipynb", "dataset_name": "<name>", "task_source": "<module:function>\|placeholder", "purpose": "<text>", "generated_at": "<ISO 8601>"}` |
-| 7 run | `state/07-experiment-run.json` | `{"experiment_id": "<uuid>", "experiment_url": "<datadog url>", "records_processed": <int>, "duration_seconds": <float>, "ran_at": "<ISO 8601>"}` |
-| 8 analyze | `state/08-analysis.md` | The full analyzer report from `llm-obs-experiment-analyzer`. Markdown. |
+| 4 dataset | `state/04-published-dataset.json` | `{"dataset_file": "<path to local DatasetRecordRaw[] JSON>", "dataset_name": "<published name>", "project_name": "<name>", "version": <int>, "url": "<datadog url>", "record_count": <int>, "skipped_count": <int>, "pii_redactions": <int>, "tag_normalizations": <int>, "published_at": "<ISO 8601>"}` — combines what was previously two state files (`04-dataset.json` and `05-published-dataset.json`) because Phase 4 now creates and publishes in one step. |
+| 5 experiment | `state/05-experiment-run.json` | `{"experiment_file": "<path>", "format": "py\|ipynb", "dataset_name": "<name>", "task_source": "<module:function>\|placeholder", "purpose": "<text>", "experiment_id": "<uuid>", "experiment_url": "<datadog url>", "records_processed": <int>, "duration_seconds": <float>, "generated_at": "<ISO 8601>", "ran_at": "<ISO 8601>"}` — combines what was previously two state files (`06-experiment.json` and `07-experiment-run.json`) because Phase 5 now generates and runs in one step. If the user halts at the in-phase review beat (5b) with `edit`, only the codegen fields are populated; re-entering with `--start-at experiment` reads the file path from here and resumes at 5c. |
+| 6 analyze | `state/06-analysis.md` | The full analyzer report from `llm-obs-experiment-analyzer`. Markdown. |
 
 `<output-dir>/state/` should be created via `mkdir -p` at the top of the Precheck (alongside the existing `<output-dir>` creation). Never write state files outside this directory.
 
@@ -739,7 +690,7 @@ The Phase Template's "Type 'continue' to proceed" line should be updated to:
 # First-time, full run end-to-end
 /llm-obs-eval-pipeline lux --project-name lux
 
-# (user typed 'stop' at Checkpoint 5)
+# (user typed 'stop' at Checkpoint 4)
 # Later, pick up where they left off:
 /llm-obs-eval-pipeline lux --project-name lux --start-at experiment
 
@@ -768,10 +719,11 @@ The Phase Template's "Type 'continue' to proceed" line should be updated to:
 - **Persist phase output before showing the checkpoint.** Every phase writes its primary output to `<output-dir>/state/0N-<name>.{md,json}` *before* the checkpoint prompt is rendered. This way `stop` at any point leaves a re-enterable artifact on disk — the user can resume later with `--start-at <next-phase>` and the skill will load the prior state without re-running anything.
 - **Honor `--start-at` precisely.** When `--start-at <phase>` is set, load every prior phase's state file (or its override flag if supplied), print a one-line confirmation per loaded phase in the Precheck, and begin from the named phase. If a required state file is missing and no override was passed, fail fast — do not silently re-run the missing phase.
 - **Never truncate sub-skill output.** The user is here to learn what the sub-skills do; if you summarize their output, you defeat the pedagogical purpose. Reproduce verbatim. Downstream phases also depend on the full text being in context (Phase 2 detects Phase 1's classification summary; Phase 3 detects Phase 2's failure taxonomy).
-- **The phase envelope is invariant.** The banner ("You are here. Phase N of 8…"), the entity block, the action label, and the checkpoint header must appear identically across every phase. The *content inside* may differ; the envelope must not. This is the determinism the skill promises.
-- **Execute only at Phases 5 and 7.** No other phase runs code on the user's machine. If a sub-skill output suggests the user should run something themselves, hand it off — don't quietly execute it.
+- **The phase envelope is invariant.** The banner ("You are here. Phase N of 6…"), the entity block, the action label, and the checkpoint header must appear identically across every phase. The *content inside* may differ; the envelope must not. This is the determinism the skill promises.
+- **Execute only at Phases 4 and 5.** No other phase runs code on the user's machine. Phase 4 runs the publish script (writes the dataset to Datadog); Phase 5 runs the generated experiment file (calls provider APIs against the dataset). All other phases are read-only or write generated files to `--output-dir`. If a sub-skill output suggests the user should run something themselves, hand it off — don't quietly execute it.
+- **Phase 5 has a mandatory in-phase review beat.** Between sub-step 5a (codegen) and 5c (execute), pause with the in-phase review prompt. Wait for the user to type `run`, `edit`, or `stop`. Never auto-run after codegen.
 - **One backend for the whole run.** Detected at startup, propagated to all sub-skill calls. Do not re-detect mid-run.
-- **`--project-name` is sticky.** Whatever the user picked at Precheck flows unchanged into Phases 5 and 6 and into the final summary. If the user changes their mind at Checkpoint 5, re-run Phase 5 (and only Phase 5) with the new name — do NOT silently rewrite earlier outputs.
+- **`--project-name` is sticky.** Whatever the user picked at Precheck flows unchanged into Phases 4 and 5 and into the final summary. If the user changes their mind at Checkpoint 4, re-run Phase 4 (and only Phase 4) with the new name — do NOT silently rewrite earlier outputs.
 - **Phase re-entry**: if the user types something like "redo phase 4 with --trace-limit 30", re-run that phase only (and clearly say so — "Re-running Phase 4 with the new trace limit. Phases 1–3 outputs are unchanged."). After it completes, fall through to Phase 5 just like a fresh run would.
 
 ---
@@ -782,8 +734,8 @@ This list exists so reviewers can spot scope creep:
 
 - **Does not instrument your app.** Audience assumption: the user already has `ml_app` traces flowing into Datadog. If the precheck finds zero traces, the skill stops and points the user at the instrumentation docs — it does not attempt to bootstrap instrumentation.
 - **Does not push code or commit anything.** All generated files land in `<output-dir>`; the user owns version control.
-- **Does not run any phase's code without an explicit checkpoint confirmation.** Phases 5 and 7 ask before executing.
-- **Does not deeply modify your app.** Phase 6's experiment file *imports* your task function; it does not refactor it. If you want prompt / model variants without editing your app, inline the call inside `task_fn` in the generated file.
+- **Does not run any phase's code without an explicit checkpoint or review confirmation.** Phase 4 advances from the dataset-create sub-step to the publish sub-step automatically (no user-editable surface between them), but Phase 5 pauses at the in-phase review beat between codegen and run — the user types `run` to proceed.
+- **Does not deeply modify your app.** Phase 5's experiment file *imports* your task function; it does not refactor it. If you want prompt / model variants without editing your app, inline the call inside `task_fn` in the generated file.
 - **Does not auto-create `.env` files.** Credential files are discovered, not generated — secrets-on-disk decisions belong to the user.
 
 ---
@@ -793,8 +745,8 @@ This list exists so reviewers can spot scope creep:
 This skill itself does almost no direct tool calls — the only direct calls are:
 
 1. The **precheck** `search_llmobs_spans` (to confirm the ml_app has traces).
-2. `Bash` for **Phase 5** (running the publish script) and **Phase 7** (running the generated experiment).
-3. **No** Write for Phase 5 — the publish helper ships at `scripts/publish_dataset.py` alongside this SKILL.md; the orchestrator invokes it by path with CLI args. The skill does not generate the script on the fly.
+2. `Bash` for **Phase 4** (running the publish script) and **Phase 5** (running the generated experiment).
+3. **No** Write for Phase 4's publish — the publish helper ships at `scripts/publish_dataset.py` alongside this SKILL.md; the orchestrator invokes it by path with CLI args. The skill does not generate the script on the fly.
 
 Everything else routes through sub-skills, which carry their own MCP-to-pup mappings:
 
@@ -803,9 +755,9 @@ Everything else routes through sub-skills, which carry their own MCP-to-pup mapp
 | `llm-obs-session-classify` | Phase 1 | `dd-llmo/llm-obs-session-classify/SKILL.md` (Tool Reference appendix) |
 | `llm-obs-trace-rca` | Phase 2 | `dd-llmo/llm-obs-trace-rca/SKILL.md` (Tool Reference appendix) |
 | `llm-obs-eval-bootstrap` (sdk_code / data_only / publish) | Phase 3 | `dd-llmo/llm-obs-eval-bootstrap/SKILL.md` (Tool Reference appendix) |
-| `llm-obs-eval-bootstrap` (`--emit-dataset` mode) | Phase 4 | `dd-llmo/llm-obs-eval-bootstrap/SKILL.md` (Phase 3D + Tool Reference appendix) |
-| `llm-obs-experiment-py-bootstrap` | Phase 6 | `dd-llmo/llm-obs-experiment-py-bootstrap/SKILL.md` |
-| `llm-obs-experiment-analyzer` | Phase 8 | `dd-llmo/llm-obs-experiment-analyzer/SKILL.md` (Tool Reference appendix) |
+| `llm-obs-eval-bootstrap` (`--emit-dataset` mode) | Phase 4 (sub-step 4a) | `dd-llmo/llm-obs-eval-bootstrap/SKILL.md` (Phase 3D + Tool Reference appendix) |
+| `llm-obs-experiment-py-bootstrap` | Phase 5 (sub-step 5a) | `dd-llmo/llm-obs-experiment-py-bootstrap/SKILL.md` |
+| `llm-obs-experiment-analyzer` | Phase 6 | `dd-llmo/llm-obs-experiment-analyzer/SKILL.md` (Tool Reference appendix) |
 
 ### Precheck `search_llmobs_spans` ↔ pup
 
