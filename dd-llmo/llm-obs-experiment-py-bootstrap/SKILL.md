@@ -3,6 +3,29 @@ name: llm-obs-experiment-py-bootstrap
 description: Generates a self-contained Python experiment client that uses the ddtrace.llmobs SDK. Emits either a runnable .py script or a Jupyter .ipynb notebook matching the canonical DataDog reference notebook style. Use when the user says "generate Python experiment", "write an SDK experiment", "create a ddtrace experiment", "Python notebook experiment", "use the LLM Obs SDK", or has `ddtrace` installed and wants idiomatic SDK code.
 ---
 
+## Backend
+
+**Detection** — At the start of every invocation, before taking any action, determine which backend (if any) to use for the startup beacon call:
+
+1. If the user passed `--backend pup` anywhere in their invocation → use **pup mode** for the beacon. Skip steps 2–3.
+2. Check whether MCP tools are present in your active tool list. The canonical signal is whether `mcp__datadog-llmo-mcp__list_llmobs_evals` appears in your available tools. If present → use **MCP mode**.
+3. If MCP tools are absent → check whether `pup` is executable via `pup --version`. If responding → use **pup mode**.
+4. If neither is available → **skip the beacon silently** and proceed to codegen. This skill is primarily local (introspection + file emission) and does not require backend access; the beacon is for usage attribution only.
+
+**Invocation ID:** At the very start of each invocation, before any MCP/pup call, generate an 8-character hex invocation ID (e.g., `3a9f1c2b`). Keep it constant for the entire invocation.
+
+**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-experiment-py-bootstrap[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only** (the startup beacon below), use `skill:llm-obs-experiment-py-bootstrap:start[<inv_id>] — ` instead (note the `:start` suffix).
+
+**Startup beacon:** Immediately after parsing arguments (workflow step 1, before dataset resolution in step 2), issue exactly one beacon call to register skill usage and validate backend connectivity. This is fire-and-forget — surface any error as a one-line `Note:` to the user but do not block codegen.
+
+- **MCP mode:** call `mcp__datadog-llmo-mcp__list_llmobs_evals` with `telemetry.intent = "skill:llm-obs-experiment-py-bootstrap:start[<inv_id>] — Skill startup: register usage and verify Datadog connectivity"`. Discard the response payload; the call's purpose is the telemetry tag.
+- **pup mode:** run `pup llm-obs evals list --limit 1` via Bash. Pup carries its own telemetry; no intent prefix needed.
+- **No backend:** print one line `(Telemetry beacon skipped — no Datadog backend detected; this is informational only and does not affect codegen.)` and proceed.
+
+The beacon **must not** fail the skill. If the call errors (auth, network, etc.), surface a one-line note and continue.
+
+---
+
 # LLM Obs Experiment (Python) Bootstrap — Generate a Python Experiment Using `ddtrace.llmobs`
 
 Produce a single self-contained Python experiment that uses the official **`ddtrace.llmobs` SDK**. Output is either a `.py` script or an `.ipynb` notebook. The generated code mirrors the patterns shown in DataDog's reference notebooks at <https://github.com/DataDog/llm-observability/tree/main/experiments/notebooks>.
@@ -202,6 +225,8 @@ The same section sequence in both formats. In `.py` these become comment banners
    The final project name is `experiment-<service-name>`. Strip a leading `experiment-` from `<service-name>` if it already starts with one (so a package literally named `experiment-foo` yields `experiment-foo`, not `experiment-experiment-foo`). If none of the five sources resolve to a non-empty string, fall back to `experiment-sdk-default` and emit a warning in the next-steps output that the user should set `--project-name` explicitly.
 
    Embed the resolved name as a string literal in the generated `PROJECT_NAME = "..."` line — don't emit runtime `os.getcwd()` lookups, since the user may run the file from a different directory than where the skill resolved it.
+
+1.5. **Startup beacon.** Per the **Backend** section above: generate an 8-character hex invocation ID, then issue the single beacon call (MCP `list_llmobs_evals` tagged with `skill:llm-obs-experiment-py-bootstrap:start[<inv_id>] — Skill startup: ...`, or pup equivalent, or skip if no backend). Surface any error as a one-line `Note:` and proceed regardless — the beacon is for usage attribution and connectivity validation only; it never blocks codegen.
 
 2. **Resolve the dataset source.** Error out if both `--dataset` and `--dataset-name` are passed — they're mutually exclusive.
 
