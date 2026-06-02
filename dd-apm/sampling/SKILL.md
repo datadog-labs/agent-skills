@@ -2,7 +2,7 @@
 name: sampling
 description: Diagnose and change APM trace sampling — set per-resource rates, configure adaptive sampling, adjust agent samplers (priority/error/rare TPS), or figure out why a sampling rule isn't taking effect. Use for any request involving "change sample rate", "drop X% of traces", "keep all traces for service Y", "why is my trace missing", "ingestion control", "adaptive sampling", "APM_TRACING sample rules", or "remote config sampling".
 metadata:
-  version: "1.0.1"
+  version: "1.0.2"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,sampling,ingestion,adaptive-sampling,remote-config,dd-apm
@@ -111,18 +111,21 @@ pup auth status || pup auth login
 
 > `pup auth login` opens a browser tab for OAuth. Complete the login there.
 
-### Permissions for write operations
+### Permissions for read/write operations
 
-All sampling writes require these Datadog permissions on the API key + app key (or the OAuth identity):
+Every sampling action needs the user's Datadog **role** to grant the underlying permission — not just the OAuth scope on the token. OAuth scope == "this token is *allowed to request* this permission"; the role membership is what actually grants it. Both must be present for the request to succeed.
 
-| Operation | Required permissions |
+| Operation | Required permissions on the user's role |
 |---|---|
-| Read any sampling config | `ApmRemoteConfigurationRead` (+ `ApmServiceIngestRead` for adaptive/agent) |
-| Write resource-based rules | `ApmRemoteConfigurationWrite` |
-| Write adaptive allotment / onboarding | `ApmServiceIngestWrite` + `ApmRemoteConfigurationWrite` |
-| Write agent samplers | `ApmRemoteConfigurationWrite` |
+| Read sampling rules / adaptive status | `apm_remote_configuration_read` (+ `apm_service_ingest_read` for adaptive) |
+| Write resource-based rules (`create`/`update`/`delete`) | `apm_remote_configuration_write` |
+| Write adaptive allotment / onboarding | `apm_service_ingest_write` + `apm_remote_configuration_write` |
 
-If write commands fail with `403 Forbidden`, check the user's role grants these.
+**The Datadog Admin Role grants all of these by default.** Standard and custom roles often don't.
+
+If the user is unsure whether they have the permission, the diagnostic is simple: any read command (Step 0) will succeed → they have at least read. A write command failing with `403 Forbidden` + body `"Failed permission authorization checks"` → they have the scope on their token but their role doesn't grant the permission.
+
+> ⚠️ The user **cannot grant themselves** the permission. An admin in their Datadog org goes to *Organization Settings → Roles → (the user's role) → Permissions* and ticks the box. If the user gets a 403, surface this immediately rather than retrying the command. See Troubleshooting #9.
 
 ### Agent + tracer version gate (for remote sampling features)
 
@@ -231,7 +234,7 @@ Surface these to the user:
 
 ### Step 3: Confirm and apply
 
-> *"I'm going to set sampling rate for `<SERVICE>` env `<ENV>` resource `<RESOURCE>` to **<RATE>** (mechanism: remote customer rule). This will take effect within 30 seconds of the next tracer RC poll. Ready?"*
+> *"I'm going to set sampling rate for `<SERVICE>` env `<ENV>` resource `<RESOURCE>` to **<RATE>** (mechanism: remote customer rule). This will take effect within 30 seconds of the next tracer RC poll. Note: this requires `apm_remote_configuration_write` on your Datadog role — Admin role has it by default, others may not. If it fails with `403 Forbidden`, see Troubleshooting #9. Ready?"*
 
 ### Claude runs
 
@@ -293,7 +296,7 @@ Returns the monthly quota Datadog computes for that strategy and the resulting t
 
 ### Step 3: Confirm and apply
 
-> *"I'm going to onboard `<SERVICE>` env `<ENV>` to adaptive sampling. Datadog will recompute per-resource rates every 5–10 minutes to fit your monthly allotment. Existing manual `DD_TRACE_SAMPLING_RULES` will still take precedence. Ready?"*
+> *"I'm going to onboard `<SERVICE>` env `<ENV>` to adaptive sampling. Datadog will recompute per-resource rates every 5–10 minutes to fit your monthly allotment. Existing manual `DD_TRACE_SAMPLING_RULES` will still take precedence. Note: this requires both `apm_service_ingest_write` AND `apm_remote_configuration_write` on your Datadog role — Admin role has them by default. If it fails with `403 Forbidden`, see Troubleshooting #9. Ready?"*
 
 ### Claude runs
 
@@ -388,10 +391,32 @@ These integration-generated service names cannot be targeted by RC sampling rule
 
 Fix: Toggle the `apm-remove-integration-service-overrides` feature flag (Datadog support can do this), or target the actual root service.
 
+### 9. `403 Forbidden` — "Failed permission authorization checks"
+
+The user's OAuth token was accepted but their Datadog role doesn't grant the underlying permission for the action they're attempting. The OAuth scope on the token says "this token is *allowed to request* this permission," but the server still checks the user's role membership separately.
+
+The user can confirm this is the cause by re-running the command and observing the exact error string: `Failed permission authorization checks` is the AuthZ-failure marker (vs `invalid_token` which would be AuthN/OAuth failure).
+
+| Action attempted | Required Datadog permission |
+|---|---|
+| Read sampling rules / adaptive status | `apm_remote_configuration_read` |
+| Write sampling rules (`create`/`update`/`delete`) | `apm_remote_configuration_write` |
+| Read adaptive sampling allotment | `apm_service_ingest_read` |
+| Write adaptive sampling (`onboard`, `set-allotment`) | `apm_service_ingest_write` |
+
+**Fix:** an admin in the user's Datadog org needs to add the permission to their role:
+
+> Organization Settings → Roles → *(user's role)* → Permissions → tick the required permission(s) → Save.
+
+The **Datadog Admin Role** grants all four of these by default. The standard **Datadog Standard Role** and custom roles often don't.
+
+If the user isn't sure who their org admin is, tell them to ask in their internal Datadog support channel. They cannot grant themselves the permission.
+
 ### Where to escalate
 
 | Symptom | Channel |
 |---|---|
+| `403 Forbidden` / "Failed permission authorization checks" | The user's Datadog org admin (NOT Datadog support — this is a role-membership issue, not a Datadog-side bug) |
 | RC admin shows the rule but tracer never applies | tracer team (`#dd-trace-<lang>`) |
 | Agent not connecting to RC | `#support-remote-config` |
 | Adaptive rates look wrong / API error | `#apm-trace-intake` |
