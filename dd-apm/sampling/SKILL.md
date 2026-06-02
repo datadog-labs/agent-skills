@@ -2,7 +2,7 @@
 name: sampling
 description: Diagnose and change APM trace sampling — set per-resource rates, configure adaptive sampling, adjust agent samplers (priority/error/rare TPS), or figure out why a sampling rule isn't taking effect. Use for any request involving "change sample rate", "drop X% of traces", "keep all traces for service Y", "why is my trace missing", "ingestion control", "adaptive sampling", "APM_TRACING sample rules", or "remote config sampling".
 metadata:
-  version: "1.0.2"
+  version: "1.0.3"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,sampling,ingestion,adaptive-sampling,remote-config,dd-apm
@@ -28,21 +28,24 @@ Read this before changing anything. The pipeline has multiple layers and the wro
 A third layer at the backend — **retention filters** — decides which already-ingested traces stay searchable for 15 days. Retention filters are NOT sampling — handle those with `pup apm retention-filters`, not this skill.
 
 > **APM stats are computed pre-sample and shipped separately.** `trace.<svc>.hits/errors/duration` stay 100% accurate at any sample rate. The customer's RED-metric dashboards don't break when you drop sample rate.
+>
+> **How that works under the hood**: even when a trace is decided to be dropped, the tracer still flushes all its spans to the local Datadog Agent. The Agent computes the unsampled APM stats over everything it receives, *then* drops the spans for ingestion if the priority is 0 or -1. So sampling decisions only affect what reaches the Datadog backend as traces — they never affect the stats stream.
 
 ### Precedence — memorize this order
 
-When multiple sampling sources conflict, the higher-numbered wins:
+When multiple sampling sources conflict, **lower-numbered priority wins** (priority 1 overrides all others):
 
 | Priority | Source | How it's set |
 |---|---|---|
-| 1 | **Remote resource-based sampling rules** | UI → Ingestion Control → "Manage Ingestion Rate" (`pup apm sampling-rules`) |
-| 2 | **Adaptive sampling rules** | UI → Ingestion Control + onboarding (`pup apm adaptive-sampling`) |
-| 3 | **Local `DD_TRACE_SAMPLING_RULES`** | Env var on the service |
-| 4 | **Remote global sample rate** | Older RC mechanism |
-| 5 | **Local `DD_TRACE_SAMPLE_RATE`** | Env var (deprecated — prefer rules) |
-| 6 | **Agent target TPS** (`DD_APM_TARGET_TPS`) | Env var / `apm_config.target_traces_per_second` |
+| 1 | **Manual** (`manual.keep` / `manual.drop`) | Code change — `span.set_tag(MANUAL_KEEP)` / `Tracing.keep!` etc. Overrides everything else. |
+| 2 | **Remote resource-based sampling rules** | UI → Ingestion Control → "Manage Ingestion Rate" (`pup apm sampling-rules`) |
+| 3 | **Adaptive sampling rules** | UI → Ingestion Control + onboarding (`pup apm adaptive-sampling`) |
+| 4 | **Local `DD_TRACE_SAMPLING_RULES`** | Env var on the service |
+| 5 | **Remote global sample rate** | Older RC mechanism |
+| 6 | **Local `DD_TRACE_SAMPLE_RATE`** | Env var (deprecated — prefer rules) |
+| 7 | **Agent target TPS** (`DD_APM_TARGET_TPS`) | Env var / `apm_config.target_traces_per_second` |
 
-If a customer is "setting `DD_TRACE_SAMPLE_RATE=0.1` and nothing happens", check whether a UI rule at priority 1 or 2 is overriding it.
+If a customer is "setting `DD_TRACE_SAMPLE_RATE=0.1` and nothing happens", check whether a `manual.keep` in code, a UI rule (priority 2), or adaptive sampling (priority 3) is overriding it.
 
 ### Decision-maker tag `_dd.p.dm` — read this on the trace to know which mechanism fired
 
@@ -55,7 +58,7 @@ Append `?config_trace_show_hidden_metadata=true` to any trace URL in the UI to s
 | `-3` | LOCAL_USER_RULE | `DD_TRACE_SAMPLING_RULES` matched |
 | `-4` | MANUAL | `manual.keep` / `manual.drop` tag set in code |
 | `-5` | APPSEC | ASM force-kept for a threat |
-| `-8` | SPAN_SAMPLING_RATE | Span kept by `DD_SPAN_SAMPLING_RULES` (whole trace likely dropped) |
+| n/a — see note | SPAN_SAMPLING_RATE (`8`) | Single-span sampling. Value `8` lives in the NUMERIC tag `_dd.span_sampling.mechanism`, NOT in the string tag `_dd.p.dm`. If you see `_dd.span_sampling.mechanism: 8` on a span, it was kept by `DD_SPAN_SAMPLING_RULES` even though the enclosing trace was dropped. |
 | `-11` | REMOTE_USER_RULE | UI-authored resource-based rule (`provenance:customer`) |
 | `-12` | REMOTE_ADAPTIVE_RULE | Datadog-computed adaptive rule (`provenance:dynamic`) |
 | `-13` | AI_GUARD | AI Guard kept the trace |
@@ -411,6 +414,27 @@ The user can confirm this is the cause by re-running the command and observing t
 The **Datadog Admin Role** grants all four of these by default. The standard **Datadog Standard Role** and custom roles often don't.
 
 If the user isn't sure who their org admin is, tell them to ask in their internal Datadog support channel. They cannot grant themselves the permission.
+
+### 10. "My traces are disappearing" — Agent CPU/memory self-throttling
+
+The Datadog Agent has an internal rate limiter tied to its CPU and memory usage. When the Agent exceeds the configured limit, it **silently drops trace payloads** (returns `200` to the tracer so nothing is retried) until usage drops back below the threshold.
+
+This is independent of every sampling mechanism above — it can drop already-kept traces simply because the Agent is starved for resources.
+
+Defaults that often trigger this:
+- `DD_APM_MAX_CPU_PERCENT` = `50` (half a core)
+- `DD_APM_MAX_MEMORY` = `5e8` (500 MB)
+
+If the Agent reaches `1.5 × DD_APM_MAX_MEMORY`, it kills itself outright. Watch for `datadog.trace_agent.receiver.oom_kill` metric for confirmation.
+
+**Diagnose:** look for the tag `_dd1.sr.rapre` on a trace — if present, the Agent's pre-sampler dropped some portion of that payload. Also check the metric `datadog.trace_agent.receiver.payload_refused` over time, broken down by host.
+
+**Fix:** for Agents running as a dedicated service (their own host, k8s pod, etc.) the defaults are too low. Either:
+- Raise: `DD_APM_MAX_CPU_PERCENT=0` and `DD_APM_MAX_MEMORY=0` (both disable the throttle)
+- Or set realistic limits well above observed usage
+- Or move to a larger Agent host / pod
+
+The defaults are designed as a safety net so the Agent never starves the application it's monitoring — they're tuned for the sidecar-on-the-app-host case, not the dedicated-Agent case.
 
 ### Where to escalate
 
