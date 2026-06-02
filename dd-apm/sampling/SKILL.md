@@ -2,7 +2,7 @@
 name: sampling
 description: Diagnose and change APM trace sampling — set per-resource rates, configure adaptive sampling, adjust agent samplers (priority/error/rare TPS), or figure out why a sampling rule isn't taking effect. Use for any request involving "change sample rate", "drop X% of traces", "keep all traces for service Y", "why is my trace missing", "ingestion control", "adaptive sampling", "APM_TRACING sample rules", or "remote config sampling".
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,sampling,ingestion,adaptive-sampling,remote-config,dd-apm
@@ -64,15 +64,16 @@ Sampling priority on a span (`_sampling_priority_v1`): `-1` UserDrop, `0` AutoDr
 
 > **Gotcha**: `_sampling_priority_v1=-1` does NOT mean the span was dropped if `_dd.span_sampling.*` tags are present — single-span sampling rescued it.
 
-### Three things this skill changes — pick the right one
+### Two things this skill changes — pick the right one
 
 | Want to… | Use | Affects | Granularity |
 |---|---|---|---|
 | Set a specific rate for a (service, env, resource) | `pup apm sampling-rules` | Tracer (head-based) | per-resource glob, customer-authored |
 | Let Datadog auto-tune rates to fit a byte/percent budget | `pup apm adaptive-sampling` | Tracer (head-based, Datadog-computed) | per-service automatically |
-| Change agent's target TPS / error TPS / rare sampler | `pup apm agent-sampling` | Agent only (post-tracer) | org-wide or per-env |
 
 If unsure, **start by diagnosing** — Step 0.
+
+> **Agent-side TPS (`DD_APM_TARGET_TPS`, `DD_APM_ERROR_TPS`, `DD_APM_ENABLE_RARE_SAMPLER`)** is not yet covered by a pup command. For that, point users to the Ingestion Control UI ("Remotely Configure Agent Ingestion") or the agent config flags directly.
 
 ---
 
@@ -145,7 +146,7 @@ If the customer's setup is below any of these, remote sampling rules will be sil
 
 | Variable | How to resolve |
 |---|---|
-| `ACTION` | One of: **diagnose**, **set-rate**, **set-adaptive**, **set-agent**. If the user described a symptom (e.g. "my rule isn't working"), start with **diagnose**. |
+| `ACTION` | One of: **diagnose**, **set-rate**, **set-adaptive**. If the user described a symptom (e.g. "my rule isn't working"), start with **diagnose**. (Agent-side TPS changes — `DD_APM_TARGET_TPS` etc. — aren't yet exposed via pup; redirect to the Ingestion Control UI.) |
 | `ENV` | Ask the user explicitly. Do NOT assume `prod` / `production` / `prd`. |
 | `SERVICE` | Specific service to target. Use `pup apm services list --env <ENV>` if unclear. |
 | `RESOURCE` | (For set-rate) Specific resource pattern, or `*` for whole service. |
@@ -169,9 +170,6 @@ pup apm sampling-rules list --service <SERVICE> --env <ENV>
 
 # 3. Is this service onboarded to adaptive?
 pup apm adaptive-sampling onboarding-status --service <SERVICE> --env <ENV>
-
-# 4. What are the current agent-side TPS targets?
-pup apm agent-sampling get
 ```
 
 Then ask the user for a trace ID and have them open it in the UI with the hidden-metadata trick:
@@ -185,9 +183,9 @@ Map their answer:
 | `remote_rule` | A customer resource-based rule (priority 1) — use `set-rate` to change |
 | `adaptive_rule` | Adaptive sampling (priority 2) — use `set-adaptive` to change target |
 | `rule` | Local `DD_TRACE_SAMPLING_RULES` (priority 3) — change the env var |
-| `auto` | Agent priority sampler (priority 6) — use `set-agent` to change target TPS |
+| `auto` | Agent priority sampler (priority 6) — change via Ingestion Control UI or `DD_APM_TARGET_TPS` on the agent (not pup) |
 | `manual` | `manual.keep`/`manual.drop` in code — code change needed |
-| `error` / `rare` | Agent error/rare sampler kept this trace — use `set-agent` |
+| `error` / `rare` | Agent error/rare sampler kept this trace — change via `DD_APM_ERROR_TPS` / `DD_APM_ENABLE_RARE_SAMPLER` on the agent (not pup) |
 | `single_span` | Whole trace dropped, span rescued by `DD_SPAN_SAMPLING_RULES` |
 
 If the user said "my rule isn't taking effect" and `ingestion_reason` shows anything other than `remote_rule`, the rule isn't being applied — go to **Troubleshooting** below before writing more rules.
@@ -204,8 +202,8 @@ This writes a `provenance:customer` rule to the `APM_TRACING` remote config prod
 |---|---|
 | `--service` | Exact service name from `pup apm services list` |
 | `--env` | Confirmed env (NEVER assume) |
-| `--resource-glob` | `*` for whole service, or e.g. `GET /api/users`, `POST /checkout*`. First-match-wins ordering. |
-| `--rate` | 0.0–1.0. `1e-6` is the floor of what's honored. |
+| `--resource` | `*` for whole service, or e.g. `GET /api/users`, `POST /checkout*`. First-match-wins ordering. |
+| `--sample-rate` | 0.0–1.0. `1e-6` is the floor of what's honored. |
 
 ### Step 2: Preview impact
 
@@ -241,11 +239,11 @@ Surface these to the user:
 pup apm sampling-rules create \
   --service "<SERVICE>" \
   --env "<ENV>" \
-  --resource-glob "<RESOURCE>" \
-  --rate <RATE>
+  --resource "<RESOURCE>" \
+  --sample-rate <RATE>
 ```
 
-Record the returned `id` and `version` — needed for update/delete.
+Record the returned `id` from the response — needed for update/delete.
 
 ### Step 4: Verify (wait 60–90 seconds)
 
@@ -280,15 +278,18 @@ pup apm adaptive-sampling onboarding-status --service <SERVICE> --env <ENV>
 
 Allotment formula: `150GB × #APM_hosts + 10GB × #Fargate_tasks + 50GB × #M-traces`. If `check` reports the customer is over budget, sampling rates will floor at **1 trace per 5 minutes per (service, env, resource)** — surface this before promising results.
 
-### Step 2: Preview the rates Datadog would set
+### Step 2: Preview the allotment Datadog would compute
 
 ### Claude runs
 
 ```bash
-pup apm adaptive-sampling preview --service <SERVICE> --env <ENV>
+# Preview against a proposed monthly target — provide ONE of --bytes or --percent
+pup apm adaptive-sampling preview --bytes <TARGET_BYTES>
+# or
+pup apm adaptive-sampling preview --percent <TARGET_PERCENT>
 ```
 
-Show the user the predicted per-resource rates. If they look wrong, do not onboard — investigate first.
+Returns the monthly quota Datadog computes for that strategy and the resulting target. If the projected target is dramatically below the user's expected ingestion volume, sampling will floor to 1 trace per 5 minutes per (service, env, resource) — surface this before onboarding.
 
 ### Step 3: Confirm and apply
 
@@ -314,33 +315,16 @@ Have the user open a trace with `?config_trace_show_hidden_metadata=true` and co
 
 ---
 
-## Action: set-agent (priority / error / rare TPS — affects whole org or whole env)
+## Action: agent-side TPS (priority / error / rare samplers) — not yet in pup
 
-This writes the `APM_SAMPLING` remote config product. Affects every agent in the org (or env). Be careful — it's a blunt instrument compared to resource-based rules.
+Org-wide agent sampler tuning (`APM_SAMPLING` remote config product) is **not yet exposed via pup**. If the user actually needs to change agent target TPS, error TPS, or the rare sampler:
 
-### Claude runs
+- **UI path**: Ingestion Control page → "Remotely Configure Agent Ingestion" button. Requires `ApmRemoteConfigurationWrite` permission and Agent ≥ 7.42.0.
+- **Local-config alternative**: set `DD_APM_TARGET_TPS`, `DD_APM_ERROR_TPS`, `DD_APM_ENABLE_RARE_SAMPLER` env vars (or the matching keys in `datadog.yaml`) on the agent and restart. Affects only that agent.
 
-```bash
-pup apm agent-sampling get          # show current values, all envs vs by-env
-```
+Verify either path with Agent ≥ 7.42.0 by searching a recent trace for `_dd.agent_priority_sampler.target_tps` — the metric reflects the current value the agent is using.
 
-### Confirm before applying
-
-> *"I'm going to set agent target TPS to **<N>** (priority sampler), error TPS to **<E>**, rare sampler **<enabled/disabled>** for **<scope>**. This affects every datadog-agent in scope and is org-wide unless you specify `--env`. Ready?"*
-
-### Claude runs
-
-```bash
-# All environments
-pup apm agent-sampling set --target-tps <N> --errors-tps <E> --rare <true|false>
-
-# Per-env override
-pup apm agent-sampling set --env <ENV> --target-tps <N> --errors-tps <E> --rare <true|false>
-```
-
-### Verify
-
-Agent 7.42.0+ exposes its current target TPS as a metric on traces. Search a recent trace for `_dd.agent_priority_sampler.target_tps` to confirm the new value is in effect.
+> **Don't roll your own pup command** for this. The endpoint lives at `/api/ui/remote_config/products/apm_sampling/samplerconfig`. It's a real follow-up for pup but out of scope for this skill's current capabilities.
 
 ---
 
@@ -421,22 +405,25 @@ Fix: Toggle the `apm-remove-integration-service-overrides` feature flag (Datadog
 ### Claude runs
 
 ```bash
-pup apm sampling-rules list                         # all rules
-pup apm sampling-rules list --service <SERVICE>     # filter by service
-pup apm sampling-rules list --env <ENV>             # filter by env
+pup apm sampling-rules list                                  # all rules
+pup apm sampling-rules list --service <SERVICE> --env <ENV>  # narrow to one target (both flags required together)
 ```
+
+> Note: `list` with only `--service` or only `--env` falls back to the unfiltered list — the by_target endpoint requires both.
 
 ### Update
 
-Updates require the rule's current `version` from the list/get output:
+`update` REPLACES all attributes — pass every field, not just the changing one. The `id` is positional, not a flag.
 
 ### Claude runs
 
 ```bash
-pup apm sampling-rules update --id <ID> --rate <NEW_RATE> --version <VERSION>
+pup apm sampling-rules update <ID> \
+  --service <SERVICE> \
+  --env <ENV> \
+  --resource <RESOURCE> \
+  --sample-rate <NEW_RATE>
 ```
-
-ERROR: `409 Conflict` — rule was modified since you fetched it. Re-fetch and retry.
 
 ### Delete
 
@@ -445,9 +432,9 @@ Show the user the rule before deleting:
 ### Claude runs
 
 ```bash
-pup apm sampling-rules get --id <ID>
+pup apm sampling-rules get <ID>
 # confirm with user, then:
-pup apm sampling-rules delete --id <ID> --version <VERSION>
+pup apm sampling-rules delete <ID>
 ```
 
 ### Audit the org
@@ -460,8 +447,10 @@ For a full read-only overview when the customer asks "what sampling is even happ
 pup apm sampling-rules list
 pup apm adaptive-sampling get-allotment
 pup apm adaptive-sampling onboarding-status
-pup apm agent-sampling get
+pup apm adaptive-sampling check
 ```
+
+(Agent-side TPS — `DD_APM_TARGET_TPS` etc. — isn't enumerable via pup yet; check the Ingestion Control UI if needed.)
 
 ---
 
@@ -469,11 +458,12 @@ pup apm agent-sampling get
 
 Exit when ALL of the following are true:
 - [ ] Diagnosed which mechanism is currently sampling the user's traces (or confirmed there is no relevant mechanism yet)
-- [ ] Picked the right action (`set-rate`, `set-adaptive`, or `set-agent`) for the user's goal
+- [ ] Picked the right action (`set-rate` or `set-adaptive`) for the user's goal
 - [ ] User confirmed the planned change before any write
 - [ ] Write succeeded and an `id` was returned
 - [ ] Verified `_dd.p.dm` on a fresh trace reflects the new mechanism (or set expectation: adaptive needs one 5–10 min cycle)
 - [ ] Surfaced relevant gotchas (precedence, allotment floor, version gates) if they apply
+- [ ] If the user needed agent-side TPS changes, redirected them to the Ingestion Control UI (pup doesn't cover that path yet)
 
 ---
 
@@ -482,7 +472,7 @@ Exit when ALL of the following are true:
 - Never hardcode `DD_API_KEY` or `DD_APP_KEY` into files or chat messages — always use environment variables
 - Never write a sampling rule without explicit user confirmation — show the full rule first
 - Never assume `prod` / `production` as the environment — always confirm with the user
-- Never run `set-agent` without confirming scope (all envs vs single env) — it affects every agent in scope
+- Never run `adaptive-sampling set-allotment` without confirming scope — it changes the org-wide monthly target and floors low-traffic resources to 1 trace per 5 minutes if the target is too low
 - Never delete a rule without showing the user the rule's current value first
 - Never set a sample rate below `1e-6` — it floors silently and confuses the customer
 - Never recommend `DD_REMOTE_CONFIG_POLL_INTERVAL_SECONDS` higher than `5` — it breaks RC consistency
