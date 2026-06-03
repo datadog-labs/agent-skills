@@ -60,10 +60,8 @@ If zero results — the tracer is not setting `peer.service`. Ask the user to ad
 | All inferred services under a domain | `peer.service:*.shopify.com` |
 | Service in one environment only | `service:payments AND env:prod` |
 | Multiple possible values | `service:(payments OR billing)` |
-| Tag must exist | `_exists_:kube_container` |
-| Tag must not exist | `_missing_:kube_container` |
 
-> **Supported operations only:** The above forms — exact match, wildcards, `AND`/`OR`, `_exists_`, `_missing_` — are the only accepted operations. More advanced query syntax (CIDR ranges, numeric comparisons, fuzzy matching, etc.) is not supported and will be rejected by the API with a filter syntax error.
+> **Supported operations only:** The above forms — exact match, wildcards, `AND`/`OR` — are the only accepted operations. More advanced query syntax (CIDR ranges, numeric comparisons, fuzzy matching, etc.) is not supported and will be rejected by the API with a filter syntax error.
 
 **New name syntax** — the `value` field in `rewrite_tag_rules`:
 
