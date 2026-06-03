@@ -76,7 +76,7 @@ If zero results — the tracer is not setting `peer.service`. Ask the user to ad
 - **No greedy quantifiers inside capture groups** — use non-greedy variants: `(.+?)` not `(.+)`, `(.*?)` not `(.*)`
 - Quantifiers on capture groups themselves (e.g. `(foo)+`) are not allowed
 - **No capture group** → the entire match is used as the replacement value
-- **Capture group spanning the entire match** (e.g. `^(.*)$`) will be rejected by the API — if you want the full tag value, use tag interpolation (`{{service}}`) instead of a regex
+- **Capture group spanning the entire match** (e.g. `^(.*)$`) is currently rejected by the UI and will soon be rejected by the API — if you want the full tag value, use tag interpolation (`{{service}}`) instead of a regex
 
 **Five remapping patterns:**
 
