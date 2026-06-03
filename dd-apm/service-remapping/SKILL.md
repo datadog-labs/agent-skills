@@ -422,7 +422,8 @@ ERROR: `409 Conflict` — the rule was modified since you fetched it. Re-fetch w
 Exit when ALL of the following are true:
 - [ ] Rule shown to user and confirmed before creation
 - [ ] Rule created and `id` returned in response
-- [ ] New service name visible in `pup apm services list`
+- [ ] For SERVICE rules: new service name visible in `pup apm services list` or `pup traces search`
+- [ ] For INFERRED_ENTITY rules: user confirmed new entity name appears in APM Service Map, or spans show `peer.service:<TARGET_NAME>`
 - [ ] Impacted monitors identified and offered for update
 - [ ] User confirmed the remapping matches their intent
 
