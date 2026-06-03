@@ -283,9 +283,11 @@ If monitors reference the old service name, ask:
 
 ## Step 3: Confirm the Rule
 
-Show the user the planned rule and confirm before creating. **Batch any unresolved context variables (e.g. `ENV`) into this same prompt** — do not ask for them in a separate earlier turn. One round-trip, not two.
+Show the user the planned rule and confirm before creating. **Batch any unresolved context variables into this same prompt** — do not ask for them in a separate earlier turn. One round-trip, not two.
 
-> *"I'm planning rule `<RULE_NAME>` with filter `<FILTER>` mapping `<ORIGINAL_SERVICE>` → `<TARGET_NAME>` (rule_type: `<TYPE>`). Which environment should this apply to, and is this OK to proceed?"*
+If the filter doesn't already scope to an environment, ask whether to add one — env scoping is done by appending `AND env:<ENV>` to the filter expression, not via a separate API parameter.
+
+> *"I'm planning rule `<RULE_NAME>` with filter `<FILTER>` mapping `<ORIGINAL_SERVICE>` → `<TARGET_NAME>` (rule_type: `<TYPE>`). Should this be scoped to a specific environment? If so, I'll add `AND env:<ENV>` to the filter. Is this OK to proceed?"*
 
 Wait for confirmation before continuing.
 
