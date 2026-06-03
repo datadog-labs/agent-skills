@@ -2,7 +2,7 @@
 name: sampling
 description: Diagnose and change APM trace sampling — set per-resource rates, configure adaptive sampling, adjust agent samplers (priority/error/rare TPS), or figure out why a sampling rule isn't taking effect. Use for any request involving "change sample rate", "drop X% of traces", "keep all traces for service Y", "why is my trace missing", "ingestion control", "adaptive sampling", "APM_TRACING sample rules", or "remote config sampling".
 metadata:
-  version: "1.0.3"
+  version: "1.0.4"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,sampling,ingestion,adaptive-sampling,remote-config,dd-apm
@@ -178,9 +178,15 @@ pup apm sampling-rules list --service <SERVICE> --env <ENV>
 pup apm adaptive-sampling onboarding-status --service <SERVICE> --env <ENV>
 ```
 
+> **Interpreting the output:**
+> - **Command 2 returning `HTTP 404` is not an error** — it means no remote sampling rules exist for this (service, env) yet. That's the expected empty state on a clean service. The backend's `by_target` endpoint returns 404 instead of an empty list. Continue with Step 0; don't treat this as broken.
+> - **Command 1 returning zero traces** means the service hasn't sent traces in the window. Either the service isn't running, traces aren't reaching the Agent, or the env tag is different — not a sampling-skill problem; redirect to APM install/onboarding troubleshooting.
+
 Then ask the user for a trace ID and have them open it in the UI with the hidden-metadata trick:
 
 > *"Open one of these traces in the UI and append `?config_trace_show_hidden_metadata=true` to the URL. What does `_dd.p.dm` show? And `ingestion_reason`?"*
+
+> **Where to read `ingestion_reason` from**: the UI is the cleanest source (with the URL trick above). If you're reading from `pup traces search` output directly, the real value is nested inside `span_tags` (e.g., `"ingestion_reason:auto"` as a string entry in the tag list) — NOT in the top-level `"ingestion_reason"` field, which pup leaves empty in many responses. Don't trust the top-level field for this purpose.
 
 Map their answer:
 
@@ -219,7 +225,8 @@ This writes a `provenance:customer` rule to the `APM_TRACING` remote config prod
 # Volume of traces this will affect
 pup traces search --query "service:<SERVICE> env:<ENV> resource_name:<RESOURCE>" --from 1h --limit 1
 
-# Existing rules — first match wins, so ordering matters
+# Existing rules — first match wins, so ordering matters.
+# HTTP 404 here means "no rules configured for this target yet" — expected on first-time setup.
 pup apm sampling-rules list --service <SERVICE> --env <ENV>
 
 # Is this service onboarded to adaptive? Customer rules take precedence over adaptive but
@@ -396,9 +403,22 @@ Fix: Toggle the `apm-remove-integration-service-overrides` feature flag (Datadog
 
 ### 9. `403 Forbidden` — "Failed permission authorization checks"
 
-The user's OAuth token was accepted but their Datadog role doesn't grant the underlying permission for the action they're attempting. The OAuth scope on the token says "this token is *allowed to request* this permission," but the server still checks the user's role membership separately.
+This is by far the most-misdiagnosed failure on writes. The error string is `403 Forbidden — Failed permission authorization checks` — that exact phrase means the user's OAuth token was accepted but their Datadog **role** doesn't grant the underlying permission.
 
-The user can confirm this is the cause by re-running the command and observing the exact error string: `Failed permission authorization checks` is the AuthZ-failure marker (vs `invalid_token` which would be AuthN/OAuth failure).
+#### The red herring to call out explicitly
+
+A user (or a model) will often run `pup auth status`, see `apm_remote_configuration_write` in the scope list, and conclude they have access. **They don't.** OAuth scopes are a **ceiling**, not a grant.
+
+- **Scope on token (visible in `pup auth status`)** = "this token is *allowed to request* this permission"
+- **Permission on the user's role (in Org Settings → Roles)** = "this user *has* the permission"
+
+The server checks both independently on every request. Seeing the scope in `pup auth status` is necessary but **not sufficient**. If you're walking a customer through this:
+
+1. **Stop them from trying the command again** with different env vars or re-logging in — none of that changes their role.
+2. Confirm the error string is exactly `Failed permission authorization checks` (vs `invalid_token`, which would mean AuthN/OAuth failure — different problem).
+3. Then go to the fix below.
+
+#### Which permission is needed
 
 | Action attempted | Required Datadog permission |
 |---|---|
@@ -407,13 +427,15 @@ The user can confirm this is the cause by re-running the command and observing t
 | Read adaptive sampling allotment | `apm_service_ingest_read` |
 | Write adaptive sampling (`onboard`, `set-allotment`) | `apm_service_ingest_write` |
 
-**Fix:** an admin in the user's Datadog org needs to add the permission to their role:
+#### Fix
+
+An admin in the user's Datadog org needs to add the permission to their role:
 
 > Organization Settings → Roles → *(user's role)* → Permissions → tick the required permission(s) → Save.
 
 The **Datadog Admin Role** grants all four of these by default. The standard **Datadog Standard Role** and custom roles often don't.
 
-If the user isn't sure who their org admin is, tell them to ask in their internal Datadog support channel. They cannot grant themselves the permission.
+The user **cannot grant themselves** the permission. They have to ask their org admin. If they're unsure who that is, point them at their internal Datadog support channel.
 
 ### 10. "My traces are disappearing" — Agent CPU/memory self-throttling
 
@@ -459,6 +481,8 @@ pup apm sampling-rules list --service <SERVICE> --env <ENV>  # narrow to one tar
 ```
 
 > Note: `list` with only `--service` or only `--env` falls back to the unfiltered list — the by_target endpoint requires both.
+>
+> Also: when both flags are passed and no rules exist for that (service, env) yet, the backend returns `HTTP 404` rather than an empty list. That's the expected empty state — treat it as "no rules configured yet", not as a failure. The unfiltered `list` returns an empty array in the same situation.
 
 ### Update
 
