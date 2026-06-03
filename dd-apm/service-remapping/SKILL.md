@@ -200,7 +200,7 @@ Use the output to help the user identify exact service names. Ask the user to co
 
 Work through each component before writing any JSON.
 
-### 0. Check for integration override names
+### 1a. Check for integration override names
 
 Some service names (e.g. `grpc-client`, `net/http`, `aws.s3`, `redis`) are **integration-generated overrides** — the tracer auto-tags spans with them based on the library being used, not a user-set `service` tag. Remapping these with a service remapping rule is the wrong tool: the override is injected per-span by the integration, so the remapped name will keep re-appearing unless the override itself is removed.
 
@@ -210,7 +210,7 @@ Some service names (e.g. `grpc-client`, `net/http`, `aws.s3`, `redis`) are **int
 
 If the user confirms it is an integration override, stop here and direct them to the UI. Do not create a remapping rule.
 
-### 1. Entity type
+### 1b. Entity type
 
 [DECISION: entity type — ask the user if unclear]
 - Does the service appear because a tracer explicitly set its `service` tag? → `rule_type: 0` (SERVICE)
@@ -218,15 +218,15 @@ If the user confirms it is an integration override, stop here and direct them to
 
 If the user wants to remap an inferred entity, verify `peer.service` is set before proceeding — see the prerequisite in Domain Knowledge. If it is not set, stop and ask the user to enable `DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED=true` first.
 
-### 2. Filter
+### 1c. Filter
 
 Write a single event-grammar query string targeting the service(s) to remap. Use the filter syntax and pattern table in Domain Knowledge to pick the right form. **State the filter expression verbatim in the planned-rule preview (Step 3)** — it is the user's primary way to verify the rule will match the intended entities, and they cannot evaluate the rule without it.
 
-### 3. New name (`value`)
+### 1d. New name (`value`)
 
 Use the new name syntax and regex table in Domain Knowledge to pick the right form. For regex values, apply the constraints listed there.
 
-### 4. Rule name
+### 1e. Rule name
 
 Suggest a descriptive name. Examples:
 - `collapse-shopify-inferred-services`
