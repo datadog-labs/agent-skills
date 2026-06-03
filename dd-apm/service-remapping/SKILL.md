@@ -188,7 +188,7 @@ If the user hasn't specified exact names to remap, discover what exists first:
 ### Claude runs
 
 ```bash
-pup apm services list --from 1h          # omit --env to search across all environments
+pup apm services list --from 1h          # use --env <ENV> to target a single environment
 pup traces search --query "service:<PARTIAL_NAME>" --from 1h --limit 20
 ```
 
