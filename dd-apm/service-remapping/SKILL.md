@@ -59,6 +59,9 @@ If zero results — the tracer is not setting `peer.service`. Ask the user to ad
 | All services containing a string | `service:*payments*` |
 | All inferred services under a domain | `peer.service:*.shopify.com` |
 | Service in one environment only | `service:payments AND env:prod` |
+| Multiple possible values | `service:(payments OR billing)` |
+
+> **Supported operations only:** The above forms — exact match, wildcards, `AND`/`OR` — are the only accepted operations. More advanced query syntax (CIDR ranges, numeric comparisons, fuzzy matching, etc.) is not supported and will be rejected by the API with a filter syntax error.
 
 **New name syntax** — the `value` field in `rewrite_tag_rules`:
 
@@ -72,6 +75,8 @@ If zero results — the tracer is not setting `peer.service`. Ask the user to ad
 - Maximum **1 capture group** per expression
 - **No greedy quantifiers inside capture groups** — use non-greedy variants: `(.+?)` not `(.+)`, `(.*?)` not `(.*)`
 - Quantifiers on capture groups themselves (e.g. `(foo)+`) are not allowed
+- **No capture group** → the entire match is used as the replacement value
+- **Capture group spanning the entire match** (e.g. `^(.*)$`) is currently rejected by the UI and will soon be rejected by the API — if you want the full tag value, use tag interpolation (`{{service}}`) instead of a regex
 
 **Five remapping patterns:**
 
@@ -183,7 +188,7 @@ If the user hasn't specified exact names to remap, discover what exists first:
 ### Claude runs
 
 ```bash
-pup apm services list --env <ENV> --from 1h
+pup apm services list --from 1h          # use --env <ENV> to target a single environment
 pup traces search --query "service:<PARTIAL_NAME>" --from 1h --limit 20
 ```
 
@@ -195,7 +200,17 @@ Use the output to help the user identify exact service names. Ask the user to co
 
 Work through each component before writing any JSON.
 
-### 1. Entity type
+### 1a. Check for integration override names
+
+Some service names (e.g. `grpc-client`, `net/http`, `aws.s3`, `redis`) are **integration-generated overrides** — the tracer auto-tags spans with them based on the library being used, not a user-set `service` tag. Remapping these with a service remapping rule is the wrong tool: the override is injected per-span by the integration, so the remapped name will keep re-appearing unless the override itself is removed.
+
+**How to detect:** if the service name looks like a well-known integration name (single-word library names, `<protocol>-<client>` patterns, `<vendor>.<resource>` patterns), ask the user:
+
+> *"The name `<SERVICE>` looks like an integration override — a name the tracer sets automatically on spans from the `<LIBRARY>` integration, not a user-configured service name. Service remapping won't stick here because the override is re-applied on every span. The right fix is **integration override removal**, which strips these auto-names so the parent service's name propagates instead. This is currently only configurable in the Datadog UI under APM → Setup → Service Remapping → Integration Override Removal. Do you want to handle it there, or proceed with a remapping rule anyway?"*
+
+If the user confirms it is an integration override, stop here and direct them to the UI. Do not create a remapping rule.
+
+### 1b. Entity type
 
 [DECISION: entity type — ask the user if unclear]
 - Does the service appear because a tracer explicitly set its `service` tag? → `rule_type: 0` (SERVICE)
@@ -203,15 +218,15 @@ Work through each component before writing any JSON.
 
 If the user wants to remap an inferred entity, verify `peer.service` is set before proceeding — see the prerequisite in Domain Knowledge. If it is not set, stop and ask the user to enable `DD_TRACE_PEER_SERVICE_DEFAULTS_ENABLED=true` first.
 
-### 2. Filter
+### 1c. Filter
 
 Write a single event-grammar query string targeting the service(s) to remap. Use the filter syntax and pattern table in Domain Knowledge to pick the right form. **State the filter expression verbatim in the planned-rule preview (Step 3)** — it is the user's primary way to verify the rule will match the intended entities, and they cannot evaluate the rule without it.
 
-### 3. New name (`value`)
+### 1d. New name (`value`)
 
 Use the new name syntax and regex table in Domain Knowledge to pick the right form. For regex values, apply the constraints listed there.
 
-### 4. Rule name
+### 1e. Rule name
 
 Suggest a descriptive name. Examples:
 - `collapse-shopify-inferred-services`
@@ -250,6 +265,17 @@ Report to the user:
 | **Dashboards** | Any dashboard with the old service name in its title will have stale references after remapping. List them and offer to update. |
 | **Conflicting rules** | Existing rules targeting the same service may be overridden. Show conflicts and ask the user to confirm. |
 
+**Known gaps — Claude cannot verify these automatically:**
+
+Remapping a service name can also break the following. Claude has no `pup` commands to check them today, so surface this as a manual checklist for the user before they confirm:
+
+> *"Before I create this rule, please verify `<ORIGINAL_SERVICE>` is not referenced in any of the following — they won't update automatically after remapping:*
+> - *Spans-to-metrics rules (APM → Setup → Generate Metrics)*
+> - *Trace-to-metrics rules*
+> - *Span retention filters (APM → Setup → Retention Filters)*
+> - *Logs-to-metrics rules (Logs → Generate Metrics)*
+> - *Any pipeline, alert, or SLO that acts on the service name*"
+
 If monitors reference the old service name, ask:
 > *"I found `<N>` monitor(s) referencing `<ORIGINAL_SERVICE>`. After remapping, they'll need to be updated to use `<TARGET_NAME>`. Want me to update them now?"*
 
@@ -257,9 +283,11 @@ If monitors reference the old service name, ask:
 
 ## Step 3: Confirm the Rule
 
-Show the user the planned rule and confirm before creating. **Batch any unresolved context variables (e.g. `ENV`) into this same prompt** — do not ask for them in a separate earlier turn. One round-trip, not two.
+Show the user the planned rule and confirm before creating. **Batch any unresolved context variables into this same prompt** — do not ask for them in a separate earlier turn. One round-trip, not two.
 
-> *"I'm planning rule `<RULE_NAME>` with filter `<FILTER>` mapping `<ORIGINAL_SERVICE>` → `<TARGET_NAME>` (rule_type: `<TYPE>`). Which environment should this apply to, and is this OK to proceed?"*
+If the filter doesn't already scope to an environment, ask whether to add one — env scoping is done by appending `AND env:<ENV>` to the filter expression, not via a separate API parameter.
+
+> *"I'm planning rule `<RULE_NAME>` with filter `<FILTER>` mapping `<ORIGINAL_SERVICE>` → `<TARGET_NAME>` (rule_type: `<TYPE>`). Should this be scoped to a specific environment? If so, I'll add `AND env:<ENV>` to the filter. Is this OK to proceed?"*
 
 Wait for confirmation before continuing.
 
@@ -396,7 +424,8 @@ ERROR: `409 Conflict` — the rule was modified since you fetched it. Re-fetch w
 Exit when ALL of the following are true:
 - [ ] Rule shown to user and confirmed before creation
 - [ ] Rule created and `id` returned in response
-- [ ] New service name visible in `pup apm services list`
+- [ ] For SERVICE rules: new service name visible in `pup apm services list` or `pup traces search`
+- [ ] For INFERRED_ENTITY rules: user confirmed new entity name appears in APM Service Map, or spans show `peer.service:<TARGET_NAME>`
 - [ ] Impacted monitors identified and offered for update
 - [ ] User confirmed the remapping matches their intent
 
@@ -408,4 +437,3 @@ Exit when ALL of the following are true:
 - Never create or delete a rule without explicit user confirmation — show the full rule before creating
 - Never assume `prod` as the environment — always confirm with the user
 - Never run DELETE without showing the user the rule's name and filter first
-- Never enable `enabled_org_wide` without explicit user confirmation — it affects the entire org
