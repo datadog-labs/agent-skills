@@ -56,7 +56,7 @@ This skill is **pure orchestration plus pedagogy** — no new analytical logic. 
 ```
 /llm-obs-eval-pipeline <ml_app> [--project-name <name>] [--timeframe <window>] [--trace-limit <N>]
                                 [--format py|ipynb] [--evaluator-style function|class|remote]
-                                [--data-only | --publish]
+                                [--offline-evaluators | --online-evaluators | --data-only]
                                 [--start-at classify|rca|eval-bootstrap|dataset|experiment|analyze]
                                 [--stop-after classify|rca|eval-bootstrap|dataset|experiment|analyze]
                                 [--classification-summary <path>] [--rca-report <path>]
@@ -78,8 +78,9 @@ Arguments: $ARGUMENTS
 | `--trace-limit` | No | `20` | Sampling cap for Phase 4. Phase 1 internally uses `min(20, --trace-limit)` for the classification sample. |
 | `--format` | No | `py` | Passed to `llm-obs-experiment-py-bootstrap` in Phase 5: `py` (script) or `ipynb` (Jupyter notebook). |
 | `--evaluator-style` | No | `function` | Passed to `llm-obs-eval-bootstrap` (Phase 3) and `llm-obs-experiment-py-bootstrap` (Phase 5): `function`, `class`, or `remote`. |
-| `--data-only` | No | off | Phase 3 pass-through to `llm-obs-eval-bootstrap`: emit JSON spec instead of Python SDK code. |
-| `--publish` | No | off | Phase 3 pass-through to `llm-obs-eval-bootstrap`: publish online LLM-judge evaluators to Datadog. |
+| `--offline-evaluators` | No | on (default) | Phase 3: emit a Python SDK evaluator suite (BaseEvaluator / LLMJudge classes) that runs inside an experiment against a dataset. Maps internally to `llm-obs-eval-bootstrap` `sdk_code` mode. |
+| `--online-evaluators` | No | off | Phase 3: publish online LLM-judge evaluators directly to Datadog (created as disabled drafts; enable in the UI). Online evaluators run on production spans as they're emitted. Maps internally to `llm-obs-eval-bootstrap` `publish` mode (was `--publish`). |
+| `--data-only` | No | off | Phase 3: emit a local data blob only — no executable evaluator code or online publish. At Phase 3 entry the skill **prompts** the user to pick one of: (a) a `DatasetRecordRaw[]` JSON suitable for experiment use (maps internally to `llm-obs-eval-bootstrap --emit-dataset`), or (b) a framework-agnostic JSON evaluator spec for local analysis (maps internally to `llm-obs-eval-bootstrap` `data_only` mode). |
 | `--stop-after <phase>` | No | `analyze` (run everything) | Stop after the named phase completes. `classify` = Phase 1 only. `rca` = through Phase 2. `eval-bootstrap` = through Phase 3 (matches the classic eval-pipeline). `dataset` = through Phase 4 (dataset created + published). `experiment` = through Phase 5 (experiment generated + run). `analyze` = all six phases (default). |
 | `--start-at <phase>` | No | `classify` (start at the top) | Skip earlier phases and start at the named phase. Same vocabulary as `--stop-after`. The skill auto-loads any required prior-phase artifacts from `<output-dir>/state/` (see "State persistence and entry/exit" section). For phases that need an artifact the auto-load can't find, supply it via one of the override flags below. Combinable with `--stop-after` to run a contiguous slice of the pipeline. |
 | `--classification-summary <path>` | No | auto-loaded from `<output-dir>/state/01-classification.md` if `--start-at rca` or later | Override the Phase 1 output that Phase 2 consumes. Useful when the prior state file is missing or you want to point at a hand-edited version. |
@@ -94,7 +95,7 @@ Arguments: $ARGUMENTS
 | `--output-dir` | No | `./experiments` | Where the dataset JSON, publish script, and generated experiment file are written. |
 | `--backend` | No | auto-detect | `pup` forces pup mode regardless of MCP availability. |
 
-If `ml_app` is not provided, ask the user before proceeding. If `--data-only` and `--publish` are both set, error out — they're mutually exclusive (per `llm-obs-eval-bootstrap`'s rules).
+If `ml_app` is not provided, ask the user before proceeding. The three evaluator-output flags (`--offline-evaluators`, `--online-evaluators`, `--data-only`) are mutually exclusive — error out if more than one is set. If none are set, `--offline-evaluators` is the default. The legacy flag names `--publish` and `--sdk-code` are still accepted as aliases for backward compatibility but map to the new names in all output.
 
 ---
 
@@ -321,7 +322,11 @@ Wait for explicit user confirmation. If the user adjusts the taxonomy, incorpora
 
 > **What an evaluator is**: a function that grades one record's output. Returns `bool` / `float` / a structured `EvaluatorResult`. Two flavors: **code evaluators** (deterministic checks — JSON validity, regex match, length, custom Python) and **LLM-as-judge evaluators** (a model graded against a rubric — e.g. "is this response grounded in the retrieved documents?").
 >
-> **What "online" vs "offline" means**: an offline evaluator runs inside an experiment against a dataset. An online evaluator runs on production spans as they're emitted. Pass `--publish` to bootstrap online LLM-judge evaluators; default is offline `.py` code suitable for experiments.
+> **Operating modes** (mutually exclusive; default is `--offline-evaluators`):
+>
+> - **`--offline-evaluators`** *(default)*: emit a Python SDK evaluator suite (BaseEvaluator / LLMJudge classes) that runs **inside an experiment against a dataset**. Use this when you'll run experiments locally.
+> - **`--online-evaluators`**: publish LLM-judge evaluators to Datadog as disabled drafts. They run **on production spans as they're emitted** once enabled. Use this when you want continuous evaluation in prod.
+> - **`--data-only`**: emit a local data blob only — no executable evaluator code or online publish. Prompts you to pick between a dataset for experiment use or a local analysis blob (see "Operating mode resolution" below).
 >
 > **Why this phase matters**: evaluators are the contract between "this output looks fine" and "this output meets our quality bar." The bootstrapped suite is grounded in the failure taxonomy from Phase 2 — sharper than generic evaluators you'd otherwise hand-write.
 
@@ -329,10 +334,22 @@ Wait for explicit user confirmation. If the user adjusts the taxonomy, incorpora
 
 The RCA report from Phase 2 is in context. The skill detects the `## Failure Taxonomy` heading automatically and enters its "from RCA" path in Phase 0.
 
-Pass through any flags:
-- `--data-only` → emit a JSON spec instead of Python SDK code
-- `--publish` → publish online LLM-judge evaluators directly to Datadog
-- `--evaluator-style` → pass through unchanged
+### Operating mode resolution
+
+Before invoking the sub-skill, resolve the operating mode:
+
+1. **`--offline-evaluators`** (default) → call `llm-obs-eval-bootstrap` with no mode flag (its `sdk_code` default).
+2. **`--online-evaluators`** → call `llm-obs-eval-bootstrap --publish`.
+3. **`--data-only`** → prompt the user via `AskUserQuestion`:
+
+   > "You picked `--data-only` for Phase 3. What kind of local data blob do you want?
+   >
+   > - **Dataset for experiment use** — a `DatasetRecordRaw[]` JSON suitable for `LLMObs.create_dataset(records=...)`. Useful when you want to seed an experiment with the records this skill samples. (Internally calls `llm-obs-eval-bootstrap --emit-dataset <path>`.)
+   > - **Local blob for analysis** — a framework-agnostic JSON evaluator spec describing what evaluators *would* be generated, without emitting Python code. Useful for inspecting evaluator coverage without running anything. (Internally calls `llm-obs-eval-bootstrap --data-only`.)"
+
+   If the user picks "Dataset for experiment use" and the pipeline is running through Phase 4 (i.e. `--stop-after` is not `eval-bootstrap` or earlier), tell the user that Phase 4's sample step will be **skipped** in favor of this Phase 3 output — the dataset they produce here will be the one Phase 4 publishes.
+
+Pass `--evaluator-style` through unchanged.
 
 **The llm-obs-eval-bootstrap skill has its own mandatory proposal checkpoint** (the evaluator suite proposal before code generation). Honor it — do not skip or auto-confirm it.
 
@@ -341,7 +358,8 @@ Pass through any flags:
 ```
 ## Phase 3 complete — evaluator suite ready
 
-- Output: `<path to .py / .json / "published as drafts to Datadog">`
+- Mode: `<offline-evaluators | online-evaluators | data-only (dataset-for-experiment) | data-only (analysis-blob)>`
+- Output: `<path to .py / .json / dataset-record JSON / "published as drafts to Datadog">`
 - Evaluators emitted: <list of names>
 - Coverage: <one-liner: which failure-mode categories are now covered>
 
@@ -389,6 +407,8 @@ This mode samples root spans, extracts `(input_data, expected_output)` pairs, ap
 If the user excluded specific traces in Checkpoint 1, pass that exclusion list along (sub-skill drops them during sampling — do NOT re-classify).
 
 Reproduce the sub-skill's `## Generated Dataset` summary verbatim.
+
+**Skip 4a if Phase 3 already produced a dataset.** When the user picked `--data-only` with the "Dataset for experiment use" sub-mode in Phase 3, the Phase 3 state file (`state/03-evaluators.json`) has `mode: data_only_dataset` and an `output_path` pointing at the dataset JSON. In that case, **skip sub-step 4a entirely** and feed the Phase 3 output to 4b's publish helper directly. Surface a one-line note: "Reusing dataset from Phase 3 (`<path>`); skipping fresh sampling."
 
 **4b — Publish to Datadog.** Immediately invoke the pre-shipped publish helper at `<this-skill-dir>/scripts/publish_dataset.py` via Bash. **Do not** inline the script content into this SKILL.md or re-write it from scratch — the helper is the source of truth for the publish flow (credential discovery, tag normalization, project creation, error handling). It accepts CLI args, so no placeholder substitution is needed.
 
@@ -571,7 +591,7 @@ After the analyzer report, emit the closing summary — this replaces the per-ph
 |---|---|
 | 1. Classify ml_app | <N> traces classified (<F> failures) |
 | 2. Root cause analysis | <K> failure modes, <M> root causes |
-| 3. Bootstrap evaluators | <J> evaluators → `<path>` (or "<N> drafts published to Datadog") |
+| 3. Bootstrap evaluators | <J> evaluators (`<offline-evaluators | online-evaluators | data-only>`) → `<path>` (or "<N> drafts published to Datadog") |
 | 4. Create + publish dataset | <K> records → `<dataset_path>`, published as `<dataset_name>` (v1) in project `<project_name>` |
 | 5. Generate + run experiment | `<experiment_file_path>` → <experiment.url> (<N> records, <duration>s) |
 | 6. Analyze experiment | <2–3 bullet headline findings from the analyzer> |
@@ -587,7 +607,7 @@ After the analyzer report, emit the closing summary — this replaces the per-ph
 1. Open the experiment in the Datadog UI: <experiment.url>
 2. Replace the placeholder evaluators in `<experiment_file_path>` with the ones bootstrapped in Phase 3 (swap the function refs / `RemoteEvaluator` names).
 3. Re-run the experiment after every meaningful change to your task code. Datadog will keep the run history under the same project.
-4. If you published draft evaluators via `--publish`, review and enable them in the UI (LLM Observability → Evaluations).
+4. If you published draft evaluators via `--online-evaluators`, review and enable them in the UI (LLM Observability → Evaluations).
 
 ## Datadog Documentation
 
@@ -642,7 +662,7 @@ After every successful phase completion (i.e. after the user types `continue` pa
 |---|---|---|
 | 1 classify | `state/01-classification.md` | The full `# Session Classification Summary` block plus all per-unit compact blocks, verbatim from `llm-obs-session-classify`. Markdown. |
 | 2 rca | `state/02-rca-report.md` | The full Phase 6 RCA report from `llm-obs-trace-rca`, verbatim. Markdown. |
-| 3 eval-bootstrap | `state/03-evaluators.json` | `{"mode": "sdk_code\|data_only\|publish", "output_path": "<path>", "evaluator_names": [...], "ml_app": "<ml_app>", "generated_at": "<ISO 8601>"}`. The actual evaluator code/JSON stays where the sub-skill wrote it. |
+| 3 eval-bootstrap | `state/03-evaluators.json` | `{"mode": "offline_evaluators\|online_evaluators\|data_only_dataset\|data_only_analysis", "output_path": "<path>", "evaluator_names": [...], "ml_app": "<ml_app>", "generated_at": "<ISO 8601>"}`. The actual evaluator code/JSON/dataset stays where the sub-skill wrote it. The `data_only_dataset` mode produces a `DatasetRecordRaw[]` JSON that Phase 4 then consumes directly. |
 | 4 dataset | `state/04-published-dataset.json` | `{"dataset_file": "<path to local DatasetRecordRaw[] JSON>", "dataset_name": "<published name>", "project_name": "<name>", "version": <int>, "url": "<datadog url>", "record_count": <int>, "skipped_count": <int>, "pii_redactions": <int>, "tag_normalizations": <int>, "published_at": "<ISO 8601>"}` — combines what was previously two state files (`04-dataset.json` and `05-published-dataset.json`) because Phase 4 now creates and publishes in one step. |
 | 5 experiment | `state/05-experiment-run.json` | `{"experiment_file": "<path>", "format": "py\|ipynb", "dataset_name": "<name>", "task_source": "<module:function>\|placeholder", "purpose": "<text>", "experiment_id": "<uuid>", "experiment_url": "<datadog url>", "records_processed": <int>, "duration_seconds": <float>, "generated_at": "<ISO 8601>", "ran_at": "<ISO 8601>"}` — combines what was previously two state files (`06-experiment.json` and `07-experiment-run.json`) because Phase 5 now generates and runs in one step. If the user halts at the in-phase review beat (5b) with `edit`, only the codegen fields are populated; re-entering with `--start-at experiment` reads the file path from here and resumes at 5c. |
 | 6 analyze | `state/06-analysis.md` | The full analyzer report from `llm-obs-experiment-analyzer`. Markdown. |
@@ -754,7 +774,7 @@ Everything else routes through sub-skills, which carry their own MCP-to-pup mapp
 |---|---|---|
 | `llm-obs-session-classify` | Phase 1 | `dd-llmo/llm-obs-session-classify/SKILL.md` (Tool Reference appendix) |
 | `llm-obs-trace-rca` | Phase 2 | `dd-llmo/llm-obs-trace-rca/SKILL.md` (Tool Reference appendix) |
-| `llm-obs-eval-bootstrap` (sdk_code / data_only / publish) | Phase 3 | `dd-llmo/llm-obs-eval-bootstrap/SKILL.md` (Tool Reference appendix) |
+| `llm-obs-eval-bootstrap` (offline-evaluators / online-evaluators / data-only) | Phase 3 | `dd-llmo/llm-obs-eval-bootstrap/SKILL.md` (Tool Reference appendix) |
 | `llm-obs-eval-bootstrap` (`--emit-dataset` mode) | Phase 4 (sub-step 4a) | `dd-llmo/llm-obs-eval-bootstrap/SKILL.md` (Phase 3D + Tool Reference appendix) |
 | `llm-obs-experiment-py-bootstrap` | Phase 5 (sub-step 5a) | `dd-llmo/llm-obs-experiment-py-bootstrap/SKILL.md` |
 | `llm-obs-experiment-analyzer` | Phase 6 | `dd-llmo/llm-obs-experiment-analyzer/SKILL.md` (Tool Reference appendix) |
