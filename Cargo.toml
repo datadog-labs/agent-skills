@@ -1,0 +1,11 @@
+[package]
+name = "dd-agent-skills"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "Datadog Agent Skills (SKILL.md content) exposed as Rust constants for embedding into Rust-based tools like pup."
+repository = "https://github.com/datadog-labs/agent-skills"
+readme = "README.md"
+
+[lib]
+path = "src/lib.rs"
