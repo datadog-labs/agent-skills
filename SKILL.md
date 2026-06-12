@@ -21,6 +21,7 @@ Essential Datadog skills for AI agents.
 | **dd-llmo** | LLM Observability traces, experiments, evals |
 | **dd-browser-sdk** | Browser SDK setup, RUM, Logs, Session Replay, version migration |
 | **dd-software-delivery** | CI/CD workflow skills — unblock PR, triage flaky tests |
+| **dd-apps**              | Build Datadog Apps — scaffold, run, upload, publish, CI/CD |
 
 ## Install
 

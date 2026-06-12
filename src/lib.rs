@@ -4,6 +4,10 @@ macro_rules! skill {
     };
 }
 
+pub static DD_APPS_SUB_SKILLS: &[(&str, &str)] = &[
+    ("datadog-app/SKILL.md", skill!("dd-apps/datadog-app/SKILL.md")),
+];
+
 pub const DD_APM_SKILL: &str = skill!("dd-apm/SKILL.md");
 
 pub static DD_APM_SUB_SKILLS: &[(&str, &str)] = &[

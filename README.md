@@ -15,6 +15,7 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 | **dd-browser-sdk** | Browser SDK: RUM, Logs, Session Replay, profiling, product analytics, error tracking, version migration |
 | **dd-audit** | Audit Trail investigations: who changed what, key compromise, cost spike root cause, compliance evidence (SOC 2/PCI), AI activity auditing |
 | **dd-software-delivery** | CI/CD workflow skills — unblock PR pipelines, triage flaky tests (MCP + pup) |
+| **dd-apps** | Build Datadog Apps — scaffold, run locally, upload, publish, CI/CD, DDSQL data access |
 
 ## Install
 
@@ -345,6 +346,62 @@ unblock-pr my-feature-branch github.com/org/repo
 # Triage a specific flaky test
 triage-flaky-test TestMyFunc
 triage-flaky-test com.example.MyTest github.com/org/repo
+```
+
+### Datadog Apps (dd-apps)
+
+The `dd-apps` directory contains a skill for building [Datadog Apps](https://docs.datadoghq.com/developers/apps/) — locally-developed web apps built with TypeScript and React that integrate with Datadog surfaces.
+
+| Skill | Purpose |
+|-------|---------|
+| `datadog-app` | Scaffold, run locally, build, upload, publish, set up CI/CD, trigger Workflow Automation, and query data with DDSQL or Action Catalog |
+
+#### Prerequisites
+
+A Datadog account with an API key and application key that have Actions API Access enabled. See [App Builder Access and Authentication](https://docs.datadoghq.com/actions/app_builder/access_and_auth/).
+
+```bash
+export DD_API_KEY="<YOUR_API_KEY>"
+export DD_APP_KEY="<YOUR_APPLICATION_KEY>"
+```
+
+Node.js 20.19+ or 22.12+ is required. Use Volta, nvm, or fnm to manage versions.
+
+#### Install
+
+```bash
+# Claude Code
+cp -r dd-apps/datadog-app ~/.claude/skills
+```
+
+Or via npx:
+
+```bash
+npx skills add datadog-labs/agent-skills \
+  --skill datadog-app \
+  --full-depth -y
+```
+
+#### Usage
+
+```
+# Scaffold a new app
+Scaffold a new Datadog App called my-app
+
+# Run locally
+Run my Datadog App locally
+
+# Upload and publish
+Upload my app to Datadog
+How do I publish my app?
+
+# Troubleshoot
+I'm getting a 401 error when uploading
+My backend function isn't working
+
+# Query data
+Query my app datastore with DDSQL
+Trigger a Workflow Automation workflow from a backend function
 ```
 
 ## Quick Reference
