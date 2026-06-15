@@ -1,5 +1,5 @@
 ---
-name: llm-obs-eval-bootstrap
+name: agent-observability-eval-bootstrap
 description: Bootstrap evaluators from production traces — by default propose online LLM-judge evaluators and, after you confirm, create them in Datadog as disabled drafts (never auto-enabled); on request emit Python SDK code or a framework-agnostic JSON spec instead. Use when user says "bootstrap evaluators", "generate evaluators", "create evals from traces", "eval bootstrap", "write evaluators", "build eval suite", "publish evaluators", or wants to generate BaseEvaluator/LLMJudge code or online judge configs from production LLM trace data. Works with ml_app and optional RCA report or failure hypothesis.
 ---
 
@@ -27,7 +27,7 @@ description: Bootstrap evaluators from production traces — by default propose 
 
 **Invocation ID:** At the very start of each invocation, before any MCP tool call, generate an 8-character hex invocation ID (e.g., `3a9f1c2b`). Keep it constant for the entire invocation.
 
-**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-eval-bootstrap[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:llm-obs-eval-bootstrap:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:llm-obs-eval-bootstrap:start[3a9f1c2b] — Phase 0: map existing eval coverage for task-cruncher`
+**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:agent-observability-eval-bootstrap[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:agent-observability-eval-bootstrap:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:agent-observability-eval-bootstrap:start[3a9f1c2b] — Phase 0: map existing eval coverage for task-cruncher`
 
 # Eval Bootstrap — Generate Evaluators from Production Traces
 
@@ -36,7 +36,7 @@ Given a sample of production LLM traces, analyze input/output patterns and quali
 - **`publish`** *(default)* — propose **online** LLM-judge evaluators, then — **only after you confirm the suite** — write them to Datadog via `create_or_update_llmobs_evaluator` as **disabled drafts** (`enabled: false`). Nothing is created until you confirm at the Phase 2 checkpoint, and nothing scores any spans until **you** enable it in the UI — the skill never auto-publishes a live evaluator. Once you enable a draft, it runs automatically on matching production spans, traces, or sessions (no dataset, no task function). The skill **auto-classifies** each proposed evaluator as **span-scoped**, **trace-scoped**, or **session-scoped** based on what the judgment requires (a per-LLM-call tone check vs. an agent goal completion that needs the whole trace vs. user satisfaction across a whole multi-trace conversation) — you accept or override the classification at that checkpoint. Session-scoped evaluators are only proposed when the app's spans carry a `session_id` (verified by a probe in Phase 1).
 - **`sdk_code`** *(on request — `--sdk-code`, or ask after a publish run)* — Python `.py` file using the Datadog Evals SDK (`BaseEvaluator` / `LLMJudge`) for **offline** experiments.
 - **`data_only`** *(on request — `--data-only`)* — self-contained JSON spec, framework-agnostic.
-- **`emit_dataset`** *(on request — `--emit-dataset <path>`)* — sample production traces and write a `DatasetRecordRaw[]` JSON file shaped for `LLMObs.create_dataset(records=...)`. **Skips evaluator proposal and generation entirely** — this mode produces a dataset, not evaluators. Used by `llm-obs-eval-pipeline` (Phase 4) to seed an experiment dataset from production behavior.
+- **`emit_dataset`** *(on request — `--emit-dataset <path>`)* — sample production traces and write a `DatasetRecordRaw[]` JSON file shaped for `LLMObs.create_dataset(records=...)`. **Skips evaluator proposal and generation entirely** — this mode produces a dataset, not evaluators. Used by `agent-observability-eval-pipeline` (Phase 4) to seed an experiment dataset from production behavior.
 
 After a publish run, if the user wants the same suite as offline code or a portable spec, they just ask — the skill regenerates the **already-confirmed** suite in `sdk_code` / `data_only` mode without re-exploring (see "On-request code generation" in Phase 3). The `emit_dataset` mode is independent of the evaluator workflow and never re-uses a prior proposal — it always re-samples traces.
 
@@ -1165,7 +1165,7 @@ Either way, the evaluator is published with `enabled: false`. The user is the ga
 
 #### Publish (single message — parallelize)
 
-Issue all `create_or_update_llmobs_evaluator` calls in a **single message** (one per evaluator). Set `telemetry.intent` to a short English description like `"skill:llm-obs-eval-bootstrap — Bootstrap evaluator suite for ml_app=<ml_app> from production trace analysis."`.
+Issue all `create_or_update_llmobs_evaluator` calls in a **single message** (one per evaluator). Set `telemetry.intent` to a short English description like `"skill:agent-observability-eval-bootstrap — Bootstrap evaluator suite for ml_app=<ml_app> from production trace analysis."`.
 
 If any call fails, capture the error and continue with the remaining evaluators — never silently abort the batch. Report failures explicitly in the summary.
 
@@ -1196,7 +1196,7 @@ Wrote {N} online evaluators to ml_app `{ml_app}`. **All published as drafts (`en
 
 The drafts are intentionally not running yet. Walk through each one in the Datadog UI before flipping the enable toggle:
 
-1. **Open the drafts**: Datadog → LLM Observability → Evaluations → filter by ml_app `{ml_app}` (the new drafts appear with status `Disabled`).
+1. **Open the drafts**: Datadog → Agent Observability → Evaluations → filter by ml_app `{ml_app}` (the new drafts appear with status `Disabled`).
 2. **For each draft**:
    - **Verify the integration account** in the Provider section. If the column above shows `auto-detected: yes`, confirm it's the correct account for the judge LLM you want this evaluator to call through. If `no`, pick an account from the dropdown.
    - **Skim the prompt template** and the structured-output schema — make sure the span / trace / session scope, filter, and sampling match what you actually want to measure.
@@ -1233,9 +1233,9 @@ For each sampled root span, build one `DatasetRecordRaw` entry:
 | `input_data` | Root span's `meta.input` | If `meta.input.value` is a plain string, wrap as `{"input": "<value>"}`. If `meta.input.messages` exists, use `{"messages": [...]}` (preserving the role/content shape). For RAG roots that also have `documents`, include `{"documents": [...]}`. |
 | `expected_output` | Root span's `meta.output.value` (or `meta.output.messages[-1].content` for LLM-kind roots) | This is the **production behavior baseline**, not ground truth. Document this clearly in the summary so the user does not over-trust it. |
 | `metadata` | `{"source": "production", "trace_id": "<id>", "span_id": "<id>", "ml_app": "<ml_app>", "extracted_at": "<ISO 8601 UTC>"}` | Trace/span IDs let the user click back to the source trace in Datadog. |
-| `tags` | `["env:prod", "source:traces", "ml_app:<ml_app>"]` | Always `"key:value"` strings — bare strings will fail `Dataset.append()`. See the per-record tag rules in `llm-obs-experiment-py-bootstrap/SKILL.md` (search "Per-record tags"). |
+| `tags` | `["env:prod", "source:traces", "ml_app:<ml_app>"]` | Always `"key:value"` strings — bare strings will fail `Dataset.append()`. See the per-record tag rules in `agent-observability-experiment-py-bootstrap/SKILL.md` (search "Per-record tags"). |
 
-**PII scrub.** Before writing, run the same scrub used elsewhere in the dd-llmo skill set: replace email / phone / SSN / API-key regex matches in all string values with `<REDACTED:pii-type>`. Surface a one-line warning listing affected record indices in the summary.
+**PII scrub.** Before writing, run the same scrub used elsewhere in the agent-observability skill set: replace email / phone / SSN / API-key regex matches in all string values with `<REDACTED:pii-type>`. Surface a one-line warning listing affected record indices in the summary.
 
 **Tag normalization (MANDATORY pre-write step).** The SDK's `Dataset.append()` calls `validate_tags_list` which rejects any tag without a `:` separator (`Tag '<tag>' is malformed. Tags must be in 'key:value' format.`). Before writing the JSON, run this normalization on every record's `tags` list:
 
@@ -1287,7 +1287,7 @@ Wrote `<path>` — {N} records sampled from `<ml_app>` ({timeframe}).
    ds = LLMObs.create_dataset(dataset_name="<your-name>", records=records)
    print(ds)
    ```
-3. **Run an experiment** against the published dataset via `llm-obs-experiment-py-bootstrap --dataset-name <your-name>`.
+3. **Run an experiment** against the published dataset via `agent-observability-experiment-py-bootstrap --dataset-name <your-name>`.
 ```
 
 Skip the notebook export prompt in this mode — datasets aren't well-served by a markdown summary in a notebook, and the next step (experiment generation) will produce its own artifacts.

@@ -7,7 +7,7 @@
 ```python
 from ddtrace.llmobs import RemoteEvaluator
 
-# Create the judge in Datadog UI first: LLM Observability → Evaluations → New Evaluator
+# Create the judge in Datadog UI first: Agent Observability → Evaluations → New Evaluator
 quality_judge = RemoteEvaluator(eval_name="<name-from-datadog-ui>")
 
 # Optional: customize the payload the judge receives
@@ -27,7 +27,7 @@ The judge must exist in the Datadog UI before the experiment runs. Emit a commen
 
 ```
 # Before running this experiment:
-#   1. Open Datadog → LLM Observability → Evaluations → Custom evaluators
+#   1. Open Datadog → Agent Observability → Evaluations → Custom evaluators
 #   2. Create an LLM-as-a-Judge evaluator. Note the eval_name you give it.
 #   3. Paste that name into RemoteEvaluator(eval_name="...") below.
 ```

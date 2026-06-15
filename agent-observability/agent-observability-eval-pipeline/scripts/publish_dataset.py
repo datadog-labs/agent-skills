@@ -1,4 +1,4 @@
-"""Phase 5 dataset publisher for llm-obs-eval-pipeline.
+"""Phase 5 dataset publisher for agent-observability-eval-pipeline.
 
 CLI wrapper around `LLMObs.create_dataset(records=...)` that:
   - Auto-loads credentials via the shared load_env helper (script dir,
@@ -37,7 +37,7 @@ def normalize_tags(raw):
     Wraps bare strings as `tag:<value>`, drops empty/None, preserves
     malformed leading/trailing colons by wrapping the original as
     `tag:<original>` so the SDK's `validate_tags_list` cannot reject
-    the record. See dd-llmo/llm-obs-eval-bootstrap/SKILL.md Phase 3D
+    the record. See agent-observability/agent-observability-eval-bootstrap/SKILL.md Phase 3D
     "Tag normalization" for the rationale.
     """
     fixed = []

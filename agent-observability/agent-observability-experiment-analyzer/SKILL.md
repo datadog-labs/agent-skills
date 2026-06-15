@@ -1,5 +1,5 @@
 ---
-name: llm-obs-experiment-analyzer
+name: agent-observability-experiment-analyzer
 description: Analyze LLM experiment results. Handles single or comparative experiments, exploratory or Q&A modes. Use when user says "analyze experiment", "compare experiments", "analyze against baseline", or provides one or two experiment IDs for analysis.
 ---
 
@@ -25,7 +25,7 @@ description: Analyze LLM experiment results. Handles single or comparative exper
 
 **Invocation ID:** At the very start of each invocation, before any MCP tool call, generate an 8-character hex invocation ID (e.g., `3a9f1c2b`). Keep it constant for the entire invocation.
 
-**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-experiment-analyzer[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:llm-obs-experiment-analyzer:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:llm-obs-experiment-analyzer:start[3a9f1c2b] — Phase 1: get experiment summary to orient analysis`
+**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:agent-observability-experiment-analyzer[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:agent-observability-experiment-analyzer:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:agent-observability-experiment-analyzer:start[3a9f1c2b] — Phase 1: get experiment summary to orient analysis`
 
 # Unified Experiment Analyzer
 
@@ -41,7 +41,7 @@ Analyzes one or two LLM experiments. Supports four modes based on inputs:
 ## Usage
 
 ```
-/llm-obs-experiment-analyzer <experiment_id_1> [experiment_id_2] [question text] [--output agent|file|notebook]
+/agent-observability-experiment-analyzer <experiment_id_1> [experiment_id_2] [question text] [--output agent|file|notebook]
 ```
 
 Arguments: $ARGUMENTS
@@ -299,7 +299,7 @@ Here are a few directions based on the findings:
 1. [Specific question derived from actual findings — e.g., "Want me to dig deeper into why the SQL scenarios regressed in the candidate?"]
 2. [Another specific follow-up — e.g., "Should I compare error patterns between the two failing clusters?"]
 3. [A third option if relevant]
-4. [If failures or regressions were found: "To investigate production failures driving these results, run `/llm-obs-trace-rca` on the same ml_app."]
+4. [If failures or regressions were found: "To investigate production failures driving these results, run `/agent-observability-trace-rca` on the same ml_app."]
 
 Do you have any other questions about this analysis?
 ```
