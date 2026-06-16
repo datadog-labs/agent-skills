@@ -8,8 +8,8 @@ description: Analyze LLM experiment results. Handles single or comparative exper
 **Detection** — At the start of every invocation, before taking any action, determine which backend to use:
 
 1. If the user passed `--backend pup` anywhere in their invocation → use **pup mode** immediately, regardless of whether MCP tools are present. Skip steps 2–4.
-2. Check whether MCP tools are present in your active tool list. The canonical signal is whether `mcp__datadog-llmo-mcp__get_llmobs_experiment_summary` appears in your available tools.
-3. If MCP tools are present → use **MCP mode** throughout. Call MCP tools exactly as named in this skill's workflow sections.
+2. Check whether MCP tools are present in your active tool list. The canonical signal is whether a tool named `get_llmobs_experiment_summary` (with or without the `mcp__datadog-llmo-mcp__` prefix) appears in your available tools.
+3. If MCP tools are present → use **MCP mode** throughout. **Tool name binding:** note the exact name under which `get_llmobs_experiment_summary` appears in your active tool list and use that exact name (prefixed or unprefixed) for every MCP tool call this invocation. All other experiment tools follow the same naming convention.
 4. If MCP tools are absent → check whether `pup` is executable: run `pup --version` via Bash. A JSON response containing `"version"` confirms pup is available.
 5. If pup responds → use **pup mode** throughout. Translate every MCP tool call to its pup equivalent using the Tool Reference appendix at the bottom of this file.
 6. If neither is available → stop and tell the user:
@@ -47,6 +47,8 @@ Analyzes one or two LLM experiments. Supports four modes based on inputs:
 Arguments: $ARGUMENTS
 
 ## Available Tools
+
+> **Note:** Tool names below are shown with an example `mcp__<server>__` prefix. The actual prefix depends on the environment and MCP server name — it may differ or be absent entirely. Always call tools using the exact name visible in your active tool list (see Backend Detection step 3).
 
 | Tool | Purpose |
 |------|---------|
@@ -140,7 +142,7 @@ Found N metrics. Full breakdown:
 
 | Metric | Mean | Class |
 |--------|------|-------|
-| <label> | <mean> | Struggling |
+| <label> | <mean> | ⚠️ Struggling |
 | <label> | <mean> | Interesting |
 | <label> | <mean> | Saturated |
 | <label> | 1.000 | Perfect (no signal) |
@@ -211,6 +213,7 @@ Rules:
 
 For each sampled event, generate a direct span link:
 `https://app.datadoghq.com/llm/experiments/{experiment_id}?selectedTab=overview&sp=[{"p":{"experimentId":"{experiment_id}","spanId":"{span_id}"},"i":"experiment-details"}]&spanId={span_id}`
+The `sp` query parameter value must be percent-encoded before rendering (e.g. `[` → `%5B`, `{` → `%7B`, `"` → `%22`, `}` → `%7D`, `]` → `%5D`).
 
 For each Deep Dive segment, generate a direct link to view those samples in the (candidate) experiment:
 `https://app.datadoghq.com/llm/experiments/{experiment_id}?selectedTab=overview&filter[{dimension}]={value}`
@@ -296,6 +299,7 @@ Here are a few directions based on the findings:
 1. [Specific question derived from actual findings — e.g., "Want me to dig deeper into why the SQL scenarios regressed in the candidate?"]
 2. [Another specific follow-up — e.g., "Should I compare error patterns between the two failing clusters?"]
 3. [A third option if relevant]
+4. [If failures or regressions were found: "To investigate production failures driving these results, run `/llm-obs-trace-rca` on the same ml_app."]
 
 Do you have any other questions about this analysis?
 ```
