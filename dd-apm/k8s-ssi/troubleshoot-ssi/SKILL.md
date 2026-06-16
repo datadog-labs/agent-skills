@@ -142,6 +142,20 @@ The last command confirms the Admission Controller webhook is registered cluster
 
 ---
 
+## Presenting your findings (required)
+
+Your final response is the deliverable — not your investigation transcript. It must include **every diagnostic from this skill that you ran or that applies**, each with its purpose and what you found. Three failure modes to avoid:
+
+- **Running a check but not reporting it.** If you ran `kubectl get mutatingwebhookconfigurations`, the namespace `admission.datadoghq.com/mutate-pods` label check, or any other command during investigation, state the command and its result in your response. A check you ran but didn't surface gives the reader nothing — and the namespace-label and webhook checks in particular must appear explicitly.
+- **Omitting the two required pup diagnostics.** Every diagnosis must explicitly include these two commands, by name, for each affected service — they are mandatory triage output, not optional:
+  - `pup apm troubleshooting list --hostname <NODE_HOSTNAME>` — surfaces injection errors Datadog received from the node
+  - `pup apm service-library-config get --service-name <SERVICE_NAME> --env <ENV>` — shows the tracer's runtime SDK config
+
+  Run them if `pup` is available; recommend them for the user to run if it isn't. Do **not** substitute `pup fleet instrumented-pods list` or `pup traces search` for these — those are different checks and do not satisfy the runbook. If you don't know `<ENV>`, state your assumed value and run the command anyway.
+- **Stopping at the first root cause.** When multiple services are affected, investigate and report each one independently — they may have different causes — and give per-service remediation.
+
+---
+
 ## Step 2: State Your Hypotheses
 
 Before investigating, explicitly state your ranked hypotheses based on triage output. Do not skip this step.

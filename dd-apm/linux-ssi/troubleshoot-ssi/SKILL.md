@@ -158,12 +158,28 @@ pup traces search --query "service:<SERVICE_NAME>" --from 15m --limit 5
 pup metrics query --query "sum:trace.*.request.hits{host:<DD_HOSTNAME>,service:<SERVICE_NAME>}.as_count()" --from 15m
 ```
 
-`ENV` is required for `service-library-config get`. If the user didn't provide it, ask for it before running that command.
+`ENV` is required for `service-library-config get`. If the user didn't provide it, state your assumed value (e.g. `prod`) and run it anyway — don't stop to ask.
 
 Key values to check in `service-library-config get` output:
 - `apm_enabled` — must be `true`. If `false`, the tracer won't send traces regardless of injection.
 - `trace_agent_url` — must point to `http://localhost:8126` or the correct agent socket. Wrong value = tracer can't reach the Agent.
 - `site` — must match your Datadog org's site.
+
+---
+
+## Presenting your findings (required)
+
+Your final response is the deliverable — not your investigation transcript. It must include **every diagnostic from this skill that you ran or that applies**, each with its purpose and what you found. Avoid these failure modes:
+
+- **Omitting a required diagnostic.** Your response must explicitly include, by name:
+  - `pup apm troubleshooting list --hostname <DD_HOSTNAME>` — injection errors
+  - `pup apm service-library-config get --service-name <SERVICE_NAME> --env <ENV>` — runtime SDK config
+  - verification that **`apm_enabled` is `true`** and that **`trace_agent_url` points to the correct agent endpoint** (e.g. `http://localhost:8126`)
+  - `datadog-agent status` for the APM receiver, and a `/proc/<pid>/maps` (or equivalent) check that the tracer `.so` is loaded into the process
+
+  Run them if you have access; recommend them for the user to run if you don't.
+- **Substituting a proxy check.** Confirming port 8126 is listening shows the Agent's receiver is up — it is **not** a substitute for verifying the tracer-side `apm_enabled` and `trace_agent_url` config keys. They answer different questions; report both.
+- **Concluding before the checks.** Outline and run the diagnostics before settling on a root cause, then give specific per-finding remediation and note that the service must be restarted after any config or package fix.
 
 ---
 
