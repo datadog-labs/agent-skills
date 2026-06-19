@@ -1,4 +1,4 @@
-"""LLM judge evaluator for the llm-obs-experiment-analyzer skill."""
+"""LLM judge evaluator for the agent-observability-experiment-analyzer skill."""
 
 import threading
 from pathlib import Path

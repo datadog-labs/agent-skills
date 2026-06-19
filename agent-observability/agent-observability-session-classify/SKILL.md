@@ -1,13 +1,13 @@
 ---
-name: llm-obs-session-classify
+name: agent-observability-session-classify
 description: >
-  Classify whether user intent was satisfied in a Datadog LLM Obs trace or session.
+  Classify whether user intent was satisfied in a Datadog Agent Observability trace or session.
   Three modes: (1) session_id — classify a single CMD+I assistant session with RUM;
-  (2) trace_id — classify a single LLM Obs trace without RUM; (3) ml_app — sample
+  (2) trace_id — classify a single Agent Observability trace without RUM; (3) ml_app — sample
   and classify multiple sessions or traces from a given LLM app. Output is compact
   by default (verdict + one-sentence reason). Use when evaluating satisfaction,
   classifying sessions/traces, labeling data, or generating signal for
-  llm-obs-eval-pipeline or llm-obs-trace-rca.
+  agent-observability-eval-pipeline or agent-observability-trace-rca.
 ---
 
 ## Backend
@@ -39,11 +39,11 @@ description: >
 
 **Invocation ID:** At the very start of each invocation, before any MCP tool call, generate an 8-character hex invocation ID (e.g., `3a9f1c2b`). Keep it constant for the entire invocation.
 
-**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-session-classify[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:llm-obs-session-classify:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:llm-obs-session-classify:start[3a9f1c2b] — Step 1: enumerate turn root spans for session abc-123`
+**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:agent-observability-session-classify[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:agent-observability-session-classify:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:agent-observability-session-classify:start[3a9f1c2b] — Step 1: enumerate turn root spans for session abc-123`
 
 # Skill: eval-session-classify
 
-Classification skill for Datadog LLM Obs sessions and traces. Produces a satisfaction verdict (`yes` / `partial` / `no`) with a brief reasoning string. Designed to be called standalone or by `eval-pipeline`.
+Classification skill for Datadog Agent Observability sessions and traces. Produces a satisfaction verdict (`yes` / `partial` / `no`) with a brief reasoning string. Designed to be called standalone or by `eval-pipeline`.
 
 ---
 
@@ -52,7 +52,7 @@ Classification skill for Datadog LLM Obs sessions and traces. Produces a satisfa
 | Input | Mode | Required | Description |
 |-------|------|----------|-------------|
 | `session_id` | session_id mode | Yes | UUID of a Datadog CMD+I assistant session |
-| `trace_id` | trace_id mode | Yes | Trace ID from LLM Observability |
+| `trace_id` | trace_id mode | Yes | Trace ID from Agent Observability |
 | `ml_app` | ml_app mode | Yes | LLM app name to sample from |
 | `timeframe` | ml_app mode | No (default: `now-7d`) | How far back to sample |
 | `sample_limit` | ml_app mode | No (default: `20`, cap: `50`) | Number of sessions or traces to classify |
@@ -824,7 +824,7 @@ yes / partial / no
 
 ## Trace Mode
 
-Classifies a single LLM Obs trace by trace_id. No RUM. Works for any LLM app.
+Classifies a single Agent Observability trace by trace_id. No RUM. Works for any LLM app.
 
 ### Step T1 — Get span structure
 
@@ -998,9 +998,9 @@ aggregate_spans(
 )
 ```
 
-Try `@session_id` first. If buckets are empty, try the business ID tag you observed on the LLM Obs spans (`@investigation.id`, `@chatid`, `@correlation_id`, etc.). This returns up to 1000 unique IDs with a count per ID in a single call — far more efficient than paginating LLM Obs search results.
+Try `@session_id` first. If buckets are empty, try the business ID tag you observed on the Agent Observability spans (`@investigation.id`, `@chatid`, `@correlation_id`, etc.). This returns up to 1000 unique IDs with a count per ID in a single call — far more efficient than paginating Agent Observability search results.
 
-**Option B — `search_llmobs_spans` fallback:** If the app has no APM instrumentation or `aggregate_spans` returns nothing, paginate LLM Obs root spans and deduplicate the business ID tag client-side:
+**Option B — `search_llmobs_spans` fallback:** If the app has no APM instrumentation or `aggregate_spans` returns nothing, paginate Agent Observability root spans and deduplicate the business ID tag client-side:
 
 ```
 search_llmobs_spans(

@@ -1,4 +1,4 @@
-"""LLM judge evaluator for the llm-obs-trace-rca skill."""
+"""LLM judge evaluator for the agent-observability-trace-rca skill."""
 
 import threading
 from pathlib import Path

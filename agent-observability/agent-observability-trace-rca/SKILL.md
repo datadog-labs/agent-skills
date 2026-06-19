@@ -1,5 +1,5 @@
 ---
-name: llm-obs-trace-rca
+name: agent-observability-trace-rca
 description: Root cause analysis on production LLM traces. Diagnoses why an LLM application is failing — works from eval judge verdicts, runtime errors, or structural anomalies depending on what signals are present. Walks the span tree from symptom to root cause. Use when user says "what's wrong with my app", "why is my eval failing", "analyze errors", "root cause analysis", "diagnose failures", or wants to understand production failure patterns.
 ---
 
@@ -27,9 +27,9 @@ description: Root cause analysis on production LLM traces. Diagnoses why an LLM 
 
 **Invocation ID:** At the very start of each invocation, before any MCP tool call, generate an 8-character hex invocation ID (e.g., `3a9f1c2b`). Keep it constant for the entire invocation.
 
-**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-trace-rca[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:llm-obs-trace-rca:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:llm-obs-trace-rca:start[3a9f1c2b] — Phase 0: discover configured evals for task-cruncher to infer analysis mode`
+**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:agent-observability-trace-rca[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:agent-observability-trace-rca:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:agent-observability-trace-rca:start[3a9f1c2b] — Phase 0: discover configured evals for task-cruncher to infer analysis mode`
 
-# LLM Obs Trace RCA — Root Cause Analysis from Production LLM Traces
+# Agent Observability Trace RCA — Root Cause Analysis from Production LLM Traces
 
 Diagnose **why an LLM application is failing** by searching production traces and walking the span tree from symptom to root cause. The skill automatically selects the best analysis mode based on available signals:
 
@@ -153,7 +153,7 @@ The canonical handoff format is the **Per-Unit Details table** inside the `# Ses
 Present this overview before proceeding:
 
 ```
-## Classification Overview (from llm-obs-session-classify)
+## Classification Overview (from agent-observability-session-classify)
 
 **ml_app**: <from summary header>  |  **Classified**: N  |  **Failures (no+partial)**: F  |  **Pass rate**: X%
 
@@ -512,7 +512,7 @@ Write the full report following the Output Format below. **This is the primary d
 
 **Do NOT take any action automatically.** After presenting the report, ask the user what they'd like to do next:
 
-1. Save the report to `llm-obs-rca-{ml_app}-{date}.md`
+1. Save the report to `agent-observability-rca-{ml_app}-{date}.md`
 2. Apply fixes (if codebase is available)
 3. Deeper investigation of remaining categories
 4. Export to a Datadog notebook — in pup mode, use `pup notebooks create` to create the notebook and `pup notebooks edit NOTEBOOK_ID --file /tmp/nb_cells.json` to append sections (see Tool Reference)
@@ -521,7 +521,7 @@ Write the full report following the Output Format below. **This is the primary d
 **If the user chooses option 4**, follow the notebook creation fallback pattern:
 
 1. Call `mcp__datadog-mcp-core__create_datadog_notebook` with:
-   - **`name`**: `LLM Obs RCA: {ml_app} ({mode}) — YYYY-MM-DD`
+   - **`name`**: `Agent Observability RCA: {ml_app} ({mode}) — YYYY-MM-DD`
    - **`type`**: `report`
    - **`time_span`**: `1w`
    - **`cells`**: one cell per section (see Notebook Cell Structure below)
@@ -626,7 +626,7 @@ Generic:
 ```
 ## Classification Signal Summary
 
-**Source**: llm-obs-session-classify  |  **ml_app**: {app}  |  **Signal**: content-only | content+evals
+**Source**: agent-observability-session-classify  |  **ml_app**: {app}  |  **Signal**: content-only | content+evals
 
 | Metric | Value |
 |--------|-------|

@@ -1,4 +1,4 @@
-"""Executor for the llm-obs-experiment-analyzer Claude Code skill."""
+"""Executor for the agent-observability-experiment-analyzer Claude Code skill."""
 
 import os
 import sys
@@ -29,7 +29,7 @@ class ExperimentAnalyzerExecutor(BaseProjectExecutor):
                 "input_data must contain 'baseline', 'candidate', or 'experiment_id'"
             )
 
-        parts = ["/llm-obs-experiment-analyzer"]
+        parts = ["/agent-observability-experiment-analyzer"]
         if baseline:
             parts.append(baseline)
         if candidate:

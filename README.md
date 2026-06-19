@@ -11,7 +11,7 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 | **dd-logs** | Search logs |
 | **dd-apm** | Traces, services, performance, Single-Step Instrumentation |
 | **dd-docs** | Search Datadog documentation |
-| **dd-llmo** | LLM Observability: experiments, eval RCA, evaluator generation, session classification |
+| **agent-observability** | Agent Observability: experiments, eval RCA, evaluator generation, session classification |
 | **dd-browser-sdk** | Browser SDK: RUM, Logs, Session Replay, profiling, product analytics, error tracking, version migration |
 | **dd-audit** | Audit Trail investigations: who changed what, key compromise, cost spike root cause, compliance evidence (SOC 2/PCI), AI activity auditing |
 | **dd-software-delivery** | CI/CD workflow skills — unblock PR pipelines, triage flaky tests (MCP + pup) |
@@ -72,47 +72,47 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-audit-cost-spike-investigation \
   --skill dd-audit-compliance-report \
   --skill dd-audit-ai-activity \
-  --skill llm-obs-experiment-analyzer \
-  --skill llm-obs-experiment-py-bootstrap \
-  --skill llm-obs-trace-rca \
-  --skill llm-obs-eval-bootstrap \
-  --skill llm-obs-eval-pipeline \
-  --skill llm-obs-session-classify \
+  --skill agent-observability-experiment-analyzer \
+  --skill agent-observability-experiment-py-bootstrap \
+  --skill agent-observability-trace-rca \
+  --skill agent-observability-eval-bootstrap \
+  --skill agent-observability-eval-pipeline \
+  --skill agent-observability-session-classify \
   --skill k9-ownership-byod-setup \
   --full-depth -y
 ```
 
-### LLM Observability (LLMO)
+### Agent Observability (LLMO)
 
-The `dd-llmo` directory contains six skills for working with LLM Observability data:
+The `agent-observability` directory contains six skills for working with Agent Observability data:
 
 | Skill | Purpose |
 |-------|---------|
-| `llm-obs-experiment-analyzer` | Analyze and compare offline LLM experiments |
-| `llm-obs-experiment-py-bootstrap` | Generate self-contained Python experiment code using the `ddtrace.llmobs` SDK |
-| `llm-obs-trace-rca` | Root-cause production failures using eval judge signal or runtime errors |
-| `llm-obs-eval-bootstrap` | Generate evaluator code from traces, optionally seeded by RCA output. Also emits a dataset from traces in `--emit-dataset` mode. |
-| `llm-obs-eval-pipeline` | Eight-phase pipeline: classify → RCA → bootstrap evaluators → create dataset → publish → generate experiment → run → analyze. Stop early with `--stop-after`. |
-| `llm-obs-session-classify` | Classify whether user intent was satisfied in a session (trace + RUM signals) |
+| `agent-observability-experiment-analyzer` | Analyze and compare offline LLM experiments |
+| `agent-observability-experiment-py-bootstrap` | Generate self-contained Python experiment code using the `ddtrace.llmobs` SDK |
+| `agent-observability-trace-rca` | Root-cause production failures using eval judge signal or runtime errors |
+| `agent-observability-eval-bootstrap` | Generate evaluator code from traces, optionally seeded by RCA output. Also emits a dataset from traces in `--emit-dataset` mode. |
+| `agent-observability-eval-pipeline` | Eight-phase pipeline: classify → RCA → bootstrap evaluators → create dataset → publish → generate experiment → run → analyze. Stop early with `--stop-after`. |
+| `agent-observability-session-classify` | Classify whether user intent was satisfied in a session (trace + RUM signals) |
 
 **Eval pipeline flow:**
 
 ```
-llm-obs-session-classify    llm-obs-trace-rca → llm-obs-eval-bootstrap
+agent-observability-session-classify    agent-observability-trace-rca → agent-observability-eval-bootstrap
  (classify sessions)          (diagnose why)      (build evals)
 ```
 
-Run `llm-obs-trace-rca` to understand why an app is failing by analyzing eval judge verdicts or
-runtime errors across production traces. Then run `llm-obs-eval-bootstrap` to generate evaluator
-code that captures those failure patterns. Pass the RCA output directly to `llm-obs-eval-bootstrap`
+Run `agent-observability-trace-rca` to understand why an app is failing by analyzing eval judge verdicts or
+runtime errors across production traces. Then run `agent-observability-eval-bootstrap` to generate evaluator
+code that captures those failure patterns. Pass the RCA output directly to `agent-observability-eval-bootstrap`
 to seed it with the discovered failure taxonomy.
 
-Use `llm-obs-eval-pipeline` to run all three steps in sequence with checkpoints between each phase.
+Use `agent-observability-eval-pipeline` to run all three steps in sequence with checkpoints between each phase.
 
-Use `llm-obs-session-classify` independently to evaluate whether individual assistant sessions
-satisfied user intent, combining LLM Obs trace data with RUM behavioral signals.
+Use `agent-observability-session-classify` independently to evaluate whether individual assistant sessions
+satisfied user intent, combining Agent Observability trace data with RUM behavioral signals.
 
-Use `llm-obs-experiment-py-bootstrap` to generate a self-contained Python experiment client
+Use `agent-observability-experiment-py-bootstrap` to generate a self-contained Python experiment client
 that uses the `ddtrace.llmobs` SDK — runnable as a `.py` script or `.ipynb` notebook, with
 inline records, a CSV path, or a named Datadog dataset as the input.
 
@@ -120,12 +120,12 @@ inline records, a CSV path, or a named Datadog dataset as the input.
 
 ```bash
 # Claude Code — copy any or all skills
-cp -r dd-llmo/llm-obs-experiment-analyzer ~/.claude/skills
-cp -r dd-llmo/llm-obs-experiment-py-bootstrap ~/.claude/skills
-cp -r dd-llmo/llm-obs-trace-rca ~/.claude/skills
-cp -r dd-llmo/llm-obs-eval-bootstrap ~/.claude/skills
-cp -r dd-llmo/llm-obs-eval-pipeline ~/.claude/skills
-cp -r dd-llmo/llm-obs-session-classify ~/.claude/skills
+cp -r agent-observability/agent-observability-experiment-analyzer ~/.claude/skills
+cp -r agent-observability/agent-observability-experiment-py-bootstrap ~/.claude/skills
+cp -r agent-observability/agent-observability-trace-rca ~/.claude/skills
+cp -r agent-observability/agent-observability-eval-bootstrap ~/.claude/skills
+cp -r agent-observability/agent-observability-eval-pipeline ~/.claude/skills
+cp -r agent-observability/agent-observability-session-classify ~/.claude/skills
 ```
 
 #### MCP Requirements
@@ -163,17 +163,17 @@ Look at the errors on <ml_app> over the last 24h
 /eval-bootstrap <ml_app> --data-only                        # emit JSON spec instead of Python SDK code
 
 # Generate a Python experiment client using the ddtrace.llmobs SDK
-/llm-obs-experiment-py-bootstrap                                                  # 3-record inline sample
-/llm-obs-experiment-py-bootstrap --dataset ./data/qa.json --format ipynb          # local JSON dataset, notebook
-/llm-obs-experiment-py-bootstrap --dataset-name qa_v3 --project-name customer-qa  # existing Datadog dataset
-/llm-obs-experiment-py-bootstrap --evaluator-style remote                         # server-side RemoteEvaluator stubs
+/agent-observability-experiment-py-bootstrap                                                  # 3-record inline sample
+/agent-observability-experiment-py-bootstrap --dataset ./data/qa.json --format ipynb          # local JSON dataset, notebook
+/agent-observability-experiment-py-bootstrap --dataset-name qa_v3 --project-name customer-qa  # existing Datadog dataset
+/agent-observability-experiment-py-bootstrap --evaluator-style remote                         # server-side RemoteEvaluator stubs
 
 # Classify a session
 /eval-session-classify <session_id>
 
-# Guided onboarding through datasets + experiments (6 narrated states)
-/llm-obs-onboarding-datasets-experiments <ml_app>
-/llm-obs-onboarding-datasets-experiments <ml_app> --timeframe now-30d --trace-limit 25 --format ipynb
+# Guided end-to-end pipeline (6 narrated phases — classify → RCA → eval bootstrap → dataset → experiment → analyze)
+/agent-observability-eval-pipeline <ml_app>
+/agent-observability-eval-pipeline <ml_app> --timeframe now-30d --trace-limit 25 --format ipynb
 ```
 
 ### Software Delivery (dd-software-delivery)
@@ -288,7 +288,7 @@ Was API key <key_id> used from unexpected locations?
 Investigate this API key: <key_id>
 
 # Cost spike
-Why did our LLM Observability usage spike on May 1?
+Why did our Agent Observability usage spike on May 1?
 What caused the cost increase this week?
 
 # Compliance

@@ -1,6 +1,6 @@
 ---
-name: llm-obs-experiment-py-bootstrap
-description: Generates a self-contained Python experiment client that uses the ddtrace.llmobs SDK. Emits either a runnable .py script or a Jupyter .ipynb notebook matching the canonical DataDog reference notebook style. Use when the user says "generate Python experiment", "write an SDK experiment", "create a ddtrace experiment", "Python notebook experiment", "use the LLM Obs SDK", or has `ddtrace` installed and wants idiomatic SDK code.
+name: agent-observability-experiment-py-bootstrap
+description: Generates a self-contained Python experiment client that uses the ddtrace.llmobs SDK. Emits either a runnable .py script or a Jupyter .ipynb notebook matching the canonical DataDog reference notebook style. Use when the user says "generate Python experiment", "write an SDK experiment", "create a ddtrace experiment", "Python notebook experiment", "use the Agent Observability SDK", or has `ddtrace` installed and wants idiomatic SDK code.
 ---
 
 ## Backend
@@ -14,11 +14,11 @@ description: Generates a self-contained Python experiment client that uses the d
 
 **Invocation ID:** At the very start of each invocation, before any MCP/pup call, generate an 8-character hex invocation ID (e.g., `3a9f1c2b`). Keep it constant for the entire invocation.
 
-**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-experiment-py-bootstrap[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only** (the startup beacon below), use `skill:llm-obs-experiment-py-bootstrap:start[<inv_id>] — ` instead (note the `:start` suffix).
+**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:agent-observability-experiment-py-bootstrap[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only** (the startup beacon below), use `skill:agent-observability-experiment-py-bootstrap:start[<inv_id>] — ` instead (note the `:start` suffix).
 
 **Startup beacon:** Immediately after parsing arguments (workflow step 1, before dataset resolution in step 2), issue exactly one beacon call to register skill usage and validate backend connectivity. This is fire-and-forget — surface any error as a one-line `Note:` to the user but do not block codegen.
 
-- **MCP mode:** call `mcp__datadog-llmo-mcp__list_llmobs_evals` with `telemetry.intent = "skill:llm-obs-experiment-py-bootstrap:start[<inv_id>] — Skill startup: register usage and verify Datadog connectivity"`. Discard the response payload; the call's purpose is the telemetry tag.
+- **MCP mode:** call `mcp__datadog-llmo-mcp__list_llmobs_evals` with `telemetry.intent = "skill:agent-observability-experiment-py-bootstrap:start[<inv_id>] — Skill startup: register usage and verify Datadog connectivity"`. Discard the response payload; the call's purpose is the telemetry tag.
 - **pup mode:** run `pup llm-obs evals list --limit 1` via Bash. Pup carries its own telemetry; no intent prefix needed.
 - **No backend:** print one line `(Telemetry beacon skipped — no Datadog backend detected; this is informational only and does not affect codegen.)` and proceed.
 
@@ -26,7 +26,7 @@ The beacon **must not** fail the skill. If the call errors (auth, network, etc.)
 
 ---
 
-# LLM Obs Experiment (Python) Bootstrap — Generate a Python Experiment Using `ddtrace.llmobs`
+# Agent Observability Experiment (Python) Bootstrap — Generate a Python Experiment Using `ddtrace.llmobs`
 
 Produce a single self-contained Python experiment that uses the official **`ddtrace.llmobs` SDK**. Output is either a `.py` script or an `.ipynb` notebook. The generated code mirrors the patterns shown in DataDog's reference notebooks at <https://github.com/DataDog/llm-observability/tree/main/experiments/notebooks>.
 
@@ -35,7 +35,7 @@ The SDK handles lazy project/experiment creation, dataset push diffing, the 5 MB
 ## Usage
 
 ```
-/llm-obs-experiment-py-bootstrap [--purpose <free text>] [--format py|ipynb] [--dataset <path>] [--dataset-name <name>] [--dataset-version <int>] [--project-name <name>] [--evaluator-style function|class|remote] [--jobs <n>] [--output <path>] [--task-source <module:function>] [--placeholder-task] [--app-root <path>] [--env-file <path>]
+/agent-observability-experiment-py-bootstrap [--purpose <free text>] [--format py|ipynb] [--dataset <path>] [--dataset-name <name>] [--dataset-version <int>] [--project-name <name>] [--evaluator-style function|class|remote] [--jobs <n>] [--output <path>] [--task-source <module:function>] [--placeholder-task] [--app-root <path>] [--env-file <path>]
 ```
 
 Arguments: $ARGUMENTS
@@ -134,7 +134,7 @@ experiment = LLMObs.experiment(
         # `tags=` below only reaches metadata.tags, which the current UI
         # does not surface as chips — config is what users actually see.
         "generated_by": "claude-code",
-        "skill": "llm-obs-experiment-py-bootstrap",
+        "skill": "agent-observability-experiment-py-bootstrap",
         "purpose": "<one-line purpose from step 2.4>",
     },
     description="<one-line purpose from step 2.4>",
@@ -143,7 +143,7 @@ experiment = LLMObs.experiment(
         # tag-filter UI / API consumers. Always emitted alongside the
         # config copy — never one without the other.
         "generated_by": "claude-code",
-        "skill": "llm-obs-experiment-py-bootstrap",
+        "skill": "agent-observability-experiment-py-bootstrap",
         "purpose": "<one-line purpose from step 2.4>",
     },
 )
@@ -226,7 +226,7 @@ The same section sequence in both formats. In `.py` these become comment banners
 
    Embed the resolved name as a string literal in the generated `PROJECT_NAME = "..."` line — don't emit runtime `os.getcwd()` lookups, since the user may run the file from a different directory than where the skill resolved it.
 
-1.5. **Startup beacon.** Per the **Backend** section above: generate an 8-character hex invocation ID, then issue the single beacon call (MCP `list_llmobs_evals` tagged with `skill:llm-obs-experiment-py-bootstrap:start[<inv_id>] — Skill startup: ...`, or pup equivalent, or skip if no backend). Surface any error as a one-line `Note:` and proceed regardless — the beacon is for usage attribution and connectivity validation only; it never blocks codegen.
+1.5. **Startup beacon.** Per the **Backend** section above: generate an 8-character hex invocation ID, then issue the single beacon call (MCP `list_llmobs_evals` tagged with `skill:agent-observability-experiment-py-bootstrap:start[<inv_id>] — Skill startup: ...`, or pup equivalent, or skip if no backend). Surface any error as a one-line `Note:` and proceed regardless — the beacon is for usage attribution and connectivity validation only; it never blocks codegen.
 
 2. **Resolve the dataset source.** Error out if both `--dataset` and `--dataset-name` are passed — they're mutually exclusive.
 
@@ -508,7 +508,7 @@ SDK calls used:
   ✓ task_fn(input_data, config)              (line/cell ~<N>)
   ✓ <N> evaluators (style: <function|class|remote>, semantics seeded by purpose)
   ✓ LLMObs.experiment(...).run(jobs=<N>)     (line/cell ~<N>)
-  ✓ Provenance (in config + tags): generated_by=claude-code, skill=llm-obs-experiment-py-bootstrap, purpose=...
+  ✓ Provenance (in config + tags): generated_by=claude-code, skill=agent-observability-experiment-py-bootstrap, purpose=...
 
 Task function source:
   ✓ Wired to: <module.path>:<function_name>   (source: <file>:<line>)
@@ -583,11 +583,11 @@ When `--evaluator-style remote`, lean toward the `07` style. When `--dataset` is
 
 ## Datadog Documentation
 
-These are the canonical reference pages on <https://docs.datadoghq.com/>. Use them to ground answers about LLM Observability features and to look up details that aren't covered in this skill.
+These are the canonical reference pages on <https://docs.datadoghq.com/>. Use them to ground answers about Agent Observability features and to look up details that aren't covered in this skill.
 
 | Topic | URL | Use when |
 |---|---|---|
-| LLM Observability overview | <https://docs.datadoghq.com/llm_observability/> | Establishing what the product covers, terminology |
+| Agent Observability overview | <https://docs.datadoghq.com/llm_observability/> | Establishing what the product covers, terminology |
 | Setup | <https://docs.datadoghq.com/llm_observability/setup/> | API/app key creation, project + ml_app setup, region/site selection |
 | Instrumentation overview | <https://docs.datadoghq.com/llm_observability/instrumentation/> | Auto-instrumentation, manual SDK usage, span model |
 | Python SDK reference | <https://docs.datadoghq.com/llm_observability/instrumentation/sdk/> | Public symbol list, decorator semantics, span kinds, annotate/enable signatures |
@@ -598,15 +598,15 @@ These are the canonical reference pages on <https://docs.datadoghq.com/>. Use th
 | Monitoring | <https://docs.datadoghq.com/llm_observability/monitoring/> | Alerts, dashboards, span-level monitors |
 | Terms / glossary | <https://docs.datadoghq.com/llm_observability/terms/> | Span kinds, sessions, traces, ml_app |
 | Evaluation developer guide | <https://docs.datadoghq.com/llm_observability/guide/evaluation_developer_guide/> | Writing offline evaluators, validation strategy |
-| Claude Code skills guide | <https://docs.datadoghq.com/llm_observability/guide/claude_code_skills/> | How this skill fits alongside the rest of the `dd-llmo` set |
-| MCP server | <https://docs.datadoghq.com/llm_observability/mcp_server/> | Connecting MCP-compatible clients to LLM Obs data |
+| Claude Code skills guide | <https://docs.datadoghq.com/llm_observability/guide/claude_code_skills/> | How this skill fits alongside the rest of the `agent-observability` set |
+| MCP server | <https://docs.datadoghq.com/llm_observability/mcp_server/> | Connecting MCP-compatible clients to Agent Observability data |
 | Reference notebooks (GitHub) | <https://github.com/DataDog/llm-observability/tree/main/experiments/notebooks> | Style-of-life examples for the generated `.py` / `.ipynb` |
 
 ### Researching features the skill does not cover
 
-If the user asks about an LLM Observability feature the skill's body doesn't address (e.g., specific span kinds, dataset versioning semantics, an evaluator type not covered above), fetch the relevant page from `docs.datadoghq.com` rather than guessing:
+If the user asks about an Agent Observability feature the skill's body doesn't address (e.g., specific span kinds, dataset versioning semantics, an evaluator type not covered above), fetch the relevant page from `docs.datadoghq.com` rather than guessing:
 
-1. **Pick the most specific URL** from the table above. Most LLM Obs questions resolve under `/llm_observability/{experiments,evaluations,instrumentation,monitoring}/`.
+1. **Pick the most specific URL** from the table above. Most Agent Observability questions resolve under `/llm_observability/{experiments,evaluations,instrumentation,monitoring}/`.
 2. **Use `WebFetch`** on that URL with a focused query (e.g., `"How does Dataset.push() handle the 5 MB threshold?"`). Prefer `WebFetch` over generic web search — the canonical page is almost always under `docs.datadoghq.com/llm_observability/`.
 3. **Fall back to `WebSearch`** with `site:docs.datadoghq.com/llm_observability` if you don't know which subpage owns the topic.
 4. **Cite the page** in the answer with its URL so the user can verify and bookmark.
@@ -630,9 +630,9 @@ Never invent symbols or behaviors not present in this skill body or the docs abo
 - **`# TODO(user)` markers on at least one evaluator** so reviewers can't ship un-customized evaluators by accident. (Evaluators stay user-owned even when the task is auto-wired.)
 - **Introspection is bounded.** The scan in Workflow step 2.5 must respect `--app-root` (or its default-resolved value), `.gitignore` if present, and the directory blocklist (`node_modules`, `.venv`, `__pycache__`, etc.). Refuse to scan `/` or `~`. If a scan would touch more than ~10k Python files, narrow the root or ask the user to point at the relevant subdirectory.
 - **Match notebook conventions.** Plain function evaluators by default; class-based only when the user opts in. Print `experiment.url` at the end of every generated file.
-- **Tag every experiment with provenance + purpose — in both `config` and `tags`.** Every `LLMObs.experiment(...)` call **must** carry `"generated_by": "claude-code"`, `"skill": "llm-obs-experiment-py-bootstrap"`, AND `"purpose": "<step 2.4 string>"` as keys in **both** the `config={...}` dict (so they render in the experiment's Configuration view, which is where users actually look) **and** the `tags={...}` dict (which the SDK serializes into `metadata.tags` for future tag-filter consumers). The `tags=` path alone is not enough: the current LLM Experiments UI does not surface `metadata.tags` as filterable chips, so users won't see the values unless they're also in `config`. The `purpose` field is what makes future runs of the same experiment discoverable by intent — without it, users see ten experiments with cryptic names and no idea what each was testing. Also set `description="<purpose>"` on the experiment so the UI list view shows it.
+- **Tag every experiment with provenance + purpose — in both `config` and `tags`.** Every `LLMObs.experiment(...)` call **must** carry `"generated_by": "claude-code"`, `"skill": "agent-observability-experiment-py-bootstrap"`, AND `"purpose": "<step 2.4 string>"` as keys in **both** the `config={...}` dict (so they render in the experiment's Configuration view, which is where users actually look) **and** the `tags={...}` dict (which the SDK serializes into `metadata.tags` for future tag-filter consumers). The `tags=` path alone is not enough: the current LLM Experiments UI does not surface `metadata.tags` as filterable chips, so users won't see the values unless they're also in `config`. The `purpose` field is what makes future runs of the same experiment discoverable by intent — without it, users see ten experiments with cryptic names and no idea what each was testing. Also set `description="<purpose>"` on the experiment so the UI list view shows it.
 - **PII scrub at the door.** If `--dataset` is given, scrub before inlining into the generated file. Never embed a record that contains an unmasked email/phone/SSN/API-key pattern.
 - **Don't generate `requirements.txt` or `pyproject.toml`.** Print the `pip install` command in the next-steps message instead — most users already have a venv.
 - **No silent fallbacks.** If `--format` is unsupported, error out with the valid choices.
 - **Python only.** If a user passes `--language typescript` (or any non-Python language flag), error out — this skill produces Python `ddtrace.llmobs` SDK code only.
-- **Research, don't invent.** If the user asks about an LLM Observability feature, span kind, evaluator type, or SDK symbol that is not documented in this skill body, `WebFetch` the relevant `docs.datadoghq.com/llm_observability/*` page (see the Datadog Documentation table above for the canonical URLs) before answering. Cite the page URL in the response. If the docs don't cover the topic, say so explicitly — never fabricate symbols, flags, or behaviors.
+- **Research, don't invent.** If the user asks about an Agent Observability feature, span kind, evaluator type, or SDK symbol that is not documented in this skill body, `WebFetch` the relevant `docs.datadoghq.com/llm_observability/*` page (see the Datadog Documentation table above for the canonical URLs) before answering. Cite the page URL in the response. If the docs don't cover the topic, say so explicitly — never fabricate symbols, flags, or behaviors.

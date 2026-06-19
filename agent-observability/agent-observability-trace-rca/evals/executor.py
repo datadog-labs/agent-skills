@@ -1,4 +1,4 @@
-"""Executor for the llm-obs-trace-rca Claude Code skill."""
+"""Executor for the agent-observability-trace-rca Claude Code skill."""
 
 import os
 import sys
@@ -40,11 +40,11 @@ class LlmObsTraceRcaExecutor(BaseProjectExecutor):
         suffix = f" [{', '.join(hints)}]" if hints else ""
 
         if ml_app and eval_name:
-            prompt = f"/llm-obs-trace-rca Analyze eval failures for {eval_name} on {ml_app} {time_spec}{suffix}"
+            prompt = f"/agent-observability-trace-rca Analyze eval failures for {eval_name} on {ml_app} {time_spec}{suffix}"
         elif eval_name:
-            prompt = f"/llm-obs-trace-rca Analyze eval failures for {eval_name} {time_spec}{suffix}"
+            prompt = f"/agent-observability-trace-rca Analyze eval failures for {eval_name} {time_spec}{suffix}"
         elif ml_app:
-            prompt = f"/llm-obs-trace-rca What's wrong with {ml_app} {time_spec}{suffix}"
+            prompt = f"/agent-observability-trace-rca What's wrong with {ml_app} {time_spec}{suffix}"
         else:
             raise ValueError("input_data must contain either 'ml_app' or 'eval_name'")
 

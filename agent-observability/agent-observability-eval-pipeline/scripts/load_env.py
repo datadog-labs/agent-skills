@@ -2,7 +2,7 @@
 
 Used by both:
 - scripts/publish_dataset.py (imported at runtime)
-- dd-llmo/llm-obs-experiment-py-bootstrap/scripts/env_setup_template.py
+- agent-observability/agent-observability-experiment-py-bootstrap/scripts/env_setup_template.py
   (kept in sync as a verbatim copy — that copy is embedded into the
   user's generated experiment file so the file runs standalone without
   depending on this skill being installed)
