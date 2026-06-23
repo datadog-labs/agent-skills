@@ -13,7 +13,7 @@ Use this when a Datadog App backend function needs to trigger a Datadog Workflow
 
 ## Inspect The Workflow
 
-Before wiring an app to a workflow, inspect the workflow's published shape using curl with your Datadog API credentials:
+Before wiring an app to a workflow, inspect the workflow's published shape. Direct curl calls to the Datadog API use API/application keys even though normal scaffolded local app development uses OAuth by default:
 
 ```bash
 workflow_id="<WORKFLOW_ID>"
@@ -204,5 +204,5 @@ If a polling request fails, surface the error or response body to the caller. Do
 
 - `input parameter "<name>" not in workflow input schema`: update `meta.payload` keys to match `attributes.spec.inputSchema.parameters`.
 - `Expected trigger type TRIGGER_TYPE_API not found`: add and publish an API trigger on the workflow.
-- 401, 403, or missing authentication errors: confirm `DD_API_KEY` and `DD_APP_KEY` are exported, the app key has Actions API Access, and the app's Datadog site matches the API host and connection.
+- 401, 403, or missing authentication errors: for the direct curl inspection, confirm `DD_API_KEY` and `DD_APP_KEY` are exported, the app key has Actions API Access, and the app's Datadog site matches the API host and connection. For local app execution, rerun `npm run dev` and complete OAuth authorization.
 - Empty or missing outputs: inspect the full workflow instance response and the workflow's `outputSchema`.

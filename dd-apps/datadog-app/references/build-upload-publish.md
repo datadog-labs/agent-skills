@@ -10,15 +10,15 @@ Inspect the generated `package.json` scripts before choosing a command; scaffold
 npm run typecheck
 ```
 
-Export credentials and run build or upload commands:
+Run the generated upload script directly:
 
 ```bash
-export DD_API_KEY="<YOUR_API_KEY>"
-export DD_APP_KEY="<YOUR_APPLICATION_KEY>"
 npm run upload
 ```
 
-`npm run upload` builds with asset upload enabled and publishes the new version live. A successful upload prints a Datadog URL for the uploaded app. In some scaffold versions, `npm run build` may also exercise Datadog upload behavior; if it fails with missing API or app keys, ensure credentials are exported or use `typecheck` for local compile validation.
+`npm run upload` builds with asset upload enabled and publishes the new version live. A successful upload prints a Datadog URL for the uploaded app. Upload uses OAuth by default. If both `DD_API_KEY` and `DD_APP_KEY` are set, the generated app uses those keys instead of OAuth.
+
+In some scaffold versions, `npm run build` may also exercise Datadog upload behavior. If it needs auth, complete the OAuth browser flow or set both key environment variables. Use `typecheck` for local compile validation that does not touch Datadog.
 
 ## Upload Without Publishing
 
@@ -53,8 +53,8 @@ After an upload-no-publish, the new version appears in the App Builder version h
 
 Relevant environment variables:
 
-- `DD_API_KEY`: Datadog API key.
-- `DD_APP_KEY`: Datadog application key.
+- `DD_API_KEY`: optional Datadog API key for key-based local dev or upload.
+- `DD_APP_KEY`: optional Datadog application key for key-based local dev or upload.
 - `DD_APPS_PUBLISH`: set to `false` to upload without publishing. Defaults to `true`.
 - `DD_APPS_VERSION_NAME`: optional unique uploaded app version name.
 - `DD_APPS_UPLOAD_ASSETS`: enables asset upload; upload scripts normally set this.

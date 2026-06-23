@@ -4,13 +4,15 @@ Use this when the user is diagnosing auth, upload, Node, site, or backend functi
 
 ## Authentication Errors
 
-Symptoms include 401s, `Missing authentication token`, backend function call failures, or the Vite plugin logging `Auth credentials not configured`.
+Symptoms include 401s, `Missing authentication token`, backend function call failures, OAuth browser flow failures, cached token failures, or the Vite plugin logging `Auth credentials not configured`.
 
-- Verify `DD_API_KEY` and `DD_APP_KEY` are set — either in `.env.local` at the app root or exported in the shell.
-- Confirm the application key has Actions API Access enabled.
-- Confirm credentials match the Datadog site configured in `vite.config.ts`.
+- For the default OAuth flow, rerun the command and complete the browser authorization prompt.
+- Confirm the Datadog site configured in `vite.config.ts` matches the site used for OAuth.
+- If the cached OAuth token is invalid or belongs to the wrong site, rerun the command and complete authorization again.
+- If secure token storage is unavailable, install the optional keyring package requested by the warning, such as `@napi-rs/keyring`, or expect to reauthorize more often.
+- For key-based auth, verify both `DD_API_KEY` and `DD_APP_KEY` are set. The application key needs Actions API Access for backend function execution and Apps for uploading.
 
-**`.env.local` not being picked up:** The scaffolded `vite.config.ts` reads credentials via `process.env`, which does not include `.env.local` values at config evaluation time. Fix by switching to Vite's `loadEnv`:
+**Optional key-based `.env.local` not being picked up:** The generated config should read local env files before deciding whether to use API/application keys. If an older app reads credentials via `process.env` at config evaluation time, switch to Vite's `loadEnv`:
 
 ```ts
 import { defineConfig, loadEnv } from 'vite';
@@ -30,20 +32,20 @@ export default defineConfig(({ mode }) => {
 });
 ```
 
-After updating `vite.config.ts`, restart the dev server — credentials will be read from `.env.local` without any shell exports.
+After updating `vite.config.ts`, restart the dev server. Credentials will be read from `.env.local` without shell exports, and OAuth remains the default when either key is absent.
 
 ## Upload Fails With 403 "you do not have access to this app"
 
 The build and source map upload succeed but asset upload to App Builder fails with `HTTP 403 Forbidden: you do not have access to this app`.
 
-This is an application key permissions issue. The app key needs **two** scopes enabled — not just one:
+For key-based auth, this is usually an application key permissions issue. The app key needs **two** scopes enabled:
 
 1. **Actions API Access** — required for backend function execution during local dev.
 2. **Apps** (or **App Builder**) — required for uploading and publishing app assets.
 
 Fix: go to `https://app.datadoghq.com/organization-settings/application-keys`, find your key, and confirm both scopes are enabled. If the Apps scope is missing, create a new key with both scopes.
 
-After updating the key, re-run `npm run upload`.
+After updating the key, re-run `npm run upload`. For OAuth, confirm the authorized user has access to upload the app.
 
 ## Build Succeeds But Nothing Uploads
 
@@ -55,7 +57,8 @@ After updating the key, re-run `npm run upload`.
 ## Build Fails With Missing Credentials
 
 - Current scaffold versions may make `npm run build` exercise Datadog upload behavior.
-- Ensure `DD_API_KEY` and `DD_APP_KEY` are exported before running build commands that touch Datadog.
+- Complete the OAuth browser flow before running build commands that touch Datadog.
+- If using key-based auth, ensure both `DD_API_KEY` and `DD_APP_KEY` are set.
 - For credential-free validation, prefer `npm run typecheck` when available.
 
 ## Lint Fails Before Checking Code
@@ -73,12 +76,14 @@ After updating the key, re-run `npm run upload`.
 ## Datadog Site Mismatch
 
 - Inspect `vite.config.ts` for the configured Datadog site.
+- If using OAuth, complete authorization against the same site.
 - Ensure CI uses the same site configuration as local development.
 
 ## Backend Function Issues
 
 - Confirm backend files match `*.backend.ts` or `*.backend.js`.
-- Confirm local development or upload commands have Actions API credentials (`DD_API_KEY`, `DD_APP_KEY` with Actions API Access).
+- For local development, run `npm run dev` and complete OAuth authorization when prompted.
+- If using key-based auth, confirm both `DD_API_KEY` and `DD_APP_KEY` are set and the application key has Actions API Access.
 - Prefer `@datadog/action-catalog` typed actions when available.
 - Check frontend imports reference the backend module path exactly.
 
