@@ -69,7 +69,7 @@ Use discovery tooling before writing app code:
 
 - Start with the public DDSQL Data Directory for documented datasets and table functions.
 - Prefer Datadog MCP DDSQL, data directory, table search, schema, or product-specific exploration tools when they are available in the current session. Use MCP results to confirm table names, columns, supported filters, and access before generating SQL.
-- For shell-based validation, use the Datadog API directly with your `DD_API_KEY` and `DD_APP_KEY` credentials.
+- For shell-based validation against the Datadog API directly, use `DD_API_KEY` and `DD_APP_KEY`. Normal scaffolded local app development uses OAuth by default.
 
 Do not rely on guessed table names, guessed columns, or `information_schema`. Treat a bounded preview query as the final proof that the table path, schema, access, and syntax work in the target org/site.
 
@@ -95,4 +95,4 @@ For exact Action Catalog imports, file layout, and app-code patterns, rely on th
 
 - Keep data access in backend functions, not frontend code.
 - Do not accept raw frontend SQL, raw `ORDER BY`, or unbounded limits.
-- Ensure `DD_API_KEY` and `DD_APP_KEY` are exported with Actions API Access when running local development or discovery commands.
+- Keep data discovery and backend calls server-side. Normal scaffolded local development uses OAuth by default; direct API shell commands still need API/application keys unless the tool provides its own auth.
