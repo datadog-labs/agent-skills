@@ -79,11 +79,11 @@ npm run lint
 npm run build
 ```
 
-For backend function or upload-related changes, also test with credentials:
+For backend function or upload-related changes, also test the OAuth-backed commands:
 
 ```bash
-export DD_API_KEY="<YOUR_API_KEY>"
-export DD_APP_KEY="<YOUR_APPLICATION_KEY>"
 npm run dev
 npm run upload
 ```
+
+To verify the optional key-based path, set both `DD_API_KEY` and `DD_APP_KEY` before running the same commands.

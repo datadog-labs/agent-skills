@@ -1,6 +1,6 @@
 ---
 name: datadog-app
-description: Guides developers building Datadog Apps with TypeScript, React, the @datadog/apps scaffolder, and @datadog/vite-plugin. Use when a user wants to scaffold, run, debug, upgrade, build, upload, publish, upload without publishing (draft upload), add an upload-no-publish script, set up CI/CD, trigger/poll Workflow Automation, choose DDSQL or Action Catalog for backend data access, or query app datastores with DDSQL, including backend function troubleshooting.
+description: Guides developers building Datadog Apps with TypeScript, React, the @datadog/apps scaffolder, and @datadog/vite-plugin. Use when a user wants to scaffold, run, debug, upgrade, build, upload, publish, upload without publishing (draft upload), add an upload-no-publish script, set up CI/CD, use OAuth or API/application key auth, trigger/poll Workflow Automation, choose DDSQL or Action Catalog for backend data access, or query app datastores with DDSQL, including backend function troubleshooting.
 ---
 
 # Datadog Apps
@@ -25,12 +25,12 @@ Read only the reference needed for the user's task:
 | Understand or configure Action Catalog connections | `references/querying-data/connections.md` |
 | Query Datadog App datastores with DDSQL | `references/querying-data/ddsql/datastores.md` |
 | Upgrade Datadog Apps dependencies or compare with a freshly scaffolded app | `references/upgrading.md` |
-| Diagnose auth, upload, Node, site, backend function failures, or `.env.local` credentials not being picked up | `references/troubleshooting.md` |
+| Diagnose OAuth, API/application key auth, upload, Node, site, or backend function failures | `references/troubleshooting.md` |
 
 ## Boundaries
 
 - After scaffolding or when working inside an existing app, read the app project's `AGENTS.md` before making changes.
-- For backend function implementation details, rely on the generated app project's `AGENTS.md`; this skill only covers local development credentials and troubleshooting.
+- For backend function implementation details, rely on the generated app project's `AGENTS.md`; this skill only covers local development auth choices and troubleshooting.
 - Preserve the app project's existing package manager, scripts, Datadog site, and repository conventions.
 - Do not cover Datadog package/platform development in this skill.
 - Low-code App Builder to Datadog Apps migration guidance is future work. Do not invent a migration process yet.
