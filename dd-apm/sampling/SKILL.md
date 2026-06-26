@@ -291,20 +291,7 @@ pup apm adaptive-sampling onboarding-status --service <SERVICE> --env <ENV>
 
 Allotment formula: `150GB × #APM_hosts + 10GB × #Fargate_tasks + 50GB × #M-traces`. If `check` reports the customer is over budget, sampling rates will floor at **1 trace per 5 minutes per (service, env, resource)** — surface this before promising results.
 
-### Step 2: Preview the allotment Datadog would compute
-
-### Claude runs
-
-```bash
-# Preview against a proposed monthly target — provide ONE of --bytes or --percent
-pup apm adaptive-sampling preview --bytes <TARGET_BYTES>
-# or
-pup apm adaptive-sampling preview --percent <TARGET_PERCENT>
-```
-
-Returns the monthly quota Datadog computes for that strategy and the resulting target. If the projected target is dramatically below the user's expected ingestion volume, sampling will floor to 1 trace per 5 minutes per (service, env, resource) — surface this before onboarding.
-
-### Step 3: Confirm and apply
+### Step 2: Confirm and apply
 
 > *"I'm going to onboard `<SERVICE>` env `<ENV>` to adaptive sampling. Datadog will recompute per-resource rates every 5–10 minutes to fit your monthly allotment. Existing manual `DD_TRACE_SAMPLING_RULES` will still take precedence. Note: this requires both `apm_service_ingest_write` AND `apm_remote_configuration_write` on your Datadog role — Admin role has them by default. If it fails with `403 Forbidden`, see Troubleshooting #9. Ready?"*
 
@@ -519,8 +506,8 @@ For a full read-only overview when the customer asks "what sampling is even happ
 ```bash
 pup apm sampling-rules list
 pup apm adaptive-sampling get-allotment
-pup apm adaptive-sampling onboarding-status
 pup apm adaptive-sampling check
+pup apm adaptive-sampling onboarding-status --service <SERVICE> --env <ENV>
 ```
 
 (Agent-side TPS — `DD_APM_TARGET_TPS` etc. — isn't enumerable via pup yet; check the Ingestion Control UI if needed.)
