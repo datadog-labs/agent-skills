@@ -192,10 +192,10 @@ Map their answer:
 
 | `ingestion_reason` | What's currently sampling this trace |
 |---|---|
-| `remote_rule` | A customer resource-based rule (priority 1) — use `set-rate` to change |
-| `adaptive_rule` | Adaptive sampling (priority 2) — use `set-adaptive` to change target |
-| `rule` | Local `DD_TRACE_SAMPLING_RULES` (priority 3) — change the env var |
-| `auto` | Agent priority sampler (priority 6) — change via Ingestion Control UI or `DD_APM_TARGET_TPS` on the agent (not pup) |
+| `remote_rule` | A customer resource-based rule (priority 2) — use `set-rate` to change |
+| `adaptive_rule` | Adaptive sampling (priority 3) — use `set-adaptive` to change target |
+| `rule` | Local `DD_TRACE_SAMPLING_RULES` (priority 4) — change the env var |
+| `auto` | Agent priority sampler (priority 7) — change via Ingestion Control UI or `DD_APM_TARGET_TPS` on the agent (not pup) |
 | `manual` | `manual.keep`/`manual.drop` in code — code change needed |
 | `error` / `rare` | Agent error/rare sampler kept this trace — change via `DD_APM_ERROR_TPS` / `DD_APM_ENABLE_RARE_SAMPLER` on the agent (not pup) |
 | `single_span` | Whole trace dropped, span rescued by `DD_SPAN_SAMPLING_RULES` |
@@ -301,7 +301,7 @@ Allotment formula: `150GB × #APM_hosts + 10GB × #Fargate_tasks + 50GB × #M-tr
 pup apm adaptive-sampling onboard --service <SERVICE> --env <ENV>
 ```
 
-### Step 4: Verify
+### Step 3: Verify
 
 Adaptive rules are computed on a 5–10 minute cycle. Wait at least one full cycle, then:
 
@@ -507,7 +507,7 @@ For a full read-only overview when the customer asks "what sampling is even happ
 pup apm sampling-rules list
 pup apm adaptive-sampling get-allotment
 pup apm adaptive-sampling check
-pup apm adaptive-sampling onboarding-status --service <SERVICE> --env <ENV>
+pup apm adaptive-sampling onboarding-status --service <SERVICE> --env <ENV>  # repeat per service of interest
 ```
 
 (Agent-side TPS — `DD_APM_TARGET_TPS` etc. — isn't enumerable via pup yet; check the Ingestion Control UI if needed.)
@@ -520,7 +520,7 @@ Exit when ALL of the following are true:
 - [ ] Diagnosed which mechanism is currently sampling the user's traces (or confirmed there is no relevant mechanism yet)
 - [ ] Picked the right action (`set-rate` or `set-adaptive`) for the user's goal
 - [ ] User confirmed the planned change before any write
-- [ ] Write succeeded and an `id` was returned
+- [ ] Write succeeded — for `set-rate`: an `id` was returned; for `set-adaptive`: `onboard` command returned without error
 - [ ] Verified `_dd.p.dm` on a fresh trace reflects the new mechanism (or set expectation: adaptive needs one 5–10 min cycle)
 - [ ] Surfaced relevant gotchas (precedence, allotment floor, version gates) if they apply
 - [ ] If the user needed agent-side TPS changes, redirected them to the Ingestion Control UI (pup doesn't cover that path yet)
