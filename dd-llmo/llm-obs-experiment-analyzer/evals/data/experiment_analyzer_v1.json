@@ -1,0 +1,69 @@
+[
+    {
+        "input": {
+            "llmo_project_name": "cmd-i-skill-evals",
+            "baseline": "a4b9d02e-203c-4d62-b8ec-ae986e83cb06",
+            "candidate": "a05b32f1-351b-44f0-bf4a-efa85c910de7",
+            "question": "Are there specific scenarios where the notebook skill was loaded in one experiment but not the other?"
+        },
+        "labels": {
+            "answer": "Yes, there are 4 scenarios where the candidate loaded the skill and the baseline didn't, and 3 where the baseline loaded the skill and the candidate didn't.",
+            "key_points": [
+                "2 ValueError crashes in baseline → 0 in candidate, eval pipeline fixed.",
+                "Metric recording was silently broken in baseline — 4/6 metrics now visible for the first time (combined_score 72.1%).",
+                "Skill loading flat overall (~43%), but candidate loses 3 SQL scenarios it shouldn't — worth watching.",
+                "Core task performance unchanged — 1/3 of runs still fail to produce a notebook at all."
+            ]
+        },
+        "metadata": {
+            "created_at": "2026-03-06",
+            "labeler": "mbl",
+            "mode": "comparative_qa"
+        },
+        "record_id": "64877688-a38f-4a81-a19e-89b2a603d208"
+    },
+    {
+        "input": {
+            "llmo_project_name": "bits-sre-judge-alignment",
+            "baseline": "21ad232f-b485-40fb-8a73-cf473ddc2c3b",
+            "candidate": "2c2c1525-400e-4d6b-9dd2-110fb0036274",
+            "question": "Which judge gives answers that are better aligned with human preferences, as represented in the eval set, the candidate judge or the baseline judge?"
+        },
+        "labels": {
+            "answer": "4.1 (the candidate) is better aligned. I think it's because we're giving it pretty heavy and specific instructions, which the 4.1 series is built to follow, rather than more open ended or \"goal oriented\" prompting that reasoning models are better at.",
+            "key_points": [
+                "IC was way up.",
+                "Mean error down.",
+                "Bias a little worse than we'd like still.",
+                "Significantly better than baseline overall."
+            ]
+        },
+        "metadata": {
+            "created_at": "2026-03-06",
+            "labeler": "mbl",
+            "mode": "comparative_qa"
+        },
+        "record_id": "794981d3-ce25-4cd3-971e-40d75e2adbed"
+    },
+    {
+        "input": {
+            "llmo_project_name": "assistant-code-reading",
+            "baseline": "f13a28ab-a10e-444c-b598-31b4596f7311",
+            "candidate": "fd6bc13b-6e7d-40df-843a-4576dd4b0e2b",
+            "question": "Does the tool \"code inspection\" help getting better results?"
+        },
+        "labels": {
+            "answer": "Yes, but the tool is not called, leading to a suspicion that the better results are due to informing the model that it CAN call code.",
+            "key_points": [
+                "Overall results slightly improve, though not significantly, across all categories. Most gains, suspiciously, occurred in non-sandbox scenarios, suggesting the improvement is due to simply informing the model it can investigate code.",
+                "Sandbox use is primarily for code investigation, but results vary significantly from previous experiments, indicating high run-to-run variance. These improvements aren't correlated with sandbox usage."
+            ]
+        },
+        "metadata": {
+            "created_at": "2026-03-06",
+            "labeler": "mbl",
+            "mode": "comparative_qa"
+        },
+        "record_id": "e7dd93c6-67d6-4704-bb77-d64ed542e4fc"
+    }
+]

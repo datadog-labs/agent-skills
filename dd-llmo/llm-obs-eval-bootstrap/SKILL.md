@@ -1,20 +1,48 @@
 ---
-name: eval-bootstrap
-description: Bootstrap evaluators from production traces — emit SDK code, a framework-agnostic JSON spec, or publish online LLM-judge evaluators directly to Datadog. Use when user says "bootstrap evaluators", "generate evaluators", "create evals from traces", "eval bootstrap", "write evaluators", "build eval suite", "publish evaluators", or wants to generate BaseEvaluator/LLMJudge code or online judge configs from production LLM trace data. Works with ml_app and optional RCA report or failure hypothesis.
+name: llm-obs-eval-bootstrap
+description: Bootstrap evaluators from production traces — by default propose online LLM-judge evaluators and, after you confirm, create them in Datadog as disabled drafts (never auto-enabled); on request emit Python SDK code or a framework-agnostic JSON spec instead. Use when user says "bootstrap evaluators", "generate evaluators", "create evals from traces", "eval bootstrap", "write evaluators", "build eval suite", "publish evaluators", or wants to generate BaseEvaluator/LLMJudge code or online judge configs from production LLM trace data. Works with ml_app and optional RCA report or failure hypothesis.
 ---
+
+## Backend
+
+**Detection** — At the start of every invocation, before taking any action, determine which backend to use:
+
+1. If the user passed `--backend pup` anywhere in their invocation → use **pup mode** immediately, regardless of whether MCP tools are present. Skip steps 2–4.
+2. Check whether MCP tools are present in your active tool list. The canonical signal is whether `mcp__datadog-llmo-mcp__list_llmobs_evals` appears in your available tools.
+3. If MCP tools are present → use **MCP mode** throughout. Call MCP tools exactly as named in this skill's workflow sections.
+4. If MCP tools are absent → check whether `pup` is executable: run `pup --version` via Bash. A JSON response containing `"version"` confirms pup is available.
+5. If pup responds → use **pup mode** throughout. Translate every MCP tool call to its pup equivalent using the Tool Reference appendix at the bottom of this file.
+6. If neither is available → stop and tell the user:
+   > "Neither the Datadog MCP server nor the pup CLI is available. Connect the MCP server (`claude mcp add --scope user --transport http datadog-llmo-mcp 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'`) or install pup."
+
+`--backend pup` is accepted anywhere in the invocation arguments and is stripped before passing remaining args to the skill logic.
+
+**pup invocation rules:**
+- Invoke via Bash: `pup llm-obs <subcommand> [flags]`
+- pup always outputs JSON. Parse directly — no content-block unwrapping (unlike MCP results, which may wrap JSON in `[{"type": "text", "text": "<json>"}]`).
+- If pup returns an auth error, tell the user to run `pup auth login` and stop.
+- Parallelization: issue multiple Bash tool calls in a single message (one pup command per call).
+- Time flags: pup accepts bare duration strings (`1h`, `7d`, `30m`) and RFC3339 timestamps. Do **not** use `now-`-prefixed strings — strip the prefix when converting from a skill `--timeframe` argument: `now-7d` → `7d`, `now-24h` → `24h`, `now-30d` → `30d`.
+- `--summary` on `pup llm-obs spans search` strips payload fields to essential metadata only. Use it in bulk/search phases where content is not needed.
+
+**Invocation ID:** At the very start of each invocation, before any MCP tool call, generate an 8-character hex invocation ID (e.g., `3a9f1c2b`). Keep it constant for the entire invocation.
+
+**Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:llm-obs-eval-bootstrap[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:llm-obs-eval-bootstrap:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:llm-obs-eval-bootstrap:start[3a9f1c2b] — Phase 0: map existing eval coverage for task-cruncher`
 
 # Eval Bootstrap — Generate Evaluators from Production Traces
 
-Given a sample of production LLM traces, analyze input/output patterns and quality dimensions, then emit a ready-to-use evaluator suite. Three output modes:
+Given a sample of production LLM traces, analyze input/output patterns and quality dimensions, then propose a ready-to-use evaluator suite. Three output modes — **online evaluators are the default**; SDK code and the JSON spec are produced on request:
 
-- **`sdk_code`** *(default)* — Python `.py` file using the Datadog Evals SDK (`BaseEvaluator` / `LLMJudge`) for **offline** experiments.
-- **`data_only`** — self-contained JSON spec, framework-agnostic.
-- **`publish`** — write **online** LLM-judge evaluators directly to Datadog via `create_or_update_llmobs_evaluator`. These run automatically on matching production spans or traces (no dataset, no task function). The skill **auto-classifies** each proposed evaluator as **span-scoped** or **trace-scoped** based on what the judgment requires (a per-LLM-call tone check vs. an agent goal completion that needs the whole trace) — the user accepts or overrides the classification at the proposal checkpoint.
+- **`publish`** *(default)* — propose **online** LLM-judge evaluators, then — **only after you confirm the suite** — write them to Datadog via `create_or_update_llmobs_evaluator` as **disabled drafts** (`enabled: false`). Nothing is created until you confirm at the Phase 2 checkpoint, and nothing scores any spans until **you** enable it in the UI — the skill never auto-publishes a live evaluator. Once you enable a draft, it runs automatically on matching production spans, traces, or sessions (no dataset, no task function). The skill **auto-classifies** each proposed evaluator as **span-scoped**, **trace-scoped**, or **session-scoped** based on what the judgment requires (a per-LLM-call tone check vs. an agent goal completion that needs the whole trace vs. user satisfaction across a whole multi-trace conversation) — you accept or override the classification at that checkpoint. Session-scoped evaluators are only proposed when the app's spans carry a `session_id` (verified by a probe in Phase 1).
+- **`sdk_code`** *(on request — `--sdk-code`, or ask after a publish run)* — Python `.py` file using the Datadog Evals SDK (`BaseEvaluator` / `LLMJudge`) for **offline** experiments.
+- **`data_only`** *(on request — `--data-only`)* — self-contained JSON spec, framework-agnostic.
+
+After a publish run, if the user wants the same suite as offline code or a portable spec, they just ask — the skill regenerates the **already-confirmed** suite in `sdk_code` / `data_only` mode without re-exploring (see "On-request code generation" in Phase 3).
 
 ## Usage
 
 ```
-/eval-bootstrap <ml_app> [--timeframe <window>] [--data-only | --publish]
+/eval-bootstrap <ml_app> [--timeframe <window>] [--sdk-code | --data-only]
 ```
 
 Arguments: $ARGUMENTS
@@ -26,10 +54,10 @@ Arguments: $ARGUMENTS
 | `ml_app` | Yes | — | ML application to scope traces |
 | `timeframe` | No | `now-7d` | How far back to look |
 | `rca_report` | No | — | Failure taxonomy from `eval-trace-rca` skill, or a free-text failure hypothesis |
-| `--data-only` | No | off | Emit a self-contained JSON spec file instead of Python SDK code |
-| `--publish` | No | off | Publish online LLM-judge evaluators to Datadog (mutually exclusive with `--data-only`) |
+| `--sdk-code` | No | off | Emit a Python SDK `.py` file for offline experiments instead of publishing online (mutually exclusive with `--data-only`) |
+| `--data-only` | No | off | Emit a self-contained JSON spec file instead of publishing online (mutually exclusive with `--sdk-code`) |
 
-If `ml_app` is missing, ask the user before proceeding. If both `--data-only` and `--publish` are supplied, error out and ask which mode the user wants.
+If `ml_app` is missing, ask the user before proceeding. With no mode flag, the skill defaults to **`publish`** — it proposes online evaluators and, only after you confirm, creates them as disabled drafts (it never auto-enables them). If both `--sdk-code` and `--data-only` are supplied, error out and ask which mode the user wants.
 
 ## Available Tools
 
@@ -41,9 +69,9 @@ If `ml_app` is missing, ask the user before proceeding. If both `--data-only` an
 | `get_llmobs_trace` | Full trace hierarchy as span tree with span counts by kind. |
 | `get_llmobs_agent_loop` | Chronological agent execution timeline (LLM calls, tool invocations, decisions). |
 | `list_llmobs_evals` | List every evaluator configured for the caller's org across all ml_apps, with `enabled` status and `ml_app` per result. Call once in Phase 0 to map existing coverage before proposing new evaluators — filter the result by `ml_app` client-side. |
-| `get_llmobs_evaluator` | Fetch the persisted evaluator config by name (target ml_app + sampling + filter, provider, prompt template, parsing type, output schema, assessment criteria). Use in Phase 0 to understand what each existing custom eval measures and to map coverage. In publish mode also use it for the pre-publish name-collision check (rename or skip — never overwrite). Not all evaluators have a stored config (notably `source=ootb`); a not-found error there is expected — skip those. |
-| `create_or_update_llmobs_evaluator` | *(publish mode)* Write a **new** LLM-judge evaluator config to Datadog. **This skill only ever creates** — it never updates or overwrites an existing evaluator. If a name collision is detected via `get_llmobs_evaluator`, rename (e.g., `_v2` suffix) or skip; never re-call this tool with an `eval_name` that already exists. See "Publishing Conventions" for required fields and structured output → JSON schema mapping. |
-| `delete_llmobs_evaluator` | **This skill never invokes this tool.** Existing evaluators are always preserved. To delete an evaluator, the user does it directly in the UI. |
+| `get_llmobs_evaluator` | Fetch the **full** persisted evaluator config by name (target ml_app + sampling + filter, provider, prompt template, parsing type, output schema, assessment criteria). Use in Phase 0 to understand what each existing custom eval measures, and (in publish mode) **before any update** — `create_or_update_llmobs_evaluator` is full-replace, so you must round-trip the full config to avoid clobbering fields. Not all evaluators have a stored config (notably `source=ootb`); a not-found error there is expected — skip those. |
+| `create_or_update_llmobs_evaluator` | *(publish mode)* Write an LLM-judge evaluator config to Datadog. Full-replace semantics: any omitted optional field resets to its default. See "Publishing Conventions" for required fields and structured output → JSON schema mapping. |
+| `delete_llmobs_evaluator` | *(publish mode)* Only used if the user explicitly asks to remove an evaluator. Never invoke speculatively. |
 
 ### Key `get_llmobs_span_content` Patterns
 
@@ -63,6 +91,8 @@ Use the `path` parameter to extract targeted data without fetching full payloads
 Additional filters combine with space (AND): `@status:error @ml_app:my-app`. Dedicated params (`span_kind`, `root_spans_only`, `ml_app`) work alongside `query`, but `query` takes precedence over `tags`.
 
 To find spans with a specific eval: `@evaluations.custom.<eval_name>:*` — you can only query for eval *presence*, not specific results.
+
+To detect whether the app uses **sessions**: `session_id:*` matches any span carrying a `session_id` (`session_id` is a first-class field — no `@` prefix). The Phase 1 session probe uses this to gate session-scope evaluators.
 
 ### Parallelization Rules
 
@@ -284,7 +314,7 @@ If you have access to dd-trace-py locally, verify the API surface by reading the
 | **Cold Start** | Only `ml_app` provided (no RCA, no hypothesis) | Full open discovery — understand what the app does, identify quality dimensions worth measuring, propose evals for coverage |
 | **From RCA** | Conversation contains an RCA report or user provides a failure hypothesis | Skip open discovery — use existing failure taxonomy as eval targets |
 
-**Parse arguments**: Extract `ml_app` (first non-flag argument), `--timeframe` (default `now-7d`), `--data-only`, and `--publish` flags. Set `output_mode = publish` if `--publish` is set, `output_mode = data_only` if `--data-only` is set, otherwise `output_mode = sdk_code`. Error if both `--data-only` and `--publish` are present.
+**Parse arguments**: Extract `ml_app` (first non-flag argument), `--timeframe` (default `now-7d`), `--sdk-code`, and `--data-only` flags. Set `output_mode = sdk_code` if `--sdk-code` is set, `output_mode = data_only` if `--data-only` is set, otherwise `output_mode = publish` (the default). Error if both `--sdk-code` and `--data-only` are present.
 
 **Resolution steps:**
 
@@ -310,7 +340,11 @@ If you have access to dd-trace-py locally, verify the API surface by reading the
 
 #### Cold Start Path
 
-1. **Sample the app**: `search_llmobs_spans(ml_app=<ml_app>, root_spans_only=true, limit=50, from=<timeframe>, query="@status:ok")`. Filter by `@status:ok` — error spans have no output to evaluate.
+1. **Sample the app**: `search_llmobs_spans(query="@ml_app:\"<ml_app>\" @status:ok", root_spans_only=true, limit=50, from=<timeframe>)`. Filter by `@status:ok` — error spans have no output to evaluate.
+
+   **Session probe** *(gates session-scope proposals; `publish` mode)*: in the same message, also call `search_llmobs_spans(query="@ml_app:\"<ml_app>\" session_id:*", limit=20, from=<timeframe>)`.
+   - **≥ 1 result** → set `sessions_present = true`. Note the distinct `session_id` values and, critically, whether the same `session_id` appears across **multiple `trace_id`s** — that cross-trace span is the real signal that a session carries context worth a session-scope evaluator. (A `session_id` that only ever maps to one trace adds nothing over trace scope.)
+   - **0 results** → `sessions_present = false`. Do **not** propose any session-scope evaluator; record a one-line "session scope skipped — no `session_id` on sampled spans" note for the proposal.
 
 2. **Profile the app and identify evaluation target spans**: Call `get_llmobs_span_details` for span_ids grouped by trace_id. Inspect `content_info` to classify:
 
@@ -321,13 +355,14 @@ If you have access to dd-trace-py locally, verify the API surface by reading the
    | Spans include `agent` kind | Agent app |
    | `content_info` has `metadata` | Has custom metadata |
    | Multiple span kinds in one trace (`agent` + `tool` / `retrieval` + `llm` from `get_llmobs_trace`) | Multi-step app — at least one trace-scope evaluator likely belongs in the suite (`publish` mode) |
+   | Same `session_id` across **multiple `trace_id`s** (from the session probe) | Multi-trace sessions — at least one session-scope evaluator likely belongs in the suite (`publish` mode, gated on `sessions_present`) |
 
    For agent/multi-step apps, also call `get_llmobs_trace` on 2-3 traces to see the full span hierarchy. Compare `content_info` between the root span and its sub-spans. Then ask **two** questions for each candidate quality dimension, in this order:
 
    1. **Does the verdict depend on more than one span?** (e.g., faithfulness depends on a `retrieval` span's documents AND an `llm` span's answer; goal completion depends on the chain of `tool` calls AND the final response.) If yes → **trace scope** in `publish` mode. Don't try to compress this into a single span.
    2. **Only if the answer to (1) is no**: pick the single span with the richest signal for that dimension (root has the summary; LLM sub-spans have the full system prompt + tool call results + reasoning chain).
 
-   Record the span-kind histogram (agent + tool + llm + retrieval) — multiple kinds under one root is a strong signal you'll have at least one trace-scope evaluator in the suite. See Phase 2's "Span vs. Trace Scope Classification" for the mandatory walk-through of canonical trace-scope use cases.
+   Record the span-kind histogram (agent + tool + llm + retrieval) — multiple kinds under one root is a strong signal you'll have at least one trace-scope evaluator in the suite. See Phase 2's "Span vs. Trace vs. Session Scope Classification" for the mandatory walk-through of canonical trace-scope use cases (and, when `sessions_present`, the canonical session-scope use cases).
 
 3. **Extract content and identify targets**: Call `get_llmobs_span_content` for representative spans. Fetch fields based on app profile:
 
@@ -353,8 +388,23 @@ If you have access to dd-trace-py locally, verify the API surface by reading the
 
 #### From RCA Path
 
-1. Extract the failure taxonomy from the RCA report. Each failure mode with High or Medium severity becomes an eval target.
-2. For each target: if the RCA includes trace IDs, use them directly; otherwise search for matching traces. Fetch 2-3 traces per target with `get_llmobs_span_content` to understand the concrete pattern.
+1. Extract the failure taxonomy from the RCA report. Each failure mode with High or Medium severity becomes an eval target. Also run the Phase 1 **session probe** (`query="session_id:*"`) to set `sessions_present` — a failure that only manifests across a multi-trace conversation (lost context, repeated mistakes, mounting frustration) is a session-scope target.
+
+2. **Check root cause categories for infrastructure failures.** Before proposing evaluators, scan the Root Cause column of the taxonomy for any of: `Instrumentation Deficiency`, `Harness Deficiency`, `Runtime Error`, `Upstream Data Issue`, or any other root cause that points to infrastructure/environment rather than model behavior. If any are present, pause and ask:
+
+   > "Some failure modes were diagnosed as infrastructure or instrumentation issues rather than model behavior (e.g., `{list the infra root causes}`). Evaluators can be designed two ways:
+   > - **Behavior-targeted** (recommended for ongoing quality): measure whether the model produces correct, specific output — useful once the infrastructure is fixed and you want to track real quality
+   > - **Artifact-targeted** (useful as regression guard): detect the specific broken output observed (e.g., generic placeholder responses) — catches regressions if the infrastructure breaks again
+   >
+   > Which approach do you want, or both?"
+
+   - If **behavior-targeted**: design evaluators for what correct output looks like, not what the broken output looked like. Use the RCA's `expected_output` / gold-standard examples as the quality bar.
+   - If **artifact-targeted**: design evaluators that detect the specific failure symptom (e.g., `StringCheckEvaluator` for a known bad string, `LLMJudge` that checks for generic placeholders).
+   - If **both**: propose each category separately, clearly labelled.
+
+   If all root causes are behavioral (System Prompt Deficiency, Tool Gap, Tool Misuse, Retrieval Failure, etc.) → skip this step and proceed directly.
+
+3. For each target: if the RCA includes trace IDs, use them directly; otherwise search for matching traces. Fetch 2-3 traces per target with `get_llmobs_span_content` to understand the concrete pattern.
 
 ---
 
@@ -362,12 +412,12 @@ If you have access to dd-trace-py locally, verify the API surface by reading the
 
 **Goal**: Present a concrete evaluator proposal for user confirmation.
 
-Each evaluator judges **one data point** — it receives input and output for a single record/span, not a full trace or batch. Design evaluators accordingly.
+In `sdk_code` / `data_only` mode — and for `eval_scope: span` in `publish` mode — each evaluator judges **one data point**: input and output for a single record/span, not a full trace or batch. In `publish` mode, `eval_scope: trace` judges a whole trace and `eval_scope: session` a whole multi-trace session — design those against the trace / session payload instead (see "Span vs. Trace vs. Session Scope Classification" below). Design evaluators accordingly for their scope.
 
 **Targeting depends on `output_mode`:**
 
 - `sdk_code` / `data_only` → **offline experiments**. Template variables use `EvaluatorContext` fields (`{{input_data}}`, `{{output_data}}`). The actual data shape depends on the user's dataset and task function (see EvaluatorContext note in SDK Reference).
-- `publish` → **online evaluation on production spans**. Template variables resolve against the **full span JSON** via dot-paths (`{{meta.input.value}}`, `{{meta.output.messages[*].content}}`, …) or the built-in span-kind-aware aliases (`{{span_input}}`, `{{span_output}}`). See "Online Template Variables" under Publishing Conventions for the full syntax. Each evaluator also needs `eval_scope`, `sampling_percentage`, and (optionally) `filter` — surface these in the proposal table so the user can confirm before publishing.
+- `publish` → **online evaluation on production spans**. Template variables resolve against the **full span JSON** via dot-paths (`{{meta.input.value}}`, `{{meta.output.messages[*].content}}`, …) or the built-in span-kind-aware aliases (`{{span_input}}`, `{{span_output}}`). For `eval_scope: trace` and `eval_scope: session`, templates resolve against the trace payload (`{{spans[...]}}`) or the session payload (`{{traces[*].spans[...]}}`) instead. See "Online Template Variables" under Publishing Conventions for the full syntax. Each evaluator also needs `eval_scope`, `sampling_percentage`, and (optionally) `filter` — surface these in the proposal table so the user can confirm before publishing. Session scope is only used when the Phase 1 probe set `sessions_present`.
 
 Order proposals from broadest signal to most granular. **Propose broadly, let the user curate** — see "How many evaluators to propose" below.
 
@@ -399,13 +449,13 @@ The default `4-6` cap from the older skill version was too tight — it pushed t
 
 **In `data_only` mode**: skip this section entirely (coverage map was not built in Phase 0). Proceed directly to the proposal table.
 
-Before building the proposal, apply the coverage map from Phase 0. **Coverage is keyed on `(dimension, scope)` — not on dimension alone**: every OOTB evaluator runs at span scope, and an enabled OOTB eval does NOT preclude proposing a trace-scope evaluator for the same dimension. The two answer different questions.
+Before building the proposal, apply the coverage map from Phase 0. **Coverage is keyed on `(dimension, scope)` — not on dimension alone**: every OOTB evaluator runs at span scope, and an enabled OOTB eval does NOT preclude proposing a trace-scope **or session-scope** evaluator for the same dimension. The three scopes answer different questions.
 
 1. **Enabled span-scope eval (OOTB or custom)** for dimension D:
    - Do NOT propose a new **span-scope** evaluator for D — that dimension is already covered at span scope.
-   - DO propose a **trace-scope** evaluator for D when the trace shape calls for it (multi-step app, judgment depends on cross-span context). Note the relationship in the rationale: e.g., "OOTB `Goal Completeness` evaluates each LLM span in isolation; this trace-scope `goal_completion` checks whether the agent's full sequence of steps achieved the user's request — different question."
+   - DO propose a **trace-scope** or **session-scope** evaluator for D when the trace or session shape calls for it (multi-step app, or multi-trace session — judgment depends on cross-span or cross-trace context). Note the relationship in the rationale: e.g., "OOTB `Goal Completeness` evaluates each LLM span in isolation; this trace-scope `goal_completion` checks whether the agent's full sequence of steps achieved the user's request, and a session-scope `session_goal_completion` checks it across the whole conversation — three different questions."
 
-2. **Enabled trace-scope custom eval** for dimension D: do NOT propose another trace-scope evaluator for the same dimension; that's a real duplicate. Span-scope on the same dimension is still fair game if the data also fits a single span.
+2. **Enabled trace-scope custom eval** for dimension D: do NOT propose another trace-scope evaluator for the same dimension; that's a real duplicate. Span-scope on the same dimension is still fair game if the data also fits a single span, and session-scope is fair game if the dimension also needs cross-trace context. Likewise, an enabled **session-scope** custom eval for D blocks only another session-scope eval for D — span and trace scope remain fair game.
 
 3. **Disabled OOTB eval**: Do NOT propose a new custom span-scope evaluator for that dimension. Instead, surface it in a short note within the proposal and suggest enabling it in the Datadog UI rather than creating a duplicate. Example:
 
@@ -413,12 +463,12 @@ Before building the proposal, apply the coverage map from Phase 0. **Coverage is
 
 4. **Gap identification**: Open the proposal with a coverage summary line: "Existing coverage: N evaluator(s) already configured ({names}, all span-scope unless noted). Proposing evaluators for uncovered dimensions and uncovered scopes."
 
-5. **All dimensions covered**: A dimension is "fully covered" only when **both** scopes are present (or the scope doesn't apply to the app shape). If the coverage map accounts for every identified quality dimension at the appropriate scope(s), surface this explicitly and ask the user what they want: (a) review/improve existing eval prompts, (b) add coverage for additional dimensions, or (c) proceed anyway.
+5. **All dimensions covered**: A dimension is "fully covered" only when the relevant scopes are present (span, plus trace and/or session where the app shape calls for them). If the coverage map accounts for every identified quality dimension at the appropriate scope(s), surface this explicitly and ask the user what they want: (a) review/improve existing eval prompts, (b) add coverage for additional dimensions, or (c) proceed anyway.
 
 For each proposed evaluator:
 
 - **Name**: Must match `^[a-zA-Z0-9_-]+$` (alphanumeric, underscore, hyphen only)
-- **Type**: `LLMJudge` (Boolean/Score/Categorical/custom JSON schema), built-in (`JSONEvaluator`, `RegexMatchEvaluator`, etc.), or `BaseEvaluator` subclass. *In `publish` mode, only LLM-judge evaluators are supported by the MCP tool — code-based checks must NOT be silently dropped. List them in the same proposal table with `Type` set to the code-based class, mark them under a "Not publishable in this mode" subsection of the proposal, and tell the user to run the skill again in default `sdk_code` mode (or `--data-only`) to capture them. Treat the code-based proposals as part of the suite for counting and coverage purposes.*
+- **Type**: `LLMJudge` (Boolean/Score/Categorical/custom JSON schema), built-in (`JSONEvaluator`, `RegexMatchEvaluator`, etc.), or `BaseEvaluator` subclass. *In `publish` mode, only LLM-judge evaluators are supported by the MCP tool — code-based checks must NOT be silently dropped. List them in the same proposal table with `Type` set to the code-based class, mark them under a "Not publishable in this mode" subsection of the proposal, and tell the user they can get them as offline code on request (`--sdk-code`, or ask after the publish run) or as a `--data-only` spec. Treat the code-based proposals as part of the suite for counting and coverage purposes.*
 - **What it measures**: 1-2 sentence plain-language description
 - **Target span**: Which span's data the evaluator was designed for (e.g., "root agent span", "LLM sub-span `anthropic.request`", "all `llm` spans"). If the root span's I/O is too lossy for the quality dimension (e.g., tool call results aren't visible), note this and specify which sub-span has the signal. *In `publish` mode this maps to a combination of `eval_scope` (`span`/`trace`/`session`), `root_spans_only`, and the EVP `filter` query (e.g. `@meta.span.kind:llm` or `service:web`).*
 - **Pass/fail criteria**: `pass_when=True`, `min_threshold=7`, `pass_values=["correct"]`, or "no automatic assessment" for custom JSON schema
@@ -427,7 +477,7 @@ For each proposed evaluator:
 - **Publish-only fields** *(only in `publish` mode)*: `integration_provider` (default `openai`), `model_name` (default `gpt-5.4-mini`), `sampling_percentage` (default `10`), `eval_scope` (default `span`), and any `filter` query needed to scope to the right spans. Surface defaults in the proposal so the user can override before publishing.
 - **`integration_account_id`** *(only in `publish` mode)*: the integration account the judge LLM is called through. Auto-detected from existing evaluators in the same ml_app (Phase 0 coverage map). Never asked from the user as a raw UUID. If no existing evaluator has one, the field is omitted and the user picks an account in the UI before activating. **All evaluators are published with `enabled: false` regardless** — see "Always publish as draft" in Phase 3C for the full activation workflow.
 
-#### Span vs. Trace Scope Classification (`publish` mode)
+#### Span vs. Trace vs. Session Scope Classification (`publish` mode)
 
 **Don't ask the user; classify per evaluator and let them override at the checkpoint.**
 
@@ -442,27 +492,46 @@ If Phase 1 found multi-step traces (≥ 2 span kinds, or any `tool` / `retrieval
 | `rag_faithfulness` — answer grounded in retrieved documents? | Trace contains `retrieval` kind spans. |
 | `conversation_quality` — coherence across multi-turn LLM calls? | Trace contains ≥ 2 `llm` spans, or app instruments multi-turn sessions. |
 
-For other proposed evaluators (e.g. tone, format, safety), apply this two-question test:
+##### Mandatory: walk the canonical session-scope use cases (only when `sessions_present`)
+
+**Gate:** perform this walk-through **only if** the Phase 1 session probe set `sessions_present = true`. If sessions are absent, skip session scope entirely and note "session scope skipped — no `session_id` on sampled spans" in the proposal.
+
+When `sessions_present`, you **MUST** walk through the four canonical session-scope use cases below. For each, decide explicitly: **applies** (include with `eval_scope: session`) or **does not apply** (one-line reason in a "Skipped session-scope candidates" subsection). Session scope answers questions that span **more than one trace** under the same `session_id` — a single trace cannot see prior or later turns.
+
+| Canonical session use case | Triggers when |
+|---|---|
+| `session_goal_completion` — were the user's goals met across the whole session? | A `session_id` spans ≥ 2 traces. Almost always applies for multi-trace sessions. |
+| `multi_turn_conversation_quality` — coherence, memory, and consistent tone across turns | Multi-trace chat / assistant sessions. |
+| `user_frustration_signals` — frustration, confusion, repetition, or abandonment over the session | Any multi-turn session (repeated or rephrased asks across traces). |
+| `agent_consistency_across_session` — did the agent stay consistent and recover from errors across traces? | Agent app whose sessions span ≥ 2 traces. |
+
+For other proposed evaluators (e.g. tone, format, safety), apply this scope test in order:
 
 1. Can the judgment be answered correctly from **one** span's `meta.input` + `meta.output`, where "correctly" means the verdict cannot change if you considered other spans in the trace? → **`eval_scope: span`**.
-2. Otherwise → **`eval_scope: trace`**. In particular, default to trace when the evaluator name contains *grounding*, *faithfulness*, *hallucination*, *completeness*, *correctness across steps*, *consistency*, or *workflow* — these almost always need cross-span context.
+2. Otherwise, if it is answerable from the spans of a **single trace** → **`eval_scope: trace`**. Default to trace when the evaluator name contains *grounding*, *faithfulness*, *hallucination*, *completeness*, *correctness across steps*, *consistency*, or *workflow* — these almost always need cross-span context.
+3. Otherwise, if the verdict needs context from **more than one trace** in the same `session_id` (overall satisfaction, behavior over time, multi-turn coherence) **and** `sessions_present` → **`eval_scope: session`**. Default to session when the name contains *session*, *conversation*, *across turns*, *over time*, *satisfaction*, *frustration*, or *abandonment*. If `sessions_present` is false, fall back to trace scope and note the limitation.
 
 ##### Trade-offs (don't let these dominate the choice)
 
-Trace scope costs more than span scope: one judgment per **completed** trace (vs. per matching span), larger prompt payloads, and a 3-minute trigger latency (Datadog waits 3 minutes of inactivity before considering a trace complete; later spans are excluded). These are **cost-control** levers — handle with `sampling_percentage` and `filter`, not by demoting scope. The *correctness* of the eval is what picks the scope.
+Trace scope costs more than span scope: one judgment per **completed** trace (vs. per matching span), larger prompt payloads, and a 3-minute trigger latency (Datadog waits 3 minutes of inactivity before considering a trace complete; later spans are excluded). Session scope costs the most: one judgment per **completed session** (a `session_id` is complete after **30 minutes of inactivity** — vs. 3 minutes for a trace — and spans arriving > 30 min after the prior span are excluded), with the largest payloads (every span of every trace in the session, capped at 10,000 spans). These are **cost-control** levers — handle with `sampling_percentage` and `filter`, not by demoting scope. The *correctness* of the eval is what picks the scope.
 
 ##### Surface the classification
 
-Add a **Scope** column to the proposal table and a one-sentence rationale per evaluator. If you skipped a canonical trace-scope use case, list it under a "Skipped trace-scope candidates" subsection with the reason — the user will see and can override.
+Add a **Scope** column to the proposal table and a one-sentence rationale per evaluator. If you skipped a canonical trace-scope **or session-scope** use case, list it under the matching "Skipped …-scope candidates" subsection with the reason — the user will see and can override.
 
 > Example rationales:
 > - `tone_check` — **span**. Judging "is this single response polite" needs only one LLM span's `meta.output.messages[*].content`; no other span in the trace can change that verdict.
 > - `goal_completion` — **trace**. Whether the agent finished the user's request depends on the sequence of tool calls and the final LLM response together — `meta.output` of any single span only shows that step's output.
 > - `tool_use_correctness` — **trace**. Comparing tool inputs against the request and the final response requires correlating ≥ 3 spans (root, tool, final LLM).
 > - `rag_faithfulness` — **trace**. Grounding pairs the `retrieval` span's documents with the LLM span's answer.
+> - `session_goal_completion` — **session**. Whether the user's overall goals were met depends on every trace in the `session_id`, not just the last one — only session scope sees the full conversation.
+> - `user_frustration_signals` — **session**. Frustration surfaces as repeated or rephrased asks across traces; a single trace can't reveal the pattern.
 >
 > Example "Skipped trace-scope candidates" entry:
 > - `conversation_quality` — skipped: traces contain a single LLM call (no multi-turn signal in this app's instrumentation).
+>
+> Example "Skipped session-scope candidates" entry:
+> - `session_goal_completion` — skipped: every `session_id` maps to a single trace (no cross-trace context — trace scope already covers it).
 
 #### MANDATORY CHECKPOINT
 
@@ -478,7 +547,8 @@ Add a **Scope** column to the proposal table and a one-sentence rationale per ev
 |---|------|------|-------|----------|---------------|
 | 1 | task_completion | LLMJudge (Boolean) | span | Whether the task was completed on this span | pass_when=True |
 | 2 | tool_use_correctness | LLMJudge (Categorical) | trace | Right tool with right arguments across the agent run | pass_values=["correct"] |
-| 3 | ... | ... | ... | ... | ... |
+| 3 | session_goal_completion | LLMJudge (Categorical) | session | Whether the user's goals were met across the whole multi-trace session | pass_values=["completed"] |
+| 4 | ... | ... | ... | ... | ... |
 
 (Drop the **Scope** column when not in `publish` mode.)
 
@@ -486,7 +556,7 @@ For each evaluator:
 - **{name}**: {what it measures}
   - Target span: {which span's data it was designed for}
   - Rationale: {which quality dimension it covers and why}
-  - {Only in publish mode:} Scope: {span | trace} — {one-sentence rationale}
+  - {Only in publish mode:} Scope: {span | trace | session} — {one-sentence rationale}
   - Evidence: [Trace {id_short}](https://app.datadoghq.com/llm/traces?query=trace_id:{full_id})
 
 {Only in publish mode, for multi-step apps. Required if any of the four canonical trace-scope use cases was not included above:}
@@ -494,13 +564,22 @@ For each evaluator:
 **Skipped trace-scope candidates:**
 - `{canonical_use_case}` — {one-line reason it does not apply to this app}
 
+{Only in publish mode, when `sessions_present`. Required if any of the four canonical session-scope use cases was not included above:}
+
+**Skipped session-scope candidates:**
+- `{canonical_use_case}` — {one-line reason it does not apply, e.g. "every `session_id` maps to a single trace"}
+
+{Only in publish mode, when the session probe found no sessions:}
+
+**Session scope skipped** — no `session_id` on sampled spans; session-scope evaluators not proposed.
+
 {Only in publish mode, when the suite contains code-based evaluators (JSONEvaluator, RegexMatchEvaluator, LengthEvaluator, StringCheckEvaluator, BaseEvaluator). Required when any code-based proposal exists.}
 
 **Not publishable in this mode** (code-based evaluators — the publish API is LLM-judge only):
-- `{name}` ({type}) — {what it would check}. Re-run `/eval-bootstrap {ml_app}` in default mode to emit as offline SDK code, or `/eval-bootstrap {ml_app} --data-only` for a framework-agnostic JSON spec.
+- `{name}` ({type}) — {what it would check}. Ask me to emit these as offline SDK code (or run `/eval-bootstrap {ml_app} --sdk-code`), or `/eval-bootstrap {ml_app} --data-only` for a framework-agnostic JSON spec.
 ```
 
-**Which evaluators should I generate?** Treat the proposal as a candidate set — the suite below is intentionally broad so you can pick what matters for your team's quality bar. Reply with **which to keep, which to drop, and which to rename**; not every domain-specific proposal will fit your priorities. In `sdk_code` mode you may also add custom evaluators or change provider/model. In `publish` mode you may override `integration_provider`, `model_name`, `sampling_percentage`, `eval_scope`, `root_spans_only`, or `filter` per evaluator.
+**Which evaluators should I generate?** Treat the proposal as a candidate set — the suite below is intentionally broad so you can pick what matters for your team's quality bar. Reply with **which to keep, which to drop, and which to rename**; not every domain-specific proposal will fit your priorities. In `sdk_code` mode you may also add custom evaluators or change provider/model. In `publish` mode you may override `integration_provider`, `model_name`, `sampling_percentage`, `eval_scope`, `root_spans_only`, or `filter` per evaluator. (In the default `publish` mode these are created as **online drafts** in Datadog on confirmation — you review and enable them in the UI. Prefer offline SDK code or a JSON spec instead? Say so and I'll generate the confirmed suite that way.)
 
 Do NOT proceed to code generation until the user confirms.
 
@@ -510,9 +589,17 @@ Do NOT proceed to code generation until the user confirms.
 
 Branch on `output_mode`:
 
+- `publish` *(default)* → skip to **Phase 3C**
 - `sdk_code` → **Phase 3A** below
 - `data_only` → skip to **Phase 3B**
-- `publish` → skip to **Phase 3C**
+
+#### On-request code generation (after a publish run)
+
+The default path publishes **online** evaluators. If the user then asks for the suite as offline code or a portable spec (e.g. "now generate the SDK code for these", "give me a JSON spec"), **do not re-run Phase 1–2**. Reuse the **already-confirmed** evaluator suite and jump straight to **Phase 3A** (`sdk_code`) or **Phase 3B** (`data_only`), translating each published online evaluator into the offline form:
+- The online prompt template (span/trace/session placeholders) becomes an offline LLMJudge with generic `{{input_data}}` / `{{output_data}}` placeholders (offline data comes from the user's dataset/task function, not spans — see the EvaluatorContext note), preserving the rubric and pass criteria.
+- Code-based checks that couldn't be published online (the "Not publishable in this mode" set) are emitted as real `BaseEvaluator` / built-in evaluators here.
+
+This works the other way too: a user who started with `--sdk-code` can ask to publish the confirmed suite online (Phase 3C).
 
 ---
 
@@ -627,27 +714,37 @@ Wrote {N} evaluators to `{output_path}`:
 
 #### Notebook export (after summary)
 
-After displaying the summary, offer notebook export:
+After displaying the summary, offer notebook export.
 
 - **If `rca_notebook_url` was detected in Phase 0**:
   > An RCA notebook was created earlier in this session: `{rca_notebook_url}`
   > Would you like to (a) append the evaluator suite summary to that notebook, or (b) create a new standalone notebook?
 
-  If **append**: call `mcp__datadog-mcp__edit_datadog_notebook` with `id={rca_notebook_id}`, `append_only=true`, and the evaluator suite summary cell (see Notebook cell content below).
+  If **append**: use the notebook creation fallback pattern (see below) with `mcp__datadog-mcp__edit_datadog_notebook` (`id={rca_notebook_id}`, `append_only=true`, evaluator suite summary cell).
 
-  If **new**: call `mcp__datadog-mcp__create_datadog_notebook` (see below).
+  If **new**: use the notebook creation fallback pattern (see below) with `mcp__datadog-mcp__create_datadog_notebook`.
 
 - **If no `rca_notebook_url`**:
   > Would you like to export this evaluator suite summary to a Datadog notebook?
 
-  If yes: call `mcp__datadog-mcp__create_datadog_notebook` with:
+  If yes: use the notebook creation fallback pattern (see below) with `mcp__datadog-mcp__create_datadog_notebook`:
   - **`name`**: `Eval Bootstrap: {ml_app} — YYYY-MM-DD`
   - **`type`**: `report`
   - **`cells`**: single markdown cell with the evaluator suite summary
   - **`time`**: `{ "live_span": "1h" }`
 
-After the notebook is created or updated, output the URL:
-`Evaluator suite exported to notebook: <url>`
+**Notebook creation fallback pattern** (apply to every `create_datadog_notebook` / `edit_datadog_notebook` call):
+
+1. Try the MCP tool first.
+2. **If the MCP call fails**, inspect the error:
+   - **Auth / permission error (401, 403)** → stop and tell the user.
+   - **Field validation error** (error names a specific field) → fix that field and retry the MCP call once.
+   - **Any other error** (binding, serialization, unexpected response) → fall back to pup:
+     - Write the payload to `/tmp/nb_bootstrap_{ml_app}.json` as a full API envelope: `{"data": {"attributes": {"name": "...", "time": {...}, "cells": [...]}, "type": "notebooks"}}`
+     - Run `pup notebooks create --file /tmp/nb_bootstrap_{ml_app}.json`
+     - If pup is not available either, render the notebook content as markdown in chat.
+3. After successful creation by either method, output the URL:
+   `Evaluator suite exported to notebook: <url>`
 
 **Notebook cell content** — the markdown cell should contain:
 
@@ -656,6 +753,10 @@ After the notebook is created or updated, output the URL:
 
 **Generated**: YYYY-MM-DD | **App profile**: {LLM | RAG | Agent | Multi-agent} | **Entry mode**: {cold_start | from_rca}
 **Generated code**: `{output_path}`
+
+{One sentence: what does this app do?}
+
+**Coverage**: {N} new evaluators ({comma-separated dimension names}) | {N} existing (unchanged: {names}) | {gaps if any: dimensions identified but not covered, and why}
 
 ### Evaluator Suite
 
@@ -778,27 +879,29 @@ Wrote `./evals/{ml_app}_eval_spec.json`:
 
 #### Notebook export (after summary)
 
-Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_url` was detected, or create a new standalone notebook. Use the same notebook cell format as Phase 3A, substituting `output_path` with the JSON spec file path.
+Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_url` was detected, or create a new standalone notebook. Use the same notebook cell format as Phase 3A, substituting `output_path` with the JSON spec file path. In pup mode, use `pup notebooks create` / `pup notebooks edit` as described in Phase 3A.
 
 ---
 
-### Phase 3C: Publish Online Evaluators to Datadog
+### Phase 3C: Publish Online Evaluators to Datadog (as disabled drafts)
 
-**Goal**: For each confirmed evaluator, write an LLM-judge configuration to Datadog via `create_or_update_llmobs_evaluator` so it runs automatically on matching production spans.
+**Reached only after the user confirms the suite at the Phase 2 checkpoint — nothing below is written to Datadog before that.**
+
+**Goal**: For each confirmed evaluator, write an LLM-judge configuration to Datadog via `create_or_update_llmobs_evaluator` as a **disabled draft** (`enabled: false`). It scores **no** spans until the user reviews and enables it in the UI; once enabled, it runs automatically on matching production spans.
 
 #### Pre-publish checks (single message — parallelize)
-
-**Hard rule: this skill never modifies or deletes existing evaluators.** Every published evaluator is a *new* draft. If a proposed name collides with an existing evaluator, the skill renames or skips — it never overwrites. To change an existing evaluator's prompt, sampling, or filter, the user edits it directly in the Datadog UI.
 
 For every proposed `eval_name`, call `get_llmobs_evaluator(eval_name=...)`:
 
 - **Not found** → safe to create.
-- **Found** → existing evaluator with the same name. Surface a one-line summary to the user (existing dimension / prompt direction vs. proposed) and ask:
-  > Evaluator `{name}` already exists in this ml_app. I will **not** modify it. Should I (a) **rename** the new one to `{name}_v2` and create it as a separate draft, or (b) **skip** the proposal entirely?
+- **Found** → existing evaluator with the same name. Surface a diff to the user (existing dimension/prompt vs. proposed) and ask:
+  > Evaluator `{name}` already exists. Overwrite, rename, or skip?
 
-  If **rename**: append a suffix (`_v2`, `_v3`, …) until the name is free, and treat as a new create.
+  If **overwrite**: keep the fetched config as the base and **merge** your generated fields on top, then send the **complete** object back. The MCP tool is full-replace — any field you omit (e.g. `temperature`, `max_tokens`, `filter`, `sampling_percentage`) reverts to its default. Never re-publish without round-tripping the existing config.
 
-  If **skip**: drop from the publish set. Note in the proposal summary that this dimension is already covered by `{name}`.
+  If **rename**: append a suffix (e.g. `_v2`) and treat as new.
+
+  If **skip**: drop from the publish set.
 
 #### Publishing Conventions
 
@@ -813,8 +916,8 @@ For every proposed `eval_name`, call `get_llmobs_evaluator(eval_name=...)`:
 | `model_name` | `gpt-5.4-mini` |
 | `temperature` | `0` |
 | `parsing_type` | `structured_output` |
-| `sampling_percentage` | `10` for span scope, `5` for trace scope |
-| `eval_scope` | `span` (auto-promoted to `trace` per the classification rule in Phase 2) |
+| `sampling_percentage` | `10` for span scope, `5` for trace scope, `5` for session scope (the heaviest — consider lowering) |
+| `eval_scope` | `span` (auto-promoted to `trace` or `session` per the classification rule in Phase 2) |
 
 **Prompt template**: convert the LLMJudge prompt into the MCP shape — an ordered array of `{role, content}` messages. The system prompt becomes `{role: "system"}`, the user prompt becomes `{role: "user"}`. Use **span-data placeholders** (see below) — **not** the offline `{{input_data}}` / `{{output_data}}` form, which only exists in `EvaluatorContext`.
 
@@ -824,7 +927,7 @@ Online evaluator prompts run through the dd-source `template` library (`domains/
 
 - **`eval_scope: span`** *(default)* — placeholders resolve against a **single span's JSON** (the `llmobs.Span` JSON-marshaled to a map). Use the span aliases / dot-paths below directly.
 - **`eval_scope: trace`** — placeholders resolve against the **trace payload** `{ spans: [...] }`. Use `{{spans[N]...}}`, `{{spans[*]...}}`, or `{{spans[field.path:value]...}}` to select span(s) before applying field paths. The `{{span_input}}` / `{{span_output}}` aliases are **not available** in trace scope — reference span data through the `spans` array instead.
-- **`eval_scope: session`** — not supported by this skill; classify as `span` and surface the limitation to the user.
+- **`eval_scope: session`** — placeholders resolve against the **session payload** `{ session_id, traces: [ { trace_id, root_span_id, spans: [...] }, … ] }`. Reach spans through `{{traces[*].spans[*]...}}` (nested one level deeper than trace scope) plus the array selectors below. The `{{span_input}}` / `{{span_output}}` aliases **and** trace scope's top-level `{{spans[...]}}` are **not available** — spans live under `traces[*].spans`. Only used when `sessions_present` (Phase 1 probe).
 
 ###### Span-scope (`eval_scope: span`)
 
@@ -862,7 +965,25 @@ Online evaluator prompts run through the dd-source `template` library (`domains/
 | `{{spans[meta.span.kind:retrieval].meta.output.documents[*].text}}` | Text of every retrieved document — useful for RAG faithfulness |
 | `{{*}}` | Entire trace payload as JSON (debug fallback) |
 
-###### Array selector syntax (applies to both scopes)
+###### Session-scope (`eval_scope: session`)
+
+| Pattern | What you get |
+|---------|--------------|
+| `{{traces}}` | JSON of every trace in the session, each `{ trace_id, root_span_id, spans: [...] }` |
+| `{{session_id}}` | The session's ID |
+| `{{traces[*].trace_id}}` | Every trace ID in the session, newline-joined |
+| `{{traces[0].spans[0].meta.input.value}}` | First span of the first trace |
+| `{{traces[*].spans[*].name}}` | Every span name across the whole session |
+| `{{traces[*].spans[*].meta.output.value}}` | Every span's output across the session |
+| `{{traces[*].spans[meta.span.kind:llm].meta.input.messages[*].content}}` | All LLM-span input messages across the session — the user turns |
+| `{{traces[*].spans[meta.span.kind:llm].meta.output.messages[*].content}}` | All assistant responses across the session |
+| `{{traces[*].spans[meta.span.kind:tool]}}` | Every tool span (paired in/out) across the session |
+| `{{traces[*].spans[meta.span.kind:retrieval].meta.output.documents[*].text}}` | Text of every retrieved document across the session (RAG) |
+| `{{*}}` | Entire session payload as JSON (debug fallback) |
+
+Note: the filter selector applies to the **`spans`** array (`traces[*].spans[meta.span.kind:llm]`), not to `traces` — a trace object has only `trace_id`, `root_span_id`, and `spans`, so there is nothing to filter on at the trace level.
+
+###### Array selector syntax (applies to all scopes)
 
 - `[N]` — index (0-based)
 - `[START,END]` — inclusive range, `END` is clamped to slice length
@@ -881,6 +1002,7 @@ Online evaluator prompts run through the dd-source `template` library (`domains/
 - **LLM-span-specific evaluator** (e.g. `system_prompt_adherence`) → reach for explicit `meta.input.messages[*].content` / `meta.output.messages[*].content` so you can split system vs. user vs. assistant turns.
 - **Span-scope RAG evaluator** (single retrieval+generation span) → combine `{{meta.input.documents}}` with `{{span_output}}`.
 - **Trace-scope evaluator** → see "Trace-scope evaluator examples" below for the four canonical patterns (goal completion, tool-use correctness, RAG faithfulness, conversation quality).
+- **Session-scope evaluator** → see "Session-scope evaluator examples" below for the four canonical patterns (session goal completion, multi-turn conversation quality, user frustration signals, agent consistency across the session).
 - **Metadata-aware evaluator** → reference `{{meta.metadata.<key>}}` directly.
 
 If the user has existing custom evaluators in the same ml_app (Phase 0 coverage map), match their convention when there is no strong reason to deviate.
@@ -897,6 +1019,19 @@ Concrete user-prompt bodies for the four canonical trace-scope use cases, drawn 
 | **Conversation quality** — coherence and consistency across turns | `@parent_id:undefined` | `Conversation:\n{{spans[meta.span.kind:llm].meta.input.messages[*].content}}\n\nAssistant responses:\n{{spans[meta.span.kind:llm].meta.output.messages[*].content}}` |
 
 Use these as starting points. Adapt the `filter` and span paths to the actual span names / kinds the app emits (observed during Phase 1).
+
+###### Session-scope evaluator examples
+
+Concrete user-prompt bodies for the four canonical session-scope use cases (adapted from the public [Session-Level Evaluations](https://docs.datadoghq.com/llm_observability/evaluations/custom_llm_as_a_judge_evaluations/session_level_evaluations/) docs). Each goes alongside a static System prompt that describes the rubric (no placeholders). The `filter` is matched against the **session's root span** (not every span), so scope it with root-span attributes; there is no `@parent_id:undefined` requirement beyond that.
+
+| Use case | `filter` | User prompt body |
+|---|---|---|
+| **Session goal completion** — user's goals met across the session | `@meta.span.kind:agent` (or the app's root span kind) | `Session traces (chronological):\n{{traces}}` |
+| **Multi-turn conversation quality** — coherence and memory across turns | `@meta.span.kind:agent` | `User messages:\n{{traces[*].spans[meta.span.kind:llm].meta.input.messages[*].content}}\n\nAssistant responses:\n{{traces[*].spans[meta.span.kind:llm].meta.output.messages[*].content}}` |
+| **User frustration signals** — frustration / abandonment over the session | `@meta.span.kind:agent` | `Full session:\n{{traces}}` |
+| **Agent consistency across the session** — consistent and recovers across traces | `@meta.span.kind:agent` | `Session traces (chronological):\n{{traces}}` |
+
+Adapt the `filter` and span paths to the actual span kinds the app emits (observed in Phase 1).
 
 **`output_schema` wrapper format (required for all providers)**
 
@@ -994,6 +1129,13 @@ Note: categorical uses `"type": "string"` alongside `anyOf` (each `const` is a s
 - The `filter` query must match the trace's **root span only** — always include `@parent_id:undefined` (or `root_spans_only: true`) to avoid double-firing across descendants. Combine with `@meta.span.kind:agent` (or whatever kind the app uses for root spans, observed in Phase 1) for narrowing.
 - Sampling at trace scope is heavier than at span scope (one trace = many spans on the judge's side). Default `sampling_percentage` to **`5`** for trace-scope evaluators (instead of the span default `10`); the user can raise it after a manual review pass.
 
+**For `eval_scope: session`:**
+
+- Only publish session-scope evaluators when `sessions_present` (Phase 1 probe). Otherwise the evaluator never fires — no span carries a `session_id`.
+- The evaluator triggers once per **completed session**. A `session_id` is complete after **30 minutes of inactivity** (vs. 3 minutes for a trace); spans arriving > 30 min after the prior span are **excluded**. Surface both the latency and the exclusion — long-running or sparse sessions may be split or truncated, and very large sessions are capped at 10,000 spans.
+- The `filter` is matched against the session's **root span** (the same prefilter trace scope uses), so scope it with root-span attributes — e.g. `@meta.span.kind:agent` (or the app's root span kind, observed in Phase 1). You do **not** need `@parent_id:undefined`: the session root is already a root span.
+- Sampling at session scope is the heaviest of all (one session = many traces = many spans on the judge's side). Default `sampling_percentage` to **`5`** (matching trace) and flag it as the heaviest scope; the user can lower it further after a manual review pass.
+
 #### Always publish as draft (`enabled: false`)
 
 **Always create / update evaluators with `enabled: false`** — regardless of whether `integration_account_id` was auto-detected from existing evaluators. The UI is the source of truth for activation; the skill should never auto-enable evaluators on the user's behalf. The user reviews each draft in the UI, confirms the integration account is correct (the auto-detected ID may belong to a different judge LLM than the one they want for this app), and flips the toggle when they're satisfied.
@@ -1014,7 +1156,7 @@ Either way, the evaluator is published with `enabled: false`. The user is the ga
 
 #### Publish (single message — parallelize)
 
-Issue all `create_or_update_llmobs_evaluator` calls in a **single message** (one per evaluator). Set `telemetry.intent` to a short English description like `"Bootstrap evaluator suite for ml_app=<ml_app> from production trace analysis."`.
+Issue all `create_or_update_llmobs_evaluator` calls in a **single message** (one per evaluator). Set `telemetry.intent` to a short English description like `"skill:llm-obs-eval-bootstrap — Bootstrap evaluator suite for ml_app=<ml_app> from production trace analysis."`.
 
 If any call fails, capture the error and continue with the remaining evaluators — never silently abort the batch. Report failures explicitly in the summary.
 
@@ -1031,6 +1173,7 @@ Wrote {N} online evaluators to ml_app `{ml_app}`. **All published as drafts (`en
 | 2 | response_groundedness | overwrote (draft) | openai/gpt-5.4-mini | 10% | span | yes | ok |
 | 3 | scope_adherence | renamed (`_v2`) (draft) | openai/gpt-5.4-mini | 10% | span | no — pick in UI | ok |
 | 4 | citation_format | failed | openai/gpt-5.4-mini | 10% | span | — | error |
+| 5 | session_goal_completion | created (draft) | openai/gpt-5.4-mini | 5% | session | yes | ok |
 
 {If any failed:}
 **Errors**:
@@ -1038,7 +1181,7 @@ Wrote {N} online evaluators to ml_app `{ml_app}`. **All published as drafts (`en
 
 {If any code-based proposals were dropped:}
 **Not published** (code-based, not supported by online evaluator API):
-- `{name}` ({type}) — consider running offline via `/eval-bootstrap {ml_app}` (SDK mode).
+- `{name}` ({type}) — ask me to emit it as offline SDK code, or run `/eval-bootstrap {ml_app} --sdk-code`.
 
 ### Next Steps — review and activate in the UI
 
@@ -1047,16 +1190,17 @@ The drafts are intentionally not running yet. Walk through each one in the Datad
 1. **Open the drafts**: Datadog → LLM Observability → Evaluations → filter by ml_app `{ml_app}` (the new drafts appear with status `Disabled`).
 2. **For each draft**:
    - **Verify the integration account** in the Provider section. If the column above shows `auto-detected: yes`, confirm it's the correct account for the judge LLM you want this evaluator to call through. If `no`, pick an account from the dropdown.
-   - **Skim the prompt template** and the structured-output schema — make sure the spans-vs-trace scope, filter, and sampling match what you actually want to measure.
+   - **Skim the prompt template** and the structured-output schema — make sure the span / trace / session scope, filter, and sampling match what you actually want to measure.
    - **Click into a sample span/trace** and use the test pane to dry-run the prompt against real data. Confirm the result matches your expectation.
 3. **Enable**: once each draft passes review, toggle it to enabled. Datadog starts scoring incoming spans immediately.
-4. **Wait for first scores**: with `sampling_percentage=10` (span scope) or `5` (trace scope), expect first results within minutes for high-traffic apps.
-5. **Tune sampling / filter / prompt**: any post-creation edits live in the UI. The skill never modifies or deletes evaluators it (or anyone) created earlier — re-running `/eval-bootstrap {ml_app} --publish` will detect existing names and either rename (creating a `_v2` draft) or skip them, leaving your tuned originals untouched.
+4. **Wait for first scores**: with `sampling_percentage=10` (span scope) or `5` (trace / session scope), expect first results within minutes for high-traffic apps — except **session scope**, where the first result appears only after the session's 30-minute inactivity window closes.
+5. **Tune sampling/filter**: if results are noisy or volume is too high, reduce `sampling_percentage` or tighten the `filter` from the UI. Re-running `/eval-bootstrap {ml_app}` will round-trip the existing config before overwriting — your manual tweaks survive across reruns.
+6. **Prefer offline code?** These evaluators run online in Datadog. If you'd rather iterate on the same suite as offline SDK code (`sdk_code`) or a portable JSON spec (`data_only`), just ask — I'll regenerate the **confirmed** suite without re-exploring.
 ```
 
 #### Notebook export (after summary)
 
-Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_url` was detected, or create a new standalone notebook. The notebook cell should list the published evaluators with their UI links and the `ml_app` they target.
+Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_url` was detected, or create a new standalone notebook. The notebook cell should list the published evaluators with their UI links and the `ml_app` they target. In pup mode, use `pup notebooks create` / `pup notebooks edit` as described in Phase 3A.
 
 ---
 
@@ -1066,5 +1210,68 @@ Same logic as Phase 3A — offer to append to the RCA notebook if `rca_notebook_
 - **Don't overfit**: Write criteria that generalize beyond the specific sampled traces. Use examples as grounding, not as the sole criteria.
 - **Show your work**: Every proposed evaluator cites at least one trace as evidence with a clickable link: `[Trace {first_8}...](https://app.datadoghq.com/llm/traces?query=trace_id:{full_32_char_id})`.
 - **New file only**: Never modify existing evaluator code or experiment configurations.
-- **Never modify or delete published evaluators**: In `publish` mode, the skill only ever **creates** new evaluators. It never overwrites, edits, or deletes an existing evaluator config — even if the user re-runs the skill on the same ml_app. Name collisions resolve to **rename** (suffix `_v2`, `_v3`, …) or **skip**, chosen by the user at the pre-publish check. Tuning a published evaluator (sampling, filter, prompt) is done by the user in the Datadog UI; the skill stays out of that loop.
 - **Honest about uncertainty**: If fewer than 5 traces support a proposed evaluator, flag it as tentative.
+- **Session scope is gated**: only propose or publish `eval_scope: session` evaluators when the Phase 1 probe confirmed `sessions_present` (spans carry a `session_id`, ideally one that spans multiple traces). If sessions are absent, skip session scope and say so — never publish a session evaluator that can't fire.
+
+---
+
+## Tool Reference
+
+This appendix applies only in **pup mode**. In MCP mode, use the tool names in the workflow sections directly.
+
+### Spans and traces
+
+| MCP Tool | pup Command |
+|---|---|
+| `search_llmobs_spans(query, ml_app, from, to, limit, cursor, root_spans_only, span_kind, summary)` | `pup llm-obs spans search --query "@ml_app:A [other_filters]" [--from F] [--to T] [--limit N] [--cursor C] [--root-spans-only] [--span-kind K] [--summary]` — **always use `--query "@ml_app:A"` to filter by ml_app**; the `--ml-app A` flag is unreliable and silently returns spans from other apps. |
+| `get_llmobs_span_details(trace_id, span_ids, from, to)` | `pup llm-obs spans get-details --trace-id T --span-ids S1,S2,...` |
+| `get_llmobs_span_content(trace_id, span_id, field, path)` | `pup llm-obs spans get-content --trace-id T --span-id S --field F [--path P]` |
+| `get_llmobs_trace(trace_id, include_tree)` | `pup llm-obs spans get-trace --trace-id T [--include-tree]` |
+| `get_llmobs_agent_loop(trace_id, span_id)` | `pup llm-obs spans get-agent-loop --trace-id T [--span-id S]` |
+| `find_llmobs_error_spans(trace_id)` | `pup llm-obs spans find-errors --trace-id T` |
+| `expand_llmobs_spans(trace_id, span_ids, max_depth, filter_kind)` | `pup llm-obs spans expand --trace-id T --span-ids S1,S2,... [--max-depth N] [--filter-kind K]` |
+
+### Evaluators
+
+| MCP Tool | pup Command |
+|---|---|
+| `list_llmobs_evals()` | `pup llm-obs evals list` (filter by `ml_app` client-side) |
+| `list_llmobs_evals_by_ml_app(ml_app)` | `pup llm-obs evals list-by-ml-app --ml-app A` |
+| `get_llmobs_evaluator(eval_name)` | `pup llm-obs evals get-evaluator EVAL_NAME` |
+| `get_llmobs_eval_aggregate_stats(eval_name, ml_app, from, to)` | `pup llm-obs evals get-aggregate-stats EVAL_NAME [--ml-app A] [--from F] [--to T]` |
+| `delete_llmobs_evaluator(eval_name)` | `pup llm-obs evals delete EVAL_NAME` |
+| `create_or_update_llmobs_evaluator(...)` | `pup llm-obs evals create-or-update EVAL_NAME --file /tmp/eval_EVAL_NAME.json` — see flat schema note below |
+
+#### `create_or_update_llmobs_evaluator` in pup mode
+
+pup uses a **flat** JSON file (all fields top-level). `get-evaluator` returns a **nested** object. Transform as follows:
+
+1. **Round-trip check**: Call `pup llm-obs evals get-evaluator EVAL_NAME` first. If it exists, start from its config.
+2. **Flatten `llm_provider`**: hoist `integration_provider`, `model_name`, `integration_account_id`, `temperature` to top level, dropping the `llm_provider` key.
+3. **Merge and set `enabled: false`**.
+4. **Write to temp file and call**:
+   ```bash
+   pup llm-obs evals create-or-update EVAL_NAME --file /tmp/eval_EVAL_NAME.json
+   ```
+   Use unique temp file names when publishing multiple evaluators in parallel (e.g. `/tmp/eval_toxicity.json`).
+
+| `get-evaluator` field | Flat JSON key |
+|---|---|
+| `llm_provider.integration_provider` | `integration_provider` |
+| `llm_provider.model_name` | `model_name` |
+| `llm_provider.integration_account_id` | `integration_account_id` |
+| `llm_provider.temperature` | `temperature` |
+| All other fields | Unchanged (already top-level) |
+
+### Notebooks
+
+| MCP Tool | pup Command |
+|---|---|
+| `create_datadog_notebook(name, cells, ...)` | `pup notebooks create --title "TITLE" --file /tmp/nb_cells.json` — confirm exact flags with `pup notebooks create --help` |
+| `edit_datadog_notebook(id, cells, append_only=true)` | `pup notebooks edit NOTEBOOK_ID --file /tmp/nb_cells.json` (fetches current notebook, appends provided cells, writes back) |
+
+The cells file is a JSON array of cell objects:
+```json
+[{"attributes": {"definition": {"type": "markdown", "text": "## Section\n\nContent."}}, "type": "notebook_cells"}]
+```
+- **MCP result parsing safety**: Before writing any script (Python, jq, etc.) that iterates over or accesses fields in an MCP tool result, inspect the raw structure first — check `type(result)`, top-level keys, and whether the payload is nested inside a content block (e.g. `[{'type': 'text', 'text': '<json>'}]`). Extract and `json.loads()` the inner payload if needed before parsing. Never assume MCP results are bare dicts or lists.

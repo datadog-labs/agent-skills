@@ -161,7 +161,9 @@ If the customer's setup is below any of these, remote sampling rules will be sil
 
 ---
 
-## Step 0: Diagnose first (do this before any change)
+## Step 0: Diagnose first (mandatory — do not skip)
+
+> ⛔ **Do not skip Step 0.** Even when the action seems obvious, you must run the diagnosis commands before any write. Sampling configurations are precedence-sensitive — a remote rule or adaptive configuration may already exist that changes what you should do.
 
 Whatever the user is asking, run this to ground the conversation in what's actually happening.
 
