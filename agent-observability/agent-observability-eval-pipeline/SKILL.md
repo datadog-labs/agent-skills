@@ -55,6 +55,7 @@ This skill is **pure orchestration plus pedagogy** — no new analytical logic. 
 
 ```
 /agent-observability-eval-pipeline <ml_app> [--project-name <name>] [--timeframe <window>] [--trace-limit <N>]
+                                [--trace-csv <path>]
                                 [--format py|ipynb] [--evaluator-style function|class|remote]
                                 [--offline-evaluators | --online-evaluators | --data-only]
                                 [--start-at classify|rca|eval-bootstrap|dataset|experiment|analyze]
@@ -74,8 +75,9 @@ Arguments: $ARGUMENTS
 |-------|----------|---------|-------------|
 | `ml_app` | Yes | — | The instrumented LLM app to onboard / evaluate against. The precheck verifies it has recent traces. |
 | `--project-name` | No | derived from `pyproject.toml` / `setup.cfg` / `setup.py` / `package.json` / cwd (same order as `agent-observability-experiment-py-bootstrap`); falls back to `experiment-sdk-default` | The Datadog **project** the pipeline writes datasets and experiments into. The SDK lazily creates the project on first use via `LLMObs.enable(project_name=...)`. Surface this in the Precheck so the user can confirm before anything is created. |
-| `--timeframe` | No | `now-7d` | Lookback window for Phase 1 classification and Phase 4 dataset sampling. |
-| `--trace-limit` | No | `20` | Sampling cap for Phase 4. Phase 1 internally uses `min(20, --trace-limit)` for the classification sample. |
+| `--timeframe` | No | `now-7d` | Lookback window for Phase 1 classification and Phase 4 dataset sampling. **Ignored** when `--trace-csv` is set (the curated set is already fixed). |
+| `--trace-limit` | No | `20` | Sampling cap for Phase 4. Phase 1 internally uses `min(20, --trace-limit)` for the classification sample. **Ignored** when `--trace-csv` is set. |
+| `--trace-csv <path>` | No | none | Path to a CSV file of curated trace IDs (e.g. a Datadog **Annotation Queue** export). When set, the pipeline skips its own sampling — Phase 1 classifies only the listed traces, Phase 2 RCAs the failing subset, and Phase 4 reuses the CSV's `Input` / `Output` columns directly as dataset records (no re-fetch, no span-walking). See the **Precheck** section below for the expected CSV schema and column-name aliases. Mutually exclusive with `--dataset-file` (both supply Phase 4's input). |
 | `--format` | No | `py` | Passed to `agent-observability-experiment-py-bootstrap` in Phase 5: `py` (script) or `ipynb` (Jupyter notebook). |
 | `--evaluator-style` | No | `function` | Passed to `agent-observability-eval-bootstrap` (Phase 3) and `agent-observability-experiment-py-bootstrap` (Phase 5): `function`, `class`, or `remote`. |
 | `--offline-evaluators` | No | on (default) | Phase 3: emit a Python SDK evaluator suite (BaseEvaluator / LLMJudge classes) that runs inside an experiment against a dataset. Maps internally to `agent-observability-eval-bootstrap` `sdk_code` mode. |
@@ -95,7 +97,7 @@ Arguments: $ARGUMENTS
 | `--output-dir` | No | `./experiments` | Where the dataset JSON, publish script, and generated experiment file are written. |
 | `--backend` | No | auto-detect | `pup` forces pup mode regardless of MCP availability. |
 
-If `ml_app` is not provided, ask the user before proceeding. The three evaluator-output flags (`--offline-evaluators`, `--online-evaluators`, `--data-only`) are mutually exclusive — error out if more than one is set. If none are set, `--offline-evaluators` is the default. The legacy flag names `--publish` and `--sdk-code` are still accepted as aliases for backward compatibility but map to the new names in all output.
+If `ml_app` is not provided, ask the user before proceeding. The three evaluator-output flags (`--offline-evaluators`, `--online-evaluators`, `--data-only`) are mutually exclusive — error out if more than one is set. If none are set, `--offline-evaluators` is the default. The legacy flag names `--publish` and `--sdk-code` are still accepted as aliases for backward compatibility but map to the new names in all output. `--trace-csv` and `--dataset-file` are mutually exclusive — both supply Phase 4 input but at different layers; error out at argument parse time if both are set.
 
 ---
 
@@ -141,6 +143,50 @@ Before Phase 1, run a single short verification pass — do **not** announce a "
 
    Do **not** offer to create the `.env` file for the user — secrets-on-disk decisions belong to the user, not the skill.
 
+6. **`--trace-csv` validation** *(only when `--trace-csv <path>` was passed; otherwise skip this step entirely)* — validate the CSV is loadable and the listed traces actually exist in Datadog before any phase begins. Bad CSVs fail loudly here, not halfway through Phase 1.
+
+   **CSV schema**. Use Python's `csv.DictReader` via Bash. Column names are matched case-insensitively, ignoring spaces and underscores, so `Content ID`, `content_id`, `contentid`, `trace_id`, and `id` are all the same column. Accept these column-name aliases:
+
+   | Canonical | Required | Aliases (any case, spaces/underscores ignored) |
+   |---|---|---|
+   | `trace_id` | **yes** | `Content ID`, `content_id`, `trace_id`, `id` |
+   | `input` | **yes** | `Input`, `input_data`, `prompt`, `query`, `question` |
+   | `output` | no | `Output`, `actual_output`, `response`, `answer` |
+   | `expected_output` | no | `Expected Output`, `expected_output`, `expected`, `gold`, `truth` |
+   | `type` | no | `Type`, `kind` — when present, **filter to rows where the value equals `trace`** (case-insensitive); skip `session` / `span` / other types with a one-line warning per skipped row |
+
+   If `expected_output` is present, use it as the dataset's `expected_output`. If only `output` is present (the common annotation-queue export case), use `output` as `expected_output` and surface this decision in the Precheck output so the user can override at the Phase 4 checkpoint.
+
+   If neither `input` nor `output` columns are found, stop with: *"The CSV at `<path>` is missing required columns. Need at least one of `Input`/`input_data`/`prompt` and (`Output`/`response` or `Expected Output`/`expected`). Found columns: `<comma-separated list>`."*
+
+   **trace_id format**. Each `trace_id` should be a 32-character lowercase hex string. Strip leading/trailing whitespace. Reject empty rows with a one-line warning and skip them.
+
+   **Existence check**. For each `trace_id`, verify the trace exists in Datadog via a single MCP / pup call:
+
+   - **MCP mode**: `mcp__datadog-llmo-mcp__search_llmobs_spans(query="trace_id:<id>", limit=1, root_spans_only=true)`. Result of zero spans = trace not found.
+   - **pup mode**: `pup llm-obs spans search --query "trace_id:<id>" --root-spans-only --limit 1 --summary`. Empty `spans` array = trace not found.
+
+   Issue these calls in parallel — one tool call per row, all in a single message — since the CSV is typically small (annotation queue exports are 10–100 rows). For each missing trace, emit a one-line warning, drop the row, and continue. **Never fail the whole precheck just because one trace is missing** — surface a summary count instead. If **all** rows are missing or invalid, stop the run and tell the user to verify the CSV and the `ml_app` are in the same Datadog org / site.
+
+   **Cache the validated set**. Write the kept rows to `<output-dir>/state/00-trace-csv.json` with this shape so later phases consume it without re-reading the CSV:
+
+   ```json
+   {
+     "source_path": "<absolute path to the CSV>",
+     "ml_app": "<ml_app>",
+     "row_count_total": <int>,
+     "row_count_kept": <int>,
+     "row_count_dropped": <int>,
+     "drop_reasons": {"missing_in_datadog": <int>, "non_trace_type": <int>, "empty_trace_id": <int>, "bad_input_output": <int>},
+     "records": [
+       {"trace_id": "<id>", "input": "<input text>", "output": "<output text or null>", "expected_output": "<expected_output text or null>"},
+       ...
+     ]
+   }
+   ```
+
+   Surface a one-line summary in the Precheck output: `Trace CSV: <kept>/<total> rows loaded from <path> (<dropped> dropped: <one-line reason breakdown>)`.
+
 Output the precheck summary, then start Phase 1:
 
 ```
@@ -154,6 +200,10 @@ Output the precheck summary, then start Phase 1:
     "loaded from shell env (DD_API_KEY, DD_APPLICATION_KEY, DD_SITE)"
   | "loaded from <relative path to .env file> (DD_API_KEY, DD_APPLICATION_KEY[, DD_SITE])"
   | "shell env + <relative path>: keys resolved from both (shell overrode file for <list>)"
+  >
+- Trace CSV: <one of:
+    "(not set — pipeline will sample fresh traces in Phase 1 and Phase 4)"
+  | "<kept>/<total> rows loaded from <relative path> (<dropped> dropped: <reasons>); using `output` column as expected_output"
   >
 - Stop-after: <phase from --stop-after, default `analyze`>
 
@@ -243,12 +293,39 @@ Surface the link immediately before the Action block:
 Phase 1 will classify the first {min(20, trace-limit)} of these for orientation. Phase 4 will sample up to {trace-limit} from the same pool for the dataset. Click through if you want to see the pool before either runs, or adjust `--timeframe` and re-invoke if the window looks off.
 ```
 
-**Action**: Follow the **`agent-observability-session-classify`** skill in **ml_app mode**, using:
+**Action — two paths depending on `--trace-csv`**:
+
+#### Path A — default (sample from ml_app)
+
+Follow the **`agent-observability-session-classify`** skill in **ml_app mode**, using:
 - `ml_app` = the provided ml_app
 - `timeframe` = the provided timeframe
 - `sample_limit` = `min(20, trace-limit)` — keep this fast; Phase 4 will do the bigger sample
 
 Run the complete ml_app mode workflow as defined in that skill (Steps M1 through M3). **Output the full classification output** (all compact per-unit blocks plus the final `# Session Classification Summary`) — do not summarize or truncate. Downstream Phase 2's RCA depends on the full text being in context.
+
+#### Path B — `--trace-csv` set (curated trace set)
+
+Skip session-classify's own sampling. The trace pool is **exactly** the validated rows in `<output-dir>/state/00-trace-csv.json` (cached by the Precheck — every row's `trace_id` already exists in Datadog at this point).
+
+For each `trace_id` in the cached set, fetch the trace's root span in parallel — one tool call per trace, all in a single message:
+
+- **MCP mode**: `mcp__datadog-llmo-mcp__search_llmobs_spans(query="trace_id:<id>", limit=1, root_spans_only=true)`. Take the single returned span.
+- **pup mode**: `pup llm-obs spans search --query "trace_id:<id>" --root-spans-only --limit 1`. Take the single span from the `spans` array.
+
+Then invoke `agent-observability-session-classify` in **ml_app mode**, but **pass the pre-fetched root spans inline as the sample** rather than letting it issue its own `search_llmobs_spans` call. The sub-skill's classification loop (Steps M2–M3) consumes whatever sample is in scope — give it the curated set and it will classify exactly those. **Output the full classification output** verbatim, same rule as Path A.
+
+When emitting the **Trace pool preview** link above this Action, replace it with a **Curated trace set** preview instead — a Datadog UI link that opens just the listed traces:
+
+```
+**Curated trace set** ({N} traces from `<csv path>`):
+
+  <https://app.<DD_SITE>/llm/traces?query=trace_id%3A(<id1>%20OR%20<id2>%20OR%20...)>
+
+Phase 1 will classify all {N} of these. Phase 4 will use their `Input` / `Output` pairs directly as dataset records — no re-sampling, no span-walking.
+```
+
+URL construction is the same as Path A's host/path/time-window rules, except the `query=` parameter is built as `trace_id:(<id1> OR <id2> OR ... OR <idN>)` (URL-encoded). If the resulting URL would exceed 8000 characters (rough browser limit), truncate to the first 50 IDs and surface a one-line note: *"link shows first 50 of N traces; full curated set is processed by the pipeline."*
 
 ### Checkpoint 1
 
@@ -409,6 +486,82 @@ If the user excluded specific traces in Checkpoint 1, pass that exclusion list a
 Reproduce the sub-skill's `## Generated Dataset` summary verbatim.
 
 **Skip 4a if Phase 3 already produced a dataset.** When the user picked `--data-only` with the "Dataset for experiment use" sub-mode in Phase 3, the Phase 3 state file (`state/03-evaluators.json`) has `mode: data_only_dataset` and an `output_path` pointing at the dataset JSON. In that case, **skip sub-step 4a entirely** and feed the Phase 3 output to 4b's publish helper directly. Surface a one-line note: "Reusing dataset from Phase 3 (`<path>`); skipping fresh sampling."
+
+**Skip 4a if `--trace-csv` is set.** When the Precheck cached a curated trace set at `<output-dir>/state/00-trace-csv.json`, do **not** call `eval-bootstrap --emit-dataset` — its sampling logic is the very thing the CSV is replacing. Instead, build the `DatasetRecordRaw[]` JSON directly from the cached set with one Bash + Python step:
+
+```bash
+python <<'EOF'
+import csv, json, pathlib, datetime, re
+
+STATE = pathlib.Path("<output-dir>/state/00-trace-csv.json")
+OUT = pathlib.Path("<output-dir>/dataset_<ml_app>_<YYYYMMDD>.json")
+ML_APP = "<ml_app>"
+
+PII_PATTERNS = [
+    (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"), "<REDACTED:email>"),
+    (re.compile(r"\b\d{3}[- ]?\d{2}[- ]?\d{4}\b"), "<REDACTED:ssn>"),
+    (re.compile(r"\b(?:\+?\d{1,2}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}\b"), "<REDACTED:phone>"),
+    (re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"), "<REDACTED:api-key>"),
+]
+
+def scrub(s):
+    if not isinstance(s, str):
+        return s
+    for pat, repl in PII_PATTERNS:
+        s = pat.sub(repl, s)
+    return s
+
+cached = json.loads(STATE.read_text())
+records = []
+redactions = 0
+for row in cached["records"]:
+    inp = scrub(row.get("input") or "")
+    expected = row.get("expected_output") or row.get("output") or ""
+    expected = scrub(expected) if expected else None
+    if inp != row.get("input") or (expected and expected != (row.get("expected_output") or row.get("output"))):
+        redactions += 1
+    rec = {
+        "input_data": {"input": inp},
+        "metadata": {"trace_id": row["trace_id"], "ml_app": ML_APP},
+        "tags": [f"ml_app:{ML_APP}", "source:annotation-queue", f"trace_id:{row['trace_id']}"],
+    }
+    if expected is not None and expected != "":
+        rec["expected_output"] = expected
+    records.append(rec)
+
+OUT.parent.mkdir(parents=True, exist_ok=True)
+OUT.write_text(json.dumps(records, indent=2))
+print(f"Wrote {len(records)} records to {OUT}")
+print(f"PII redactions: {redactions}")
+print(f"Records with expected_output: {sum(1 for r in records if 'expected_output' in r)}")
+EOF
+```
+
+After the script runs, emit a sub-skill-style summary so the user sees what was produced without scrolling back to the CSV:
+
+```
+## Generated Dataset (from curated CSV)
+
+- Source: `<csv path>` (annotation queue export)
+- Record count: <N>
+- expected_output present on: <M>/<N> records (sourced from <`expected_output` | `output`> column)
+- PII redactions: <K>
+- Per-record tags: `ml_app:<ml_app>`, `source:annotation-queue`, `trace_id:<id>`
+- Output JSON: `<absolute path to dataset_<ml_app>_<YYYYMMDD>.json>`
+```
+
+Then surface a **mandatory review checkpoint** before 4b (since CSV records reflect the actual model output the user saw — they may want to edit those values into the *desired* output before publishing the dataset):
+
+```
+**Before I publish this dataset to Datadog** — quick review:
+
+1. The dataset file is at `<output-dir>/dataset_<ml_app>_<YYYYMMDD>.json`. Open it now if you want to inspect or edit any records (the `Output` column from your CSV is currently being used as `expected_output` — edit it in place to mark the *desired* output if the captured output is wrong).
+2. The publish step will create the dataset in Datadog under project `<project_name>` with name `<ml_app>_seed_<YYYYMMDD>`. Pass `--dataset-name <name>` to override.
+
+Type `publish` to push to Datadog, `stop` to exit cleanly (the dataset JSON is saved on disk and can be re-published later), or paste an absolute path to a hand-edited file and I'll publish that one instead.
+```
+
+Once the user confirms, proceed to 4b using `<output-dir>/dataset_<ml_app>_<YYYYMMDD>.json` (or the override path) as 4b's `--records` argument.
 
 **4b — Publish to Datadog.** Immediately invoke the pre-shipped publish helper at `<this-skill-dir>/scripts/publish_dataset.py` via Bash. **Do not** inline the script content into this SKILL.md or re-write it from scratch — the helper is the source of truth for the publish flow (credential discovery, tag normalization, project creation, error handling). It accepts CLI args, so no placeholder substitution is needed.
 
@@ -660,6 +813,7 @@ After every successful phase completion (i.e. after the user types `continue` pa
 
 | Phase | State file | Schema |
 |---|---|---|
+| 0 trace-csv *(only when `--trace-csv` is set)* | `state/00-trace-csv.json` | `{"source_path": "<csv path>", "ml_app": "<ml_app>", "row_count_total": <int>, "row_count_kept": <int>, "row_count_dropped": <int>, "drop_reasons": {...}, "records": [{"trace_id": "<id>", "input": "<...>", "output": "<...>", "expected_output": "<...>"}]}`. Written by the Precheck's `--trace-csv` validation step and consumed by Phase 1 (curated classification set) and Phase 4 (skips its own sampling). |
 | 1 classify | `state/01-classification.md` | The full `# Session Classification Summary` block plus all per-unit compact blocks, verbatim from `agent-observability-session-classify`. Markdown. |
 | 2 rca | `state/02-rca-report.md` | The full Phase 6 RCA report from `agent-observability-trace-rca`, verbatim. Markdown. |
 | 3 eval-bootstrap | `state/03-evaluators.json` | `{"mode": "offline_evaluators\|online_evaluators\|data_only_dataset\|data_only_analysis", "output_path": "<path>", "evaluator_names": [...], "ml_app": "<ml_app>", "generated_at": "<ISO 8601>"}`. The actual evaluator code/JSON/dataset stays where the sub-skill wrote it. The `data_only_dataset` mode produces a `DatasetRecordRaw[]` JSON that Phase 4 then consumes directly. |
@@ -725,6 +879,21 @@ The Phase Template's "Type 'continue' to proceed" line should be updated to:
 
 # Continue from the slice above without redoing classify
 /agent-observability-eval-pipeline lux --start-at eval-bootstrap --stop-after eval-bootstrap
+
+# Run the full pipeline against a curated set from a Datadog Annotation Queue export.
+# Phase 1 classifies exactly those traces, Phase 4 builds the dataset from the CSV's
+# Input/Output columns (no re-sampling, no span-walking), and Phase 5 runs the
+# experiment against the resulting dataset.
+/agent-observability-eval-pipeline lux --project-name lux \
+  --trace-csv ~/Downloads/annotation-queue-export-1782834681602.csv
+
+# Same curated set, but stop after publishing the dataset (no experiment yet)
+/agent-observability-eval-pipeline lux --project-name lux \
+  --trace-csv ~/Downloads/annotation-queue-export.csv \
+  --stop-after dataset
+
+# See `references/sample-annotation-queue-export.csv` for the canonical CSV shape
+# (column-name aliases like `content_id` / `trace_id` / `Input` / `Output` are accepted).
 ```
 
 `--start-at` and `--stop-after` compose freely. Internally, `--start-at X --stop-after Y` runs exactly phases X through Y inclusive (and the run is invalid if Y < X — error out at argument parse time).
