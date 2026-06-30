@@ -161,7 +161,11 @@ If the customer's setup is below these minimums, remote sampling rules will be s
 | `RATE` | (For set-rate) 0.0–1.0. Anything `>1e-6` is honored. |
 | `TARGET` | (For set-adaptive) Byte budget OR percent of allotment. |
 
-> **When a variable is missing:** Ask for it AND simultaneously present the full proposed plan with what you already know — use `<ENV>`, `<SERVICE>`, etc. as placeholders where values are unknown. Do NOT wait silently for the missing variable before showing the plan. The user should see exactly what will be done so they can confirm it along with providing the missing information.
+> **When a variable is missing:** Do NOT defer Step 0 or the full plan. Immediately present BOTH:
+> 1. The Step 0 diagnostic commands with placeholder values (e.g., `<ENV>`) — show what you WILL run once the value is known
+> 2. The full proposed plan with the same placeholders — service, env, resource, sample-rate, first-match-wins ordering note, the full `pup apm sampling-rules create ...` command, and verification expectation (`_dd.p.dm: -11` on a fresh trace within 30-90s)
+>
+> Then ask for the missing value AND ask "Ready?" together — the user confirms both the value and the plan in one reply. Do NOT show the plan first and defer diagnostics to later.
 
 ---
 
@@ -252,11 +256,23 @@ Surface these to the user:
 | Existing rules | The new rule may shadow or be shadowed by them (first match wins) |
 | Adaptive status | If onboarded, customer rule still applies but eats the allotment |
 
+> **First-match-wins ordering — always call this out explicitly:** Rules are evaluated in order and the first match wins. If you are adding a wildcard `*` resource rule, it will shadow ALL more-specific per-resource rules that come after it in the list. To preserve existing per-resource rules for specific endpoints, those specific rules must be ordered BEFORE the wildcard — otherwise the wildcard fires first and the specific rules never run. Tell the user: "If you have per-resource rules you want to keep, they must be ordered before this wildcard rule." Surface this concern with the actual existing rules from Command 2 before proceeding to Step 3.
+
 > **If any of these commands fail:** note the error and proceed to Step 3 anyway. Missing diagnostic data does not block the confirmation — present the proposed rule and ask for confirmation regardless.
 
 ### Step 3: Confirm and apply
 
-> *"I'm going to set sampling rate for `<SERVICE>` env `<ENV>` resource `<RESOURCE>` to **<RATE>** (mechanism: remote customer rule). This will take effect within 30 seconds of the next tracer RC poll. Note: this requires `apm_remote_configuration_write` on your Datadog role — Admin role has it by default, others may not. If it fails with `403 Forbidden`, see Troubleshooting #9. Ready?"*
+Show the user the exact command that will be run, then ask "Ready?":
+
+> *"I'm going to run:*
+> ```
+> pup apm sampling-rules create \
+>   --service "<SERVICE>" \
+>   --env "<ENV>" \
+>   --resource "<RESOURCE>" \
+>   --sample-rate <RATE>
+> ```
+> *This sets a remote customer rule (mechanism `_dd.p.dm: -11`), taking effect within ~30 seconds. After creation, verify by checking `_dd.p.dm: -11` on a fresh trace in Datadog APM (open a trace, look for the `_dd.p.dm` tag). Requires `apm_remote_configuration_write` on your Datadog role — Admin role has it by default. Ready?"*
 
 ### Claude runs
 
