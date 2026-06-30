@@ -61,7 +61,7 @@ Append `?config_trace_show_hidden_metadata=true` to any trace URL in the UI to s
 | n/a — see note | SPAN_SAMPLING_RATE (`8`) | Single-span sampling. Value `8` lives in the NUMERIC tag `_dd.span_sampling.mechanism`, NOT in the string tag `_dd.p.dm`. If you see `_dd.span_sampling.mechanism: 8` on a span, it was kept by `DD_SPAN_SAMPLING_RULES` even though the enclosing trace was dropped. |
 | `-11` | REMOTE_USER_RULE | UI-authored resource-based rule (`provenance:customer`) |
 | `-12` | REMOTE_ADAPTIVE_RULE | Datadog-computed adaptive rule (`provenance:dynamic`) |
-| `-13` | AI_GUARD | AI Guard kept the trace |
+| `-13` | AI_GUARD | AI Guard kept the trace (dd-trace-java only; not yet in all tracer SDKs) |
 
 Sampling priority on a span (`_sampling_priority_v1`): `-1` UserDrop, `0` AutoDrop, `1` AutoKeep, `2` UserKeep.
 
@@ -132,19 +132,21 @@ If the user is unsure whether they have the permission, the diagnostic is simple
 
 ### Agent + tracer version gate (for remote sampling features)
 
-| Component | Minimum |
-|---|---|
-| Datadog Agent | `7.42.0` (both resource-based and adaptive) |
-| dd-trace-java | `1.34.0` |
-| dd-trace-go | `1.64.0` |
-| dd-trace-py | `2.9.0` |
-| dd-trace-rb | `2.4.0` (Rack only) |
-| dd-trace-js | `5.16.0` |
-| dd-trace-php | `1.4.0` |
-| dd-trace-dotnet | `2.53.2` |
-| dd-trace-cpp | `0.2.2` |
+The minimum versions differ between the two features. Use the right column for the action you're taking.
 
-If the customer's setup is below any of these, remote sampling rules will be silently ignored even if they appear in RC admin.
+| Component | Resource-based rules (`set-rate`) | Adaptive sampling (`set-adaptive`) |
+|---|---|---|
+| Datadog Agent | `7.41.1` | `7.53.0` |
+| dd-trace-java | `1.34.0` | `1.34.0` |
+| dd-trace-go | `1.64.0` | `1.68.0` |
+| dd-trace-py | `2.9.0` | `2.9.6` |
+| dd-trace-rb | `2.4.0` (Rack only) | `2.0.0` (Rack only) |
+| dd-trace-js | `5.16.0` | `5.16.0` |
+| dd-trace-php | `1.4.0` | `1.4.0` |
+| dd-trace-dotnet | `2.53.2` | `2.54.0` |
+| dd-trace-cpp | `0.2.2` | `0.2.2` |
+
+If the customer's setup is below these minimums, remote sampling rules will be silently ignored even if they appear in RC admin. Adaptive sampling additionally requires Remote Configuration to be enabled on the Agent (`remote_configuration.enabled: true` — the default since Agent 7.47.0).
 
 ---
 
@@ -158,6 +160,8 @@ If the customer's setup is below any of these, remote sampling rules will be sil
 | `RESOURCE` | (For set-rate) Specific resource pattern, or `*` for whole service. |
 | `RATE` | (For set-rate) 0.0–1.0. Anything `>1e-6` is honored. |
 | `TARGET` | (For set-adaptive) Byte budget OR percent of allotment. |
+
+> **When a variable is missing:** Ask for it AND simultaneously present the full proposed plan with what you already know — use `<ENV>`, `<SERVICE>`, etc. as placeholders where values are unknown. Do NOT wait silently for the missing variable before showing the plan. The user should see exactly what will be done so they can confirm it along with providing the missing information.
 
 ---
 
@@ -188,21 +192,25 @@ Then ask the user for a trace ID and have them open it in the UI with the hidden
 
 > *"Open one of these traces in the UI and append `?config_trace_show_hidden_metadata=true` to the URL. What does `_dd.p.dm` show? And `ingestion_reason`?"*
 
-> **Where to read `ingestion_reason` from**: the UI is the cleanest source (with the URL trick above). If you're reading from `pup traces search` output directly, the real value is nested inside `span_tags` (e.g., `"ingestion_reason:auto"` as a string entry in the tag list) — NOT in the top-level `"ingestion_reason"` field, which pup leaves empty in many responses. Don't trust the top-level field for this purpose.
+> **`_dd.p.dm` is the authoritative signal.** `ingestion_reason` is helpful context but tracers emit `rule` for both local and remote rules — the only reliable way to tell them apart is `_dd.p.dm` (`-3` = local rule, `-11` = remote customer rule, `-12` = remote adaptive rule). The UI's hidden-metadata view may display more granular labels (`remote_rule`, `adaptive_rule`) computed by the Datadog backend, but those are UI representations, not the raw span-tag value emitted by the tracer.
+>
+> **Where to read `ingestion_reason` from**: the UI is the cleanest source (with the URL trick above). If you're reading from `pup traces search` output directly, the real value is nested inside `span_tags` (e.g., `"ingestion_reason:auto"` as a string entry in the tag list) — NOT in the top-level `"ingestion_reason"` field, which pup leaves empty in many responses.
 
-Map their answer:
+Map their answer (the `_dd.p.dm` column is definitive; `ingestion_reason` values shown here are as displayed in the UI hidden-metadata view):
 
-| `ingestion_reason` | What's currently sampling this trace |
-|---|---|
-| `remote_rule` | A customer resource-based rule (priority 2) — use `set-rate` to change |
-| `adaptive_rule` | Adaptive sampling (priority 3) — use `set-adaptive` to change target |
-| `rule` | Local `DD_TRACE_SAMPLING_RULES` (priority 4) — change the env var |
-| `auto` | Agent priority sampler (priority 7) — change via Ingestion Control UI or `DD_APM_TARGET_TPS` on the agent (not pup) |
-| `manual` | `manual.keep`/`manual.drop` in code — code change needed |
-| `error` / `rare` | Agent error/rare sampler kept this trace — change via `DD_APM_ERROR_TPS` / `DD_APM_ENABLE_RARE_SAMPLER` on the agent (not pup) |
-| `single_span` | Whole trace dropped, span rescued by `DD_SPAN_SAMPLING_RULES` |
+| `_dd.p.dm` | `ingestion_reason` (UI) | What's currently sampling this trace |
+|---|---|---|
+| `-11` | `remote_rule` | A customer resource-based rule (priority 2) — use `set-rate` to change |
+| `-12` | `adaptive_rule` | Adaptive sampling (priority 3) — use `set-adaptive` to change target |
+| `-3` | `rule` | Local `DD_TRACE_SAMPLING_RULES` (priority 4) — change the env var |
+| `-1` | `auto` | Agent priority sampler (priority 7) — change via Ingestion Control UI or `DD_APM_TARGET_TPS` on the agent (not pup) |
+| `-4` | `manual` | `manual.keep`/`manual.drop` in code — code change needed |
+| n/a | `error` / `rare` | Agent error/rare sampler kept this trace — change via `DD_APM_ERROR_TPS` / `DD_APM_ENABLE_RARE_SAMPLER` on the agent (not pup) |
+| `-8` (in `_dd.span_sampling.mechanism`) | `single_span` | Whole trace dropped, span rescued by `DD_SPAN_SAMPLING_RULES` |
 
-If the user said "my rule isn't taking effect" and `ingestion_reason` shows anything other than `remote_rule`, the rule isn't being applied — go to **Troubleshooting** below before writing more rules.
+If the user said "my rule isn't taking effect" and `_dd.p.dm` shows anything other than `-11` (or UI shows anything other than `remote_rule`), the rule isn't being applied — go to **Troubleshooting** below before writing more rules.
+
+> **If Step 0 commands fail or return errors** (auth error, connection refused, 404, empty output): note what you attempted and the error, then **proceed immediately to the action step**. Diagnostic failures mean "this information wasn't available" — they do not block the workflow. Continue with the best information you have and still show the user the full proposed change and confirmation message.
 
 ---
 
@@ -244,6 +252,8 @@ Surface these to the user:
 | Existing rules | The new rule may shadow or be shadowed by them (first match wins) |
 | Adaptive status | If onboarded, customer rule still applies but eats the allotment |
 
+> **If any of these commands fail:** note the error and proceed to Step 3 anyway. Missing diagnostic data does not block the confirmation — present the proposed rule and ask for confirmation regardless.
+
 ### Step 3: Confirm and apply
 
 > *"I'm going to set sampling rate for `<SERVICE>` env `<ENV>` resource `<RESOURCE>` to **<RATE>** (mechanism: remote customer rule). This will take effect within 30 seconds of the next tracer RC poll. Note: this requires `apm_remote_configuration_write` on your Datadog role — Admin role has it by default, others may not. If it fails with `403 Forbidden`, see Troubleshooting #9. Ready?"*
@@ -281,6 +291,10 @@ If `_dd.p.dm` still shows `-0`, `-1`, `-3`, or `-12` after 2 minutes → **Troub
 
 Onboards a service so Datadog computes per-resource sampling rates to fit the configured byte/percent allotment. Rules appear with mechanism `_dd.p.dm:-12`.
 
+> **Always surface these two facts when explaining adaptive sampling — do not omit either:**
+> 1. **Floor warning**: If the monthly allotment target is below the current month-to-date ingestion volume, adaptive sampling rates will floor at **roughly 1 trace per 5 minutes per (service, env, resource)** — this aggressively reduces visibility. The user must know this before onboarding.
+> 2. **Precedence note**: Existing local `DD_TRACE_SAMPLING_RULES` env vars on the service **still take precedence over adaptive rules** (priority 4 > priority 3). If the service has `DD_TRACE_SAMPLING_RULES` set, adaptive sampling will be silently overridden for those resources.
+
 ### Step 1: Check current state and budget
 
 ### Claude runs
@@ -291,7 +305,9 @@ pup apm adaptive-sampling check                    # is allotment sufficient for
 pup apm adaptive-sampling onboarding-status --service <SERVICE> --env <ENV>
 ```
 
-Allotment formula: `150GB × #APM_hosts + 10GB × #Fargate_tasks + 50GB × #M-traces`. If `check` reports the customer is over budget, sampling rates will floor at **1 trace per 5 minutes per (service, env, resource)** — surface this before promising results.
+Allotment formula: `150GB × #APM_hosts + 10GB × #Fargate_tasks + 50GB × #serverless_invocations`. If `check` reports the customer is over budget, sampling rates will floor at **1 trace per 5 minutes per (service, env, resource)** — surface this before promising results.
+
+> **If these commands fail:** note the error and proceed to Step 2 anyway. You cannot gate the confirmation on having live allotment data. Still warn the user: "If your current month-to-date ingestion is already above your monthly allotment, adaptive rates will floor at roughly 1 trace per 5 minutes per (service, env, resource)."
 
 ### Step 2: Confirm and apply
 
