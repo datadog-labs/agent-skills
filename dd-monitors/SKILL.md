@@ -1,6 +1,11 @@
 ---
 name: dd-monitors
-description: Datadog monitors and alerting — list/search existing monitors, create or update monitors from files, tune thresholds and notifications, and apply alerting best practices. Use for any Datadog monitor or alert request ("create a datadog monitor", "this alert is flapping", "audit our monitors"). Not for Prometheus/New Relic alerts or in-app health checks.
+description: >
+  Datadog monitors and alerting — list/search existing monitors, create or update
+  monitors from files, tune thresholds and notifications, and apply alerting best
+  practices. Use for any Datadog monitor or alert request ("create a datadog monitor",
+  "this alert is flapping", "audit our monitors"). Not for Prometheus/New Relic alerts
+  or in-app health checks.
 metadata:
   version: "1.0.1"
   author: datadog-labs
