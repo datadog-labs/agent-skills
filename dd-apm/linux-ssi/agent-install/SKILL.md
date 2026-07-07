@@ -120,14 +120,18 @@ Run for each host that does not already have the agent installed.
 
 ### Claude runs
 
-```bash
-ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
-  "DD_API_KEY=${DD_API_KEY} DD_SITE=${DD_SITE} DD_APM_INSTRUMENTATION_ENABLED=host bash -c \"\$(curl -L https://install.datadoghq.com/scripts/install_script_agent7.sh)\""
-```
+Direct the user to install the Datadog Agent on each target host by following
+the canonical Linux SSI install instructions:
+https://docs.datadoghq.com/tracing/trace_collection/automatic_instrumentation/single-step-apm/
 
-`DD_APM_INSTRUMENTATION_ENABLED=host` causes the install script to also install `datadog-apm-inject` and language library packages under `/opt/datadog-packages/` in one pass.
+Before the documented install command is run, set on each host:
 
-If the script completes without errors — proceed to Phase 2.
+- `DD_API_KEY` (from Phase 0)
+- `DD_SITE` (from Phase 0)
+- `DD_APM_INSTRUMENTATION_ENABLED=host` — also installs `datadog-apm-inject` and language library packages under `/opt/datadog-packages/` in one pass
+
+Do not embed the install script inline; have the user run it from the trusted
+Datadog source. If the install completes without errors — proceed to Phase 2.
 
 ERROR: `curl: command not found`:
 ```bash
@@ -177,12 +181,13 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
 
 If `/opt/datadog-packages/datadog-apm-inject` exists — injection is available.
 
-ERROR: Directory missing or empty — `datadog-installer status` may show the package as registered while its directory is actually empty (stale registration). Reinstall:
+ERROR: Directory missing or empty — `datadog-installer status` may show the package as registered while its directory is actually empty (stale registration). Remove the stale registration:
 ```bash
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
-  "sudo datadog-installer remove datadog-apm-inject && \
-   DD_API_KEY=${DD_API_KEY} DD_SITE=${DD_SITE} DD_APM_INSTRUMENTATION_ENABLED=host bash -c \"\$(curl -L https://install.datadoghq.com/scripts/install_script_agent7.sh)\""
+  "sudo datadog-installer remove datadog-apm-inject"
 ```
+
+Then have the user re-run the SSI install from the canonical docs with `DD_API_KEY`, `DD_SITE`, and `DD_APM_INSTRUMENTATION_ENABLED=host` set in the environment: https://docs.datadoghq.com/tracing/trace_collection/automatic_instrumentation/single-step-apm/
 
 **Verify hostname registration** — the Agent must resolve and register its hostname for the host to appear in Datadog. DNS lookup failures are common in containers and minimal VMs:
 

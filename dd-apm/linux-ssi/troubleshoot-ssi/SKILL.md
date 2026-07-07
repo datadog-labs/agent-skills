@@ -366,11 +366,9 @@ If the conclusion doesn't hold up, return to Step 2 with new hypotheses.
 # Remove the stale registration first
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo datadog-installer remove datadog-apm-library-<LANG>"
-
-# Re-run install — now it will actually download and extract
-ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
-  "DD_API_KEY=${DD_API_KEY} DD_SITE=${DD_SITE} DD_APM_INSTRUMENTATION_ENABLED=host bash -c \"\$(curl -L https://install.datadoghq.com/scripts/install_script_agent7.sh)\""
 ```
+
+Then have the user re-run the SSI install from the canonical docs — it will actually download and extract this time — with `DD_API_KEY`, `DD_SITE`, and `DD_APM_INSTRUMENTATION_ENABLED=host` set in the environment: https://docs.datadoghq.com/tracing/trace_collection/automatic_instrumentation/single-step-apm/
 
 If re-running the install script is sufficient (package files are intact), use `remove` first only if the script reports success but the problem persists.
 
