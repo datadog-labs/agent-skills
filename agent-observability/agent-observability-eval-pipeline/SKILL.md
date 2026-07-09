@@ -176,7 +176,7 @@ Before Phase 1, run a single short verification pass — do **not** announce a "
    **Format support**. Infer the format from the file extension:
 
    - **`.csv`** *(supported today)* — the canonical shape of a Datadog Annotation Queue export. Parse with Python's `csv.DictReader` via Bash. See the schema table below.
-   - **`.json`** *(planned)* — a JSON export shape will be supported in a follow-up. When encountered today, stop with: *"`.json` export format is not yet supported. Convert to CSV using the schema shown at `references/sample-annotation-queue-export.csv`, or wait for the JSON follow-up."*
+   - **`.json`** *(planned)* — a JSON export shape will be supported in a follow-up. When encountered today, stop with: *"`.json` export format is not yet supported. Convert to CSV matching the schema below, or wait for the JSON follow-up."*
    - **Anything else** — stop with: *"Unrecognized export format `<ext>`. Supported: `.csv` (today), `.json` (planned)."*
 
    **CSV schema**. Column names are matched case-insensitively, ignoring spaces and underscores, so `Content ID`, `content_id`, `contentid`, `trace_id`, and `id` are all the same column. Accept these column-name aliases:
@@ -521,55 +521,21 @@ Reproduce the sub-skill's `## Generated Dataset` summary verbatim.
 
 **Skip 4a if Phase 3 already produced a dataset.** When the user picked `--data-only` with the "Dataset for experiment use" sub-mode in Phase 3, the Phase 3 state file (`state/03-evaluators.json`) has `mode: data_only_dataset` and an `output_path` pointing at the dataset JSON. In that case, **skip sub-step 4a entirely** and feed the Phase 3 output to 4b's publish helper directly. Surface a one-line note: "Reusing dataset from Phase 3 (`<path>`); skipping fresh sampling."
 
-**Skip 4a if `--trace-export` is set.** When the Precheck cached a curated trace set at `<output-dir>/state/00-trace-export.json`, do **not** call `eval-bootstrap --emit-dataset` — its sampling logic is the very thing the export is replacing. Instead, build the `DatasetRecordRaw[]` JSON directly from the cached set with one Bash + Python step:
+**Skip 4a if `--trace-export` is set.** When the Precheck cached a curated trace set at `<output-dir>/state/00-trace-export.json`, do **not** call `eval-bootstrap --emit-dataset` — its sampling logic is the very thing the export is replacing. Instead, build the `DatasetRecordRaw[]` JSON directly from the cached set by invoking the pre-shipped helper at `<this-skill-dir>/scripts/build_dataset_from_export.py` via Bash. **Do not** inline the script content into this SKILL.md or re-write it from scratch — the helper is the source of truth for the record-shape, PII scrub, and provenance tagging.
 
 ```bash
-python <<'EOF'
-import csv, json, pathlib, datetime, re
-
-STATE = pathlib.Path("<output-dir>/state/00-trace-export.json")
-OUT = pathlib.Path("<output-dir>/dataset_<ml_app>_<YYYYMMDD>.json")
-ML_APP = "<ml_app>"
-
-PII_PATTERNS = [
-    (re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"), "<REDACTED:email>"),
-    (re.compile(r"\b\d{3}[- ]?\d{2}[- ]?\d{4}\b"), "<REDACTED:ssn>"),
-    (re.compile(r"\b(?:\+?\d{1,2}[- ]?)?\(?\d{3}\)?[- ]?\d{3}[- ]?\d{4}\b"), "<REDACTED:phone>"),
-    (re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"), "<REDACTED:api-key>"),
-]
-
-def scrub(s):
-    if not isinstance(s, str):
-        return s
-    for pat, repl in PII_PATTERNS:
-        s = pat.sub(repl, s)
-    return s
-
-cached = json.loads(STATE.read_text())
-records = []
-redactions = 0
-for row in cached["records"]:
-    inp = scrub(row.get("input") or "")
-    expected = row.get("expected_output") or row.get("output") or ""
-    expected = scrub(expected) if expected else None
-    if inp != row.get("input") or (expected and expected != (row.get("expected_output") or row.get("output"))):
-        redactions += 1
-    rec = {
-        "input_data": {"input": inp},
-        "metadata": {"trace_id": row["trace_id"], "ml_app": ML_APP},
-        "tags": [f"ml_app:{ML_APP}", "source:annotation-queue", f"trace_id:{row['trace_id']}"],
-    }
-    if expected is not None and expected != "":
-        rec["expected_output"] = expected
-    records.append(rec)
-
-OUT.parent.mkdir(parents=True, exist_ok=True)
-OUT.write_text(json.dumps(records, indent=2))
-print(f"Wrote {len(records)} records to {OUT}")
-print(f"PII redactions: {redactions}")
-print(f"Records with expected_output: {sum(1 for r in records if 'expected_output' in r)}")
-EOF
+python <skill-dir>/scripts/build_dataset_from_export.py \
+  --state <output-dir>/state/00-trace-export.json \
+  --output <output-dir>/dataset_<ml_app>_<YYYYMMDD>.json \
+  --ml-app <ml_app>
 ```
+
+`<skill-dir>` resolves to wherever the skill is installed (e.g., `~/.claude/skills/agent-observability-eval-pipeline/`). The script prints:
+
+- `Wrote <N> records to <path>` — success
+- `PII redactions: <K>` — number of records where email / SSN / phone / api-key patterns were scrubbed
+- `Records with expected_output: <M>/<N>` — how many records carry an `expected_output` (from either the `expected_output` or fallback `output` field in the cached export)
+- `ERROR: ...` on stderr with a non-zero exit if the state file is missing or malformed
 
 After the script runs, emit a sub-skill-style summary so the user sees what was produced without scrolling back to the CSV:
 
@@ -927,8 +893,8 @@ The Phase Template's "Type 'continue' to proceed" line should be updated to:
   --trace-export ~/Downloads/annotation-queue-export.csv \
   --stop-after dataset
 
-# See `references/sample-annotation-queue-export.csv` for the canonical CSV shape
-# (column-name aliases like `content_id` / `trace_id` / `Input` / `Output` are accepted).
+# Column-name aliases like `content_id` / `trace_id` / `Input` / `Output` are accepted.
+# See the Precheck section's schema table for the full alias list.
 ```
 
 `--start-at` and `--stop-after` compose freely. Internally, `--start-at X --stop-after Y` runs exactly phases X through Y inclusive (and the run is invalid if Y < X — error out at argument parse time).
