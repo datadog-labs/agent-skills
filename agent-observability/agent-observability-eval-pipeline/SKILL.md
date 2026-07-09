@@ -143,7 +143,35 @@ Before Phase 1, run a single short verification pass — do **not** announce a "
 
    Do **not** offer to create the `.env` file for the user — secrets-on-disk decisions belong to the user, not the skill.
 
-6. **`--trace-export` validation** *(only when `--trace-export <path>` was passed; otherwise skip this step entirely)* — validate the export is loadable and the listed traces actually exist in Datadog before any phase begins. Bad exports fail loudly here, not halfway through Phase 1.
+6. **Trace-export resolution and validation** — resolve where the curated trace list is coming from, then validate it. Skip this step entirely only if none of the sources below match.
+
+   **Source resolution** (first hit wins):
+
+   a. **`--trace-export <path>` flag explicitly passed** → use that path.
+
+   b. **Context auto-detection** *(only if the flag was NOT passed)* — scan the current Claude Code conversation context (the user's invocation message plus any attached files) for signals of a curated trace list. **Detect and confirm; never silently adopt.** Look for any of:
+
+      - An attached file with a `.csv` or `.json` extension whose content includes 32-character lowercase hex strings that look like `trace_id`s (10+ occurrences is a strong signal; treat any file whose name matches `*annotation*queue*` as a strong signal regardless of content sniff).
+      - A fenced code block in the invocation message whose first line looks like a CSV header (`Content ID`, `content_id`, `trace_id`, or any of the accepted `input` aliases) followed by rows of hex + text.
+      - A markdown table in the invocation message with a column of 32-char hex trace IDs.
+      - A plain list of 10+ 32-char hex strings in the invocation message (one per line or comma-separated).
+
+      For each candidate, materialize the content to `<output-dir>/state/00-trace-export-detected.csv` (write the raw block verbatim; the existing schema resolver in the sub-steps below handles the parsing). Then **ask the user via `AskUserQuestion`** — do not proceed without explicit confirmation:
+
+      > "I detected what looks like a curated trace list in your context — `<one-line description: e.g. "an attached CSV named annotation-queue-export.csv (16 rows)"` / "a fenced CSV block in your message (3 rows)" / "a table of 8 trace IDs">`. Should I use it as `--trace-export`?"
+      >
+      > Options:
+      > - **Use it** — resolves the source, continues with validation below.
+      > - **Ignore and sample fresh** — proceeds without `--trace-export` (Phase 1 and Phase 4 sample from the ml_app as normal).
+      > - **Show me what I detected** — surface the first 5 rows of the detected content, then re-ask.
+
+      If confirmed, set `<resolved-path>` to `<output-dir>/state/00-trace-export-detected.csv` (or `.json`) and continue with validation using that path. Surface a Precheck line: `Trace export: detected from context, awaiting your confirmation` if the user hasn't answered yet, then `Trace export: <path> (auto-detected, confirmed by user)` after.
+
+      **Never** auto-detect more than one candidate. If multiple sources are visible (e.g., an attached file *and* a pasted block), list both in the `AskUserQuestion` prompt and let the user pick.
+
+   c. **No flag and no context match** — skip the whole trace-export step. Phase 1 and Phase 4 sample fresh from the `ml_app` as they would without the flag. Surface a Precheck line: `Trace export: (not set — pipeline will sample fresh traces in Phase 1 and Phase 4)`.
+
+   After resolution, proceed with validation on `<resolved-path>` regardless of how it was resolved.
 
    **Format support**. Infer the format from the file extension:
 
