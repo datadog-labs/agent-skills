@@ -46,11 +46,14 @@ def generate_output(line: dict) -> "str | None":
 def judge(input_text: str, output_text: str) -> "tuple[float, str]":
     """Real LLM-as-judge over (input, output). Returns (score in [0,1], justification).
 
-    TODO: make a REAL judge call. Judge-selection order (see rubrics.md):
-      1. Internal Datadog judge — model gateway, or DD_API_KEY + DD_APP_KEY to run a Datadog
-         LLM Obs evaluator. Prefer this when available.
-      2. Else an external provider with whatever key is present: ANTHROPIC_API_KEY, then
-         OPENAI_API_KEY.
+    TODO: make a REAL judge call. Model selection (see rubrics.md):
+      - If the config names a judge `model`, use it.
+      - Else DEFAULT to the Claude model selected in the Claude Code session running this skill
+        (the same model as the main loop), called via ANTHROPIC_API_KEY / CLAUDE_API_KEY or an
+        internal Datadog/AI-gateway route.
+      - Only fall back to another provider (OPENAI_API_KEY) or a Datadog LLM Obs evaluator if the
+        session model cannot be reached.
+    Pin the resolved model id so the judge is identical across every iteration.
     Score `output_text` against GOAL. If no judge can be reached after genuinely trying, raise —
     do NOT return a fabricated number.
     """

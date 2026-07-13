@@ -32,6 +32,7 @@ working directory.
 | `files_to_optimize` | file(s) whose code you change each iteration | **required** |
 | `goal` | what "better" means; the judge rubric + optimization direction | **required** |
 | `evaluators` | explicit evaluator/rubric text, if any | falls back to `goal` |
+| `model` | judge model id | **the Claude model selected in this session** (see rubric) |
 | `ml_app` | Datadog LLM-Obs app to pull traces from | required unless `dataset_id`/`trace_ids` given |
 | data source | `dataset_id` \| `trace_ids` \| recent traces for `ml_app` | see priority below |
 | `max_iterations` | how many changes to try (clamp **1–50**) | **2** |

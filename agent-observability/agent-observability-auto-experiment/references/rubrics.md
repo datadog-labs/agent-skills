@@ -58,13 +58,17 @@ Write a real, committed evaluation module `.auto_experiment/eval_harness.py` wit
   `generate_output`, then runs the **LLM-as-judge** on (input, generated output) using the
   evaluator from the config (`evaluators` field, else `goal`), and **returns the computed
   score**. There must be **NO score literals / hard-coded arrays** anywhere in this file.
+  - **Judge model selection.** If the experiment config names a judge model, use it. **If no
+    model is specified, default to the Claude model selected in the Claude Code session that
+    invoked this skill** — i.e. the same model running this loop. Resolve that model id (the
+    session/main-loop model) and call it through whichever Anthropic credential is available
+    (`ANTHROPIC_API_KEY` / `CLAUDE_API_KEY`, or an internal Datadog/AI-gateway route). Only fall
+    back to another provider (e.g. `OPENAI_API_KEY`) or an internal Datadog LLM Obs evaluator if
+    the session model cannot be reached. Pin the resolved model id in `eval_harness.py` so the
+    judge is identical across every iteration, and state in `reasoning` which model you used.
   - **Figure out how to make a real judge call yourself**: probe for an available LLM
-    credential/endpoint and use whichever works. **Prefer an internal Datadog judge when
-    available** — an internal Datadog model gateway, or `DD_API_KEY` + `DD_APP_KEY` to run a
-    Datadog LLM Obs evaluator. Otherwise, call an external provider directly using whatever key
-    is present, e.g. `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`. State in `reasoning` which judge
-    you used. If, after genuinely trying, no judge can be reached, STOP and report the blocker —
-    do NOT fabricate a score.
+    credential/endpoint and use whichever works. If, after genuinely trying, no judge can be
+    reached, STOP and report the blocker — do NOT fabricate a score.
 - a runner that applies `evaluate_line` to EVERY scoreable line of `data.jsonl` (per the
   exclusion rule above), writes each result to `.auto_experiment/eval_results.jsonl` (input
   snippet, output, score, justification), and prints the mean over scoreable lines.
