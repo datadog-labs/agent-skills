@@ -60,6 +60,9 @@ the run's state + audit trail):
    best commit at the end.
 3. Write `.auto_experiment/config.json`. Add `.auto_experiment/` output files to nothing special
    — they are committed on purpose (they are the audit trail).
+4. This run reports one score per iteration to the LLM-Obs experiment identified by the
+   `DD_AUTO_EXPERIMENT_ID` environment variable (set in the environment before this skill is
+   invoked — read it, don't ask the user). See **Report each iteration's score to LLM-Obs**.
 
 ## Iteration 1 — baseline + first improvement
 
@@ -105,6 +108,9 @@ Decide `is_best` per the optimization direction in `goal`. If iteration 1 improv
 baseline, it becomes the best (`best_sha` = this commit, `best_score` = after_score). Append the
 row to `config.json` `iteration_results`.
 
+Then report this iteration's score to LLM-Obs (tag `iteration:1`) — see **Report each iteration's
+score to LLM-Obs**.
+
 ## Iterations 2+ — hill climb
 
 Mirrors `build_followup_prompt`. Baseline is already known — **do not recompute it**.
@@ -123,6 +129,59 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
 5. Re-run the SAME harness → `after_score`. Re-write `eval_results.jsonl` + `result.json`, commit.
 6. **Keep or discard**: if `is_best` (beats the best per the goal direction) → update
    `best_sha`/`best_score`, decision `kept`. Else `discarded`. Append the row.
+7. Report this iteration's score to LLM-Obs (tag `iteration:<n>`) — see **Report each iteration's
+   score to LLM-Obs**.
+
+## Report each iteration's score to LLM-Obs (every scored iteration)
+
+Once you have a computed score for an iteration, submit **exactly one** eval-metric datapoint to
+LLM-Obs with the `submit_llmobs_experiment_events` MCP tool. Do this once per iteration, right
+after the score is computed and the iteration's commit / `result.json` is written — including
+iteration 1.
+
+Call `submit_llmobs_experiment_events` with a single metric shaped exactly like this:
+
+- `experiment_id`: the value of the `DD_AUTO_EXPERIMENT_ID` environment variable (read it from the
+  environment; do not ask the user and do not invent one). If it is unset or empty, skip the
+  submission and note that in the iteration `reasoning`.
+- `metrics`: an array containing exactly one object with these fields and no others:
+  - `label`: always the literal string `auto_experiment_score`.
+  - `metric_type`: `score`.
+  - `score_value`: the score this iteration produced (`after_score`) — the number computed by the
+    harness, never a literal or a rounded-for-display value.
+  - `timestamp_ms`: the current wall-clock time as an epoch timestamp in **milliseconds**.
+  - `tags`: `["iteration:<n>", "git.commit.sha:<sha>"]`, where `<n>` is this iteration's number
+    (`1` for the first improvement, `2` for the next, and so on) and `<sha>` is the full Git
+    commit SHA of the commit this iteration created for its change (i.e. `git rev-parse HEAD`
+    after committing the iteration).
+  - Do **not** include `span_id`, `categorical_value`, or `boolean_value`.
+
+Example arguments for iteration 5 whose harness computed a score of `0.72`:
+
+```json
+{
+  "experiment_id": "<value of $DD_AUTO_EXPERIMENT_ID>",
+  "metrics": [
+    {
+      "label": "auto_experiment_score",
+      "metric_type": "score",
+      "score_value": 0.72,
+      "timestamp_ms": 1752430000000,
+      "tags": ["iteration:5", "git.commit.sha:33ec6e0959bd46b0ea9c337cf6a28a763d3eeb0a"]
+    }
+  ]
+}
+```
+
+Rules:
+
+- **Exactly one metric per iteration.** Never submit more than one metric for the same iteration
+  and never batch several iterations into one call.
+- **Only for scored iterations.** A `no_change` iteration has no computed score, so there is no
+  `score_value` to send — skip the submission for it (emitting a `score` metric without a real
+  score would violate the scoring policy). Record the skip in `reasoning`.
+- The value you submit is the same computed `after_score` recorded in `result.json`; the two must
+  always agree.
 
 ## Stop conditions & guards
 
