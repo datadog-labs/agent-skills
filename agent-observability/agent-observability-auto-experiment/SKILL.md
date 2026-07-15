@@ -113,8 +113,10 @@ Then **split once, deterministically** (hash of datapoint id, ~70/30) into
 
 ### Step 2 — Build the harness and compute BEFORE (baseline)
 Copy `references/eval_harness_template.py` to `.auto_experiment/eval_harness.py` and fill in
-`generate_output` (run the REAL code under test from `files_to_optimize`) and `judge` (a REAL
-LLM-as-judge, judge-selection order in the rubric). **No score literals anywhere.**
+`generate_output` (run the REAL code under test from `files_to_optimize`) and `judge`. **Prefer a
+deterministic ground-truth metric** (reference output / programmatic checker / pipeline count) and
+use an LLM-as-judge only when no ground truth exists — see the rubric's **Metric selection**. **No
+score literals anywhere.**
 
 Run it against the **original, unmodified** code with `AUTO_EXP_REPS` (= config `reps`, default 3):
 the harness re-runs the whole eval R times and prints `{mean, stdev, rep_means, ...}`.

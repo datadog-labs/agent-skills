@@ -119,6 +119,22 @@ summary and MUST NOT be scored when a `messages` field exists somewhere in the t
 - If a messages field is too large to process directly, summarize it first, then score on the
   summary.
 
+## Metric selection — prefer deterministic ground truth over an LLM judge (`_metric_selection`)
+
+The scorer is itself a noise source. **When a deterministic, ground-truth metric is available, use
+it instead of an LLM judge** — it removes an entire layer of variance and can't be gamed:
+
+- If datapoints carry a **reference/expected output** (dataset `expected_output`, gold label), score
+  with an exact/programmatic check (exact match, F1, set overlap, a repo evaluator, `total_examples`
+  from a pipeline, etc.) — deterministic, `stdev ≈ 0` across reps from the judge side.
+- Use an **LLM-as-judge only when no ground truth exists** (open-ended quality). Then treat it as
+  the noisiest component: bump `AUTO_EXP_REPS` (≥5), pin the model + prompt, and expect a wider
+  noise band.
+- Either way the metric is **computed by running code** (scoring policy) — a deterministic checker
+  and an LLM judge are both legitimate `judge()` implementations; prefer the deterministic one.
+- State which metric kind you used in `reasoning`; a deterministic ground-truth metric is the
+  strongest evidence, an LLM judge the weakest.
+
 ## Eval-harness spec (`_eval_harness_skill`)
 
 Write a real, committed evaluation module `.auto_experiment/eval_harness.py` with:

@@ -56,9 +56,15 @@ def generate_output(line: dict) -> "str | None":
 
 
 def judge(input_text: str, output_text: str) -> "tuple[float, str]":
-    """Real LLM-as-judge over (input, output). Returns (score in [0,1], justification).
+    """Score (input, output). Returns (score in [0,1], justification).
 
-    TODO: make a REAL judge call. Model selection (see rubrics.md):
+    PREFER A DETERMINISTIC GROUND-TRUTH CHECK (see rubrics.md "Metric selection"): if the datapoint
+    carries a reference/expected output or a programmatic checker exists (exact match, F1, set
+    overlap, a repo evaluator, a pipeline count), implement `judge` as that deterministic comparison
+    — it removes the judge's variance entirely. Fall back to an LLM-as-judge ONLY for open-ended
+    quality with no ground truth (then bump AUTO_EXP_REPS >= 5; the judge is the noisiest component).
+
+    TODO (LLM-judge fallback only): make a REAL judge call. Model selection (see rubrics.md):
       - If the config names a judge `model`, use it.
       - Else DEFAULT to the Claude model selected in the Claude Code session running this skill
         (the same model as the main loop), called via ANTHROPIC_API_KEY / CLAUDE_API_KEY or an
