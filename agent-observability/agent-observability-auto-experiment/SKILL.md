@@ -127,9 +127,11 @@ the change. `delta = after_score - before_score`.
 
 Decide `is_best` per the optimization direction in `goal` **and the Noise & keep/discard policy**:
 keep only if `|after_score − before_score| > max(pooled_stdev, min_delta)`. A within-noise gain is
-`is_best: false` (discarded), not kept. If iteration 1 clears the band, it becomes the best
-(`best_sha` = this commit, `best_score` = after_score). Append the row to `config.json`
-`iteration_results`.
+`is_best: false` (discarded), not kept. If the band is cleared, run the **Mechanism audit** (rubric)
+— diff this iteration's `eval_results.jsonl` against the baseline's (same-count denominator; the
+gain comes from datapoints the change touched) before keeping. If iteration 1 clears the band AND
+passes the audit, it becomes the best (`best_sha` = this commit, `best_score` = after_score). Append
+the row to `config.json` `iteration_results`.
 
 Then report this iteration's score to LLM-Obs (tag `iteration:1`) — see **Report each iteration's
 score to LLM-Obs**.
@@ -153,9 +155,11 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
    if it reaches 0 failing datapoints, record `no_change` and skip the full eval. Otherwise re-run
    the SAME harness on `val` → `after_score`. Re-write `eval_results.jsonl` + `result.json`, commit.
 6. **Keep or discard**: keep only if the delta clears the noise band (`|after_score − before_score|
-   > max(pooled_stdev, min_delta)`, per the Noise policy) in the goal's direction → update
-   `best_sha`/`best_score`, decision `kept`. A within-noise gain or a regression → `discarded`.
-   Append the row.
+   > max(pooled_stdev, min_delta)`, per the Noise policy) in the goal's direction **and passes the
+   Mechanism audit** (rubric) — diff `eval_results.jsonl` vs the best commit's
+   (`git show <best_sha>:.auto_experiment/eval_results.jsonl`); same denominator, gain from
+   datapoints the change touched. Then → update `best_sha`/`best_score`, decision `kept`. A
+   within-noise gain, a denominator artifact, or a regression → `discarded`. Append the row.
 7. Report this iteration's score to LLM-Obs (tag `iteration:<n>`) — see **Report each iteration's
    score to LLM-Obs**.
 

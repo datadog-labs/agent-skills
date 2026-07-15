@@ -170,3 +170,21 @@ it in the same commit as the code change:
 `is_best` drives keep/discard and must reflect the optimization direction in `goal` (higher is
 better unless the goal says to minimize) **AND clear the noise band** (`|delta| > noise_band`) —
 a within-noise point-estimate gain is `is_best: false`. `reasoning` is mandatory and never empty.
+
+## Mechanism audit — confirm the change CAUSED the gain (`_mechanism_audit`)
+
+A rising mean is necessary but not sufficient to keep a change. Before setting `is_best: true`,
+confirm the improvement is **caused by the change**, not by an artifact:
+
+- **Per-datapoint diff.** Diff the best vs candidate `eval_results.jsonl`: which datapoints flipped
+  up, which down. The gain must come from datapoints the change plausibly touches (ideally in the
+  census bucket it targeted). A mean that rose while the targeted datapoints did **not** flip is a
+  red flag — the "gain" is probably noise or an unrelated wobble.
+- **Denominator guard.** Confirm `scored`/`excluded` counts are the SAME across best and candidate.
+  A higher mean from *fewer scored datapoints* (the change dropped hard cases out of the eval set)
+  is an artifact, not an improvement — discard it. (A real production loop was fooled exactly this
+  way: a "+0.1" that was only a shrinking denominator.)
+- **Causality on regressions too.** If controls/negatives regressed, check whether the change even
+  fired on them; a regression the change never touched is noise, one it caused is a real cost.
+- Record the audit outcome (which datapoints moved and why it is/ isn't causal) in `reasoning`. If
+  the audit fails, the iteration is `discarded` even though the point estimate rose.
