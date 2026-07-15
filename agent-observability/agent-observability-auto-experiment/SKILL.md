@@ -114,6 +114,11 @@ Read `files_to_optimize`. Make **ONE focused change** toward `goal`, aimed at th
 bucket you can plausibly move** (name that bucket in the iteration's `reasoning`). Commit it on the
 scratch branch with a message explaining what changed and why.
 
+Before the (expensive) full eval, run a **feasibility probe** per the rubric's **Feasibility probe**:
+the cheapest offline check that this change *could* move a failing census bucket. If the probe
+reaches 0 failing datapoints, record the iteration `no_change` with the probe result and skip to the
+next hypothesis — do **not** spend a full eval on a dead lever.
+
 ### Step 4 — Compute AFTER (re-run the SAME harness)
 Re-run `.auto_experiment/eval_harness.py` (same `evaluate_line`, same data) against the changed
 code. `after_score` = the new printed mean. Re-write `eval_results.jsonl`. Write the metric object
@@ -144,7 +149,9 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
 3. Reuse the data from `data.jsonl` and the committed `eval_harness.py` — do not reload or rebuild.
 4. Make **ONE new change, different from every previous attempt** (you can see prior attempts in
    `iteration_results`), aimed at a named `census.json` bucket. Commit it.
-5. Re-run the SAME harness → `after_score`. Re-write `eval_results.jsonl` + `result.json`, commit.
+5. **Feasibility probe first** (rubric): cheap offline check the change can move its target bucket;
+   if it reaches 0 failing datapoints, record `no_change` and skip the full eval. Otherwise re-run
+   the SAME harness on `val` → `after_score`. Re-write `eval_results.jsonl` + `result.json`, commit.
 6. **Keep or discard**: keep only if the delta clears the noise band (`|after_score − before_score|
    > max(pooled_stdev, min_delta)`, per the Noise policy) in the goal's direction → update
    `best_sha`/`best_score`, decision `kept`. A within-noise gain or a regression → `discarded`.

@@ -84,6 +84,24 @@ budget re-discovering that wording changes are noise.
   can't call), say so — that is a finding (the ceiling is not prompt/code-reachable), not a reason
   to keep tweaking the reachable-but-tiny buckets.
 
+## Feasibility probe — prove reachability before you pay for a full eval (`_feasibility_probe`)
+
+A full eval is the expensive step (R reps × every datapoint × real code + judge). Before spending
+it on a hypothesis, run the **cheapest possible offline check that the lever CAN move the metric** —
+an upper bound, not a measurement. Only run the full eval on hypotheses that pass.
+
+- The probe answers "if this change worked perfectly, could it flip any currently-failing
+  datapoint?" Examples: for a retrieval change, does the needed signal even exist in reach (a
+  read-only API/tool call on the census's failing ids)? For a prompt change, on 2–3 failing
+  examples does the edited prompt visibly change the output in the intended direction (a handful of
+  direct model calls, not the full harness)?
+- A probe that reaches **0** of the failing datapoints means the hypothesis is dead — record it
+  `no_change` with the probe result in `reasoning` and move on **without** spending a full eval.
+  (This is exactly how the production effort rejected semantic-search and dependency-graph levers in
+  minutes instead of hours.)
+- Keep probes read-only and offline where possible; never let a probe mutate `files_to_optimize`
+  or the committed harness/data.
+
 ## Messages-source guidance — where the input/output lives (`_messages_source_guidance`)
 
 **`messages` is the source of truth — the root span's `input.value` is usually a thin/truncated
