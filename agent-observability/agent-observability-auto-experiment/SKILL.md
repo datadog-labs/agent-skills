@@ -237,8 +237,14 @@ Rules:
 ## Stop conditions & guards
 
 - Stop when `iteration == max_iterations`.
+- **Plateau within noise — stop early.** If the last **3** iterations all landed `discarded`
+  *within the noise band* (no delta cleared `max(pooled_stdev, min_delta)`), stop and report the
+  current best with `stop_reason: "plateau (deltas within noise)"`. Continuing past a noise plateau
+  just burns budget generating within-noise wiggle; escalate instead (a new census bucket, a
+  different dimension, or accept the ceiling). Distinguish this from a real regression streak.
 - **A change with no computable score is `no_change`, never a fabricated number** (harness won't
-  run / no new commit / judge unreachable). Record the blocker in `reasoning`.
+  run / no new commit / judge unreachable / feasibility probe reached 0). Record the blocker in
+  `reasoning`.
 - Track consecutive `no_change` iterations; after **5 in a row**, stop early and report the best
   result so far with a stop reason (do not keep burning iterations).
 
