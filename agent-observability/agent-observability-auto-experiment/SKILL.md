@@ -103,9 +103,16 @@ never literals — obey the scoring policy and the **Noise & keep/discard policy
 
 Commit `eval_harness.py`, `data.jsonl`, `data.val.jsonl`, `data.test.jsonl`, `eval_results.jsonl`.
 
+### Step 2.5 — Census the baseline failures
+Before changing anything, decompose **where the baseline loses** per the rubric's **Baseline
+failure census**: bucket every failing datapoint by root cause, write `.auto_experiment/census.json`,
+commit it, and surface the ranked buckets. This tells you which lever is worth pulling — and whether
+the dominant failure mode is even reachable by editing `files_to_optimize`.
+
 ### Step 3 — Improve
-Read `files_to_optimize`. Make **ONE focused change** toward `goal`. Commit it on the scratch
-branch with a message explaining what changed and why.
+Read `files_to_optimize`. Make **ONE focused change** toward `goal`, aimed at the **largest census
+bucket you can plausibly move** (name that bucket in the iteration's `reasoning`). Commit it on the
+scratch branch with a message explaining what changed and why.
 
 ### Step 4 — Compute AFTER (re-run the SAME harness)
 Re-run `.auto_experiment/eval_harness.py` (same `evaluate_line`, same data) against the changed
@@ -136,7 +143,7 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
    nothing kept yet). Do NOT re-run the baseline.
 3. Reuse the data from `data.jsonl` and the committed `eval_harness.py` — do not reload or rebuild.
 4. Make **ONE new change, different from every previous attempt** (you can see prior attempts in
-   `iteration_results`). Commit it.
+   `iteration_results`), aimed at a named `census.json` bucket. Commit it.
 5. Re-run the SAME harness → `after_score`. Re-write `eval_results.jsonl` + `result.json`, commit.
 6. **Keep or discard**: keep only if the delta clears the noise band (`|after_score − before_score|
    > max(pooled_stdev, min_delta)`, per the Noise policy) in the goal's direction → update

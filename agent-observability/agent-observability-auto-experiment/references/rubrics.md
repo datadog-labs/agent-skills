@@ -64,6 +64,26 @@ it **once, deterministically** (e.g. by a hash of the datapoint id, ~70% / 30%) 
 - Keep the split small enough to run in the iteration budget but large enough that per-split stdev
   is meaningful; if the corpus is tiny, note the low power in `reasoning` rather than faking a split.
 
+## Baseline failure census — localize the lever before you tweak (`_failure_census`)
+
+Before iteration 1's first change, decompose **where the baseline actually loses**, so iterations
+aim at a real failure mode instead of guessing. Blind prompt-tweaking is how a loop burns its
+budget re-discovering that wording changes are noise.
+
+- From the baseline `eval_results.jsonl`, bucket every **failing / low-scoring** datapoint by
+  **root cause**, not by score. Use judge justifications + the trace to assign each a short cause
+  tag. Generic buckets that fit most tasks: `wrong_retrieval` (needed input never fetched),
+  `wrong_reasoning` (had the input, drew the wrong conclusion), `format/parse` (right answer, wrong
+  shape), `refusal/empty`, `judge_disagreement` (output is fine, rubric is off), `data/label`
+  (the reference is wrong). Adapt the tags to the task.
+- Write the census to `.auto_experiment/census.json` (`{tag: count, examples: [ids]}`) and commit it.
+  Surface the ranked buckets.
+- **Every iteration must name the census bucket it targets** (in `result.json` `reasoning`) and be a
+  change plausibly able to move THAT bucket. If the dominant bucket is not reachable by editing
+  `files_to_optimize` (e.g. `data/label` errors, or a `wrong_retrieval` that needs a tool the code
+  can't call), say so — that is a finding (the ceiling is not prompt/code-reachable), not a reason
+  to keep tweaking the reachable-but-tiny buckets.
+
 ## Messages-source guidance — where the input/output lives (`_messages_source_guidance`)
 
 **`messages` is the source of truth — the root span's `input.value` is usually a thin/truncated
