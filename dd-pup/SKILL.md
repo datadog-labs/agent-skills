@@ -2,7 +2,7 @@
 name: dd-pup
 description: Datadog CLI (Rust). OAuth2 auth with token refresh.
 metadata:
-  version: "1.0.1"
+  version: "1.0.2"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,cli,dd-pup,pup
@@ -19,7 +19,9 @@ Pup CLI for Datadog API operations. Supports OAuth2 and API key auth.
 |------|---------|
 | Search error logs | `pup logs search --query "status:error" --from 1h` |
 | List monitors | `pup monitors list` |
+| Diff a monitor definition | `pup monitors diff <monitor-id> monitor.json` |
 | Schedule monitor downtime | `pup downtime create --file downtime.json` |
+| Open a dashboard at a live time window | `pup dashboards url <dashboard-id> --from now-1h --to now --live true` |
 | Find recent slow traces for a service (last 1h) | `pup traces search --query "service:<service-name> @duration:>500ms" --from 1h` |
 | List incidents | `pup incidents list --limit 50` |
 | Import incident payload | `pup incidents import --file incident.json` |
@@ -87,6 +89,7 @@ pup monitors get <monitor-id>
 pup monitors search --query "<monitor-name>"
 pup monitors create --file monitor.json
 pup monitors update <monitor-id> --file monitor.json
+pup monitors diff <monitor-id> monitor.json
 pup monitors delete <monitor-id>
 # No pup monitors mute/unmute commands; use downtime payloads instead.
 pup downtime create --file downtime.json
@@ -127,11 +130,40 @@ pup incidents import --file incident.json
 ### Dashboards
 ```bash
 pup dashboards list
-pup dashboards get <dashboard-id>
+pup dashboards get <dashboard-id> --read-only
+pup dashboards url <dashboard-id> --from now-1h --to now --live true
 pup dashboards create --file dashboard.json
 pup dashboards update <dashboard-id> --file dashboard.json
 pup dashboards delete <dashboard-id>
 ```
+
+#### Safe dashboard create, clone, and update workflow
+
+The goal is a recoverable source and a verified destination. A successful API response alone does not prove that widget content or placement was preserved.
+
+1. Fetch the source or update target with `--read-only` and save the exact response as an immutable snapshot. Never overwrite this file with transformed JSON.
+   ```bash
+   pup dashboards get <dashboard-id> --read-only -o json > dashboard-source.json
+   ```
+2. Build a separate mutation payload. Remove response-only fields before create/update: `author_handle`, `author_name`, `created_at`, `id`, `modified_at`, and `url`.
+   ```bash
+   jq 'del(.author_handle, .author_name, .created_at, .id, .modified_at, .url)' \
+     dashboard-source.json > dashboard-payload.json
+   ```
+3. For a backup or clone, leave the source dashboard unchanged and change only explicitly requested fields, usually `title` or `description`. Preserve `layout_type`, `reflow_type`, widget order, and every recursive widget `layout` object (`x`, `y`, `width`, `height`, and `is_column_break`). Repacking or compacting coordinates creates a derived layout, not an exact clone.
+4. Create or update from `dashboard-payload.json`, then fetch the destination into a new file.
+   ```bash
+   pup dashboards create --file dashboard-payload.json
+   pup dashboards get <destination-id> --read-only -o json > dashboard-destination.json
+   ```
+5. Normalize away the response-only fields and compare the complete definitions. The only differences should be the fields intentionally changed.
+6. Also compare layout projections separately so a placement regression cannot hide in a large widget diff:
+   ```bash
+   jq '{layout_type, reflow_type, layouts: [.. | objects | .layout? // empty]}' dashboard-source.json
+   jq '{layout_type, reflow_type, layouts: [.. | objects | .layout? // empty]}' dashboard-destination.json
+   ```
+
+Pup 1.6.3 does not expose dashboard version history. If an exact historical version is required and no immutable snapshot exists, inspect version history in the Datadog UI before changing the dashboard.
 
 ### SLOs
 ```bash
@@ -287,9 +319,13 @@ pup cost gcp-config delete <account-id>
 ## Subcommand Discovery
 
 ```bash
+pup --version           # Confirm installed version before documenting workarounds
 pup --help              # List all commands
 pup <command> --help    # Command-specific help
+pup dashboards get <dashboard-id> --jq '{title, layout_type}'  # Filter output before formatting
 ```
+
+If local help differs from this skill, compare `pup --version` with the latest stable release before inventing a workaround.
 
 ## Error Handling
 
