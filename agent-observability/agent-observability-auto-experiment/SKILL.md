@@ -66,6 +66,26 @@ the run's state + audit trail):
    `DD_AUTO_EXPERIMENT_ID` environment variable (set in the environment before this skill is
    invoked — read it, don't ask the user). See **Report each iteration's score to LLM-Obs**.
 
+## Execution model — orchestrator + fresh per-iteration sub-agents
+
+Split the two roles so context stays clean and iterations don't anchor on each other:
+
+- **You are the orchestrator.** You own the durable state (`config.json`, `census.json`, `best_sha`,
+  the branch), the harness, and every keep/discard decision. You do NOT accumulate the raw work of
+  each attempt in your own context.
+- **Each improvement iteration runs in a FRESH sub-agent** (spawn via the Agent tool). Hand it a
+  compact briefing — not your whole transcript: the `goal`/`evaluators`, `files_to_optimize`, the
+  ranked `census.json` buckets (+ the bucket to target this iteration), the current `best_sha`, and
+  **one-line summaries of prior attempts** (what was tried → kept/discarded, from `iteration_results`)
+  so it won't repeat them. Its job: make ONE change + return a short summary (what it changed, which
+  bucket, feasibility-probe result). You (orchestrator) run the harness, apply the noise gate +
+  mechanism audit, commit/keep/discard, and update state.
+- **Why:** a fresh bounded context per iteration avoids anchoring on dead ideas and stops the
+  orchestrator's context from bloating over a long run — the same reason the production loop spawns a
+  new `claude --print` per iteration instead of one long-lived agent. If sub-agents are unavailable,
+  emulate it: before each iteration, re-read only the briefing above and deliberately ignore the
+  narrative of previous attempts beyond their one-line outcomes.
+
 ## Iteration 1 — baseline + first improvement
 
 Mirrors `build_initial_prompt`. Four steps, in order.
