@@ -47,6 +47,8 @@ the run's state + audit trail):
   "goal": "...", "evaluators": "...", "ml_app": "...",
   "dataset_id": "...", "trace_ids": [...],
   "max_iterations": 2,
+  "reps": 3,
+  "min_delta": 0.02,
   "iteration_results": [],
   "final_result": {}
 }
@@ -89,8 +91,10 @@ Copy `references/eval_harness_template.py` to `.auto_experiment/eval_harness.py`
 `generate_output` (run the REAL code under test from `files_to_optimize`) and `judge` (a REAL
 LLM-as-judge, judge-selection order in the rubric). **No score literals anywhere.**
 
-Run it against the **original, unmodified** code. `before_score` = the printed mean over scoreable
-lines. It is a computed number, never a literal — obey the scoring policy.
+Run it against the **original, unmodified** code with `AUTO_EXP_REPS` (= config `reps`, default 3):
+the harness re-runs the whole eval R times and prints `{mean, stdev, rep_means, ...}`.
+`before_score` = the printed `mean`; also record `stdev` (the noise floor). Both computed numbers,
+never literals — obey the scoring policy and the **Noise & keep/discard policy** in the rubric.
 
 Commit `eval_harness.py`, `data.jsonl`, `eval_results.jsonl`.
 
@@ -104,9 +108,11 @@ code. `after_score` = the new printed mean. Re-write `eval_results.jsonl`. Write
 (schema in the rubric) to `.auto_experiment/result.json` and commit it **in the same commit** as
 the change. `delta = after_score - before_score`.
 
-Decide `is_best` per the optimization direction in `goal`. If iteration 1 improved on the
-baseline, it becomes the best (`best_sha` = this commit, `best_score` = after_score). Append the
-row to `config.json` `iteration_results`.
+Decide `is_best` per the optimization direction in `goal` **and the Noise & keep/discard policy**:
+keep only if `|after_score − before_score| > max(pooled_stdev, min_delta)`. A within-noise gain is
+`is_best: false` (discarded), not kept. If iteration 1 clears the band, it becomes the best
+(`best_sha` = this commit, `best_score` = after_score). Append the row to `config.json`
+`iteration_results`.
 
 Then report this iteration's score to LLM-Obs (tag `iteration:1`) — see **Report each iteration's
 score to LLM-Obs**.
@@ -127,8 +133,10 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
 4. Make **ONE new change, different from every previous attempt** (you can see prior attempts in
    `iteration_results`). Commit it.
 5. Re-run the SAME harness → `after_score`. Re-write `eval_results.jsonl` + `result.json`, commit.
-6. **Keep or discard**: if `is_best` (beats the best per the goal direction) → update
-   `best_sha`/`best_score`, decision `kept`. Else `discarded`. Append the row.
+6. **Keep or discard**: keep only if the delta clears the noise band (`|after_score − before_score|
+   > max(pooled_stdev, min_delta)`, per the Noise policy) in the goal's direction → update
+   `best_sha`/`best_score`, decision `kept`. A within-noise gain or a regression → `discarded`.
+   Append the row.
 7. Report this iteration's score to LLM-Obs (tag `iteration:<n>`) — see **Report each iteration's
    score to LLM-Obs**.
 

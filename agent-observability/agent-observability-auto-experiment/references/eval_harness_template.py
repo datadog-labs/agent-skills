@@ -11,18 +11,30 @@ Hard rules (see references/rubrics.md):
   * The harness is written ONCE and reused verbatim across iterations — only the code under
     test (imported by `generate_output`) changes between iterations.
 
-Usage: `python .auto_experiment/eval_harness.py`  -> writes eval_results.jsonl, prints the mean.
+Usage: `python .auto_experiment/eval_harness.py`  -> writes eval_results.jsonl, prints
+  {"mean", "stdev", "reps", "scored", "excluded", "rep_means"}.
+
+Noise: `generate_output` (and an LLM judge) are stochastic, so a single run's mean is a
+noisy estimate. The runner re-runs the WHOLE eval `AUTO_EXP_REPS` times (default 3) and
+reports the mean-of-reps plus the across-rep stdev — the loop uses that stdev as the
+noise floor for keep/discard (see references/rubrics.md "Noise & keep/discard policy").
+Point at a specific data split with `AUTO_EXP_DATA` (default data.jsonl).
 """
 
 from __future__ import annotations
 
 import json
 import os
+import statistics
 from pathlib import Path
 
 HERE = Path(__file__).parent
-DATA = HERE / "data.jsonl"
+DATA = Path(os.environ.get("AUTO_EXP_DATA") or (HERE / "data.jsonl"))
 RESULTS = HERE / "eval_results.jsonl"
+
+# How many times to re-run the full eval to estimate the noise floor. >=3 so the loop
+# can tell a real move from run-to-run wiggle. Same value across every iteration.
+REPS = max(1, int(os.environ.get("AUTO_EXP_REPS", "3")))
 
 # The optimization goal / evaluator text, copied from .auto_experiment/config.json.
 # Used verbatim as the judge rubric so scoring is reproducible.
@@ -75,27 +87,44 @@ def evaluate_line(line: dict) -> "dict | None":
     }
 
 
-def main() -> None:
-    scored: list[float] = []
+def _one_pass(lines: list) -> "tuple[list[dict], int]":
+    """Score every scoreable line ONCE. Returns (results, excluded_count)."""
+    results: list[dict] = []
     excluded = 0
-    with RESULTS.open("w") as out:
-        for raw in DATA.read_text().splitlines():
-            raw = raw.strip()
-            if not raw:
-                continue
-            line = json.loads(raw)
-            result = evaluate_line(line)
-            if result is None:
-                excluded += 1
-                continue
-            out.write(json.dumps(result) + "\n")
-            scored.append(result["score"])
-    if not scored:
-        raise SystemExit("no scoreable lines — cannot compute a mean (do NOT fabricate one)")
-    mean = sum(scored) / len(scored)
-    # This printed number is the before_score / after_score the loop reads. It is computed, never
-    # a literal. `excluded` must be reported in the iteration's reasoning.
-    print(json.dumps({"mean": mean, "scored": len(scored), "excluded": excluded}))
+    for line in lines:
+        result = evaluate_line(line)
+        if result is None:
+            excluded += 1
+            continue
+        results.append(result)
+    return results, excluded
+
+
+def main() -> None:
+    lines = [json.loads(r) for r in DATA.read_text().splitlines() if r.strip()]
+    rep_means: list[float] = []
+    last_results: list[dict] = []
+    excluded = 0
+    # Re-run the whole eval REPS times; each pass re-invokes the (stochastic) code under
+    # test + judge, so the spread across passes is the run-to-run noise floor.
+    for _ in range(REPS):
+        results, excluded = _one_pass(lines)
+        if not results:
+            raise SystemExit("no scoreable lines — cannot compute a mean (do NOT fabricate one)")
+        rep_means.append(sum(r["score"] for r in results) / len(results))
+        last_results = results
+    with RESULTS.open("w") as out:  # keep the last pass's per-line detail for audit
+        for r in last_results:
+            out.write(json.dumps(r) + "\n")
+    mean = statistics.mean(rep_means)
+    stdev = statistics.pstdev(rep_means) if len(rep_means) > 1 else 0.0
+    # `mean` is the before_score/after_score the loop reads; `stdev` is the noise floor the
+    # keep/discard gate compares the delta against. Both computed, never literals. `excluded`
+    # must be reported in the iteration's reasoning.
+    print(json.dumps({
+        "mean": mean, "stdev": stdev, "reps": REPS,
+        "scored": len(last_results), "excluded": excluded, "rep_means": rep_means,
+    }))
 
 
 if __name__ == "__main__":

@@ -15,6 +15,25 @@ A consequence for the loop: if a change is made but its score cannot be computed
 run, judge unreachable, etc.), that iteration is recorded as **no_change** with the blocker in
 `reasoning` — it is never scored with a fabricated number.
 
+## Noise & keep/discard policy (`_noise_policy`)
+
+⚠️ **A single eval run is a NOISY ESTIMATE, not a measurement.** The code under test and any
+LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
+`mean ± stdev` over **`AUTO_EXP_REPS` (default 3) full re-runs of the eval on the same data**
+(the harness does this and prints `stdev` + `rep_means`). Consequences the loop MUST obey:
+
+- **Keep only a delta that clears the noise floor.** An iteration is `is_best` / kept only if
+  `after_mean` beats `best_mean` by more than the noise band —
+  `|after_mean − best_mean| > max(pooled_stdev, min_delta)`, where `pooled_stdev` is the larger
+  of the two runs' `stdev` and `min_delta` is a small floor from config (default `0.02` on a
+  0–1 metric). A delta **within** the noise band is **not** an improvement: record it `discarded`
+  (decision), not kept, no matter that the point estimate rose.
+- **Compare on the same footing.** `best_mean`/`best_stdev` come from a real R-rep harness run of
+  the current best, not a stale single number carried forward. When in doubt, re-run best and
+  candidate back-to-back so data/endpoint drift cancels.
+- **A within-noise "win" is the classic trap.** Point estimates of 15 vs 14 mean nothing when
+  stdev is ~2. Do not keep it, do not report it as an improvement.
+
 ## Data-selection guidance — what enters the eval set (`_data_selection_guidance`)
 
 **Choosing what to score.** Identify the **target unit** from the experiment `goal`/`evaluators`
@@ -83,14 +102,18 @@ it in the same commit as the code change:
 
 ```json
 {
-  "before_score": <float 0-1>,
-  "after_score": <float 0-1>,
+  "before_score": <float 0-1 — best_mean going in>,
+  "after_score": <float 0-1 — this iteration's mean over AUTO_EXP_REPS reps>,
+  "after_stdev": <float — across-rep stdev the harness printed (the noise floor)>,
+  "reps": <int — AUTO_EXP_REPS used>,
   "delta": <after_score minus before_score>,
-  "reasoning": "<REQUIRED — scoring method FIRST (how generate_output ran the code, how many scoreable lines evaluate_line ran over), then what was tested/failed/succeeded, how many traces were excluded and why, and any caveat about reproducing production; 2-4 sentences; never empty>",
+  "noise_band": <float — max(pooled_stdev, min_delta) used for the keep/discard gate>,
+  "reasoning": "<REQUIRED — scoring method FIRST (how generate_output ran the code, how many scoreable lines evaluate_line ran over, reps), then what was tested/failed/succeeded, how many traces were excluded and why, and any caveat about reproducing production; 2-4 sentences; never empty>",
   "best_score": <best metric value across all iterations, considering the optimization direction>,
-  "is_best": <REQUIRED — true if this iteration beats all previous ones, false otherwise; never omit>
+  "is_best": <REQUIRED — true ONLY if the delta clears the noise band (see Noise policy); false otherwise; never omit>
 }
 ```
 
 `is_best` drives keep/discard and must reflect the optimization direction in `goal` (higher is
-better unless the goal says to minimize). `reasoning` is mandatory and must never be empty.
+better unless the goal says to minimize) **AND clear the noise band** (`|delta| > noise_band`) —
+a within-noise point-estimate gain is `is_best: false`. `reasoning` is mandatory and never empty.
