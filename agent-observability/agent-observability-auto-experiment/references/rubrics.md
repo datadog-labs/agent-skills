@@ -49,6 +49,21 @@ answer / generation span). For each trace, locate the scoreable target span, the
   numerator AND the denominator. **Report how many traces you excluded and why** in `reasoning`;
   never exclude a scoreable datapoint to inflate the score.
 
+**Held-out split — hill-climb on `val`, prove on `test`.** After building the scoreable set, split
+it **once, deterministically** (e.g. by a hash of the datapoint id, ~70% / 30%) into
+`data.val.jsonl` and `data.test.jsonl`, committed alongside `data.jsonl`:
+
+- **`val`** is the ONLY split the hill-climb reads. Every iteration's `before/after_score` and the
+  keep/discard gate run on `val` (point the harness at it with `AUTO_EXP_DATA=.auto_experiment/data.val.jsonl`).
+- **`test`** is untouched during the loop. Run it **once at the very end**, on the baseline commit
+  and on the best commit, and report that baseline-vs-best `test` delta as the run's real result.
+- **Why:** hill-climbing directly on the full set overfits the loop to that set's noise, so a
+  within-noise "win" looks real. A change that only helps `val` but not held-out `test` is not a
+  real improvement — the `test` delta is the honest headline. If `val` improved but `test` did
+  not, say so plainly; do not report the `val` gain as the result.
+- Keep the split small enough to run in the iteration budget but large enough that per-split stdev
+  is meaningful; if the corpus is tiny, note the low power in `reasoning` rather than faking a split.
+
 ## Messages-source guidance — where the input/output lives (`_messages_source_guidance`)
 
 **`messages` is the source of truth — the root span's `input.value` is usually a thin/truncated

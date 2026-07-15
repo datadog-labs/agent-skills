@@ -86,6 +86,11 @@ Extract input/output per the **messages-source guidance** in `references/rubrics
 **data-selection guidance**: keep only traces with a scoreable target span; exclude infra/setup
 spans from the set entirely.
 
+Then **split once, deterministically** (hash of datapoint id, ~70/30) into
+`.auto_experiment/data.val.jsonl` (the hill-climb gate) and `.auto_experiment/data.test.jsonl`
+(held out) — see the rubric's **Held-out split**. Every iteration scores on `val`
+(`AUTO_EXP_DATA=.auto_experiment/data.val.jsonl`); `test` is run only in the final report.
+
 ### Step 2 — Build the harness and compute BEFORE (baseline)
 Copy `references/eval_harness_template.py` to `.auto_experiment/eval_harness.py` and fill in
 `generate_output` (run the REAL code under test from `files_to_optimize`) and `judge` (a REAL
@@ -96,7 +101,7 @@ the harness re-runs the whole eval R times and prints `{mean, stdev, rep_means, 
 `before_score` = the printed `mean`; also record `stdev` (the noise floor). Both computed numbers,
 never literals — obey the scoring policy and the **Noise & keep/discard policy** in the rubric.
 
-Commit `eval_harness.py`, `data.jsonl`, `eval_results.jsonl`.
+Commit `eval_harness.py`, `data.jsonl`, `data.val.jsonl`, `data.test.jsonl`, `eval_results.jsonl`.
 
 ### Step 3 — Improve
 Read `files_to_optimize`. Make **ONE focused change** toward `goal`. Commit it on the scratch
@@ -205,10 +210,16 @@ Rules:
    `{ "baseline_score", "best_score", "best_iteration", "best_sha", "iterations_run",
    "stop_reason", "reasoning" }` (reasoning = what was tried across all iterations, what worked,
    what didn't, why the winner won).
-2. Print a per-iteration table (iteration, delta, decision, sha) and name the best commit.
-3. **If nothing beat the baseline**: report the baseline as the best result and leave the original
-   code in place (`best_sha` empty). Do not fabricate an improvement.
-4. Tell the user the scratch branch + best commit so they can open a PR from it if they want.
+2. **Held-out `test` comparison (the real headline).** Run the harness once on the **baseline**
+   commit and once on the **best** commit against `.auto_experiment/data.test.jsonl`
+   (`AUTO_EXP_DATA=.auto_experiment/data.test.jsonl`), both at `reps` reps. Report the
+   baseline-vs-best `test` delta with its noise band as the run's result — the `val` hill-climb
+   gain is not the headline. If `test` did not clear the noise band even though `val` did, say so
+   explicitly (the win did not generalize) and treat baseline as best.
+3. Print a per-iteration table (iteration, val delta, decision, sha) and name the best commit.
+4. **If nothing beat the baseline on `test`**: report the baseline as the best result and leave the
+   original code in place (`best_sha` empty). Do not fabricate an improvement.
+5. Tell the user the scratch branch + best commit so they can open a PR from it if they want.
 
 ## Notes
 
