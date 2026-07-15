@@ -29,7 +29,7 @@ working directory.
 
 | Field | Meaning | Default |
 |---|---|---|
-| `files_to_optimize` | file(s) whose code you change each iteration | **required** |
+| `files_to_optimize` | the **edit scope**: one or more files, a **folder**, or globs. **Any code inside the scope is fair game to modify** — tool/retrieval code, the pipeline, config, data-shaping, or prompts — not just prompt wording. Everything outside the scope is off-limits. | **required** |
 | `goal` | what "better" means; the judge rubric + optimization direction | **required** |
 | `evaluators` | explicit evaluator/rubric text, if any | falls back to `goal` |
 | `model` | judge model id | **the Claude model selected in this session** (see rubric) |
@@ -54,9 +54,24 @@ the run's state + audit trail):
 }
 ```
 
+## Scope — optimize the whole selected surface, not just the prompt
+
+`files_to_optimize` is a **scope**, not a prompt pointer. It may be a set of files, a directory, or
+globs — expand a directory to its editable files (e.g. every `*.py` under it) and treat **all of
+them as the code under test**. Within that scope you may change **anything that moves the metric**:
+retrieval/tool code, request logic, filtering, output shape, ranking, config, or prompts. Let the
+**failure census** decide *which* file the lever lives in — do **not** default to rewording a
+prompt. In practice the biggest wins are often in tool/retrieval code (what the model can fetch),
+not prompt phrasing; a prompt-only search finds nothing when the headroom is in the tools.
+
+**Hard scope guard:** never edit a file outside `files_to_optimize`. If the census's dominant lever
+is out of scope, say so (that's a finding) — do not silently tweak in-scope-but-irrelevant files.
+
 ## Setup
 
 1. Confirm a clean-ish working tree (stash or warn on unrelated changes). Note the starting SHA.
+   If `files_to_optimize` names a folder/globs, resolve it to the concrete editable file list and
+   record that list in `config.json` (it is the scope for every iteration + the restore boundary).
 2. Create a scratch branch off `base_branch` for the experiment (e.g.
    `auto-experiment/<short-goal>`). All iteration commits land here; the user reviews/keeps the
    best commit at the end.
@@ -74,7 +89,8 @@ Split the two roles so context stays clean and iterations don't anchor on each o
   the branch), the harness, and every keep/discard decision. You do NOT accumulate the raw work of
   each attempt in your own context.
 - **Each improvement iteration runs in a FRESH sub-agent** (spawn via the Agent tool). Hand it a
-  compact briefing — not your whole transcript: the `goal`/`evaluators`, `files_to_optimize`, the
+  compact briefing — not your whole transcript: the `goal`/`evaluators`, the full editable **scope**
+  (`files_to_optimize` expanded — it may change ANY file in scope, not just a prompt), the
   ranked `census.json` buckets (+ the bucket to target this iteration), the current `best_sha`, and
   **one-line summaries of prior attempts** (what was tried → kept/discarded, from `iteration_results`)
   so it won't repeat them. Its job: make ONE change + return a short summary (what it changed, which
@@ -132,9 +148,12 @@ commit it, and surface the ranked buckets. This tells you which lever is worth p
 the dominant failure mode is even reachable by editing `files_to_optimize`.
 
 ### Step 3 — Improve
-Read `files_to_optimize`. Make **ONE focused change** toward `goal`, aimed at the **largest census
-bucket you can plausibly move** (name that bucket in the iteration's `reasoning`). Commit it on the
-scratch branch with a message explaining what changed and why.
+Read the whole scope (`files_to_optimize`, expanded). Make **ONE focused change** toward `goal`,
+aimed at the **largest census bucket you can plausibly move** (name that bucket in the iteration's
+`reasoning`), **in whichever in-scope file holds the lever** — edit the tool/retrieval code if the
+census says the misses are retrieval, the output/format code if they're formatting, and so on. Do
+**not** default to rewording a prompt when the lever is elsewhere. Commit it on the scratch branch
+with a message explaining what changed and why.
 
 Before the (expensive) full eval, run a **feasibility probe** per the rubric's **Feasibility probe**:
 the cheapest offline check that this change *could* move a failing census bucket. If the probe
@@ -172,7 +191,8 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
    nothing kept yet). Do NOT re-run the baseline.
 3. Reuse the data from `data.jsonl` and the committed `eval_harness.py` — do not reload or rebuild.
 4. Make **ONE new change, different from every previous attempt** (you can see prior attempts in
-   `iteration_results`), aimed at a named `census.json` bucket. Commit it.
+   `iteration_results`), aimed at a named `census.json` bucket, **in whichever in-scope file holds
+   the lever** (tool/retrieval/pipeline/config/prompt — not prompt-only). Commit it.
 5. **Feasibility probe first** (rubric): cheap offline check the change can move its target bucket;
    if it reaches 0 failing datapoints, record `no_change` and skip the full eval. Otherwise re-run
    the SAME harness on `val` → `after_score`. Re-write `eval_results.jsonl` + `result.json`, commit.
