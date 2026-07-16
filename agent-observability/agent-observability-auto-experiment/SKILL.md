@@ -151,7 +151,7 @@ Commit `eval_harness.py`, `data.jsonl`, `data.val.jsonl`, `data.test.jsonl`, `ev
 Then **report the baseline to LLM-Obs as iteration 0** — before you start the first iteration.
 Submit exactly one eval-metric datapoint with `score_value` = `before_score` and tags
 `["iteration:0", "git.commit.sha:<baseline_commit_sha>", "decision:baseline"]` (the sha is the
-commit you just made). Same call shape and rules as **Report each iteration's score to LLM-Obs**;
+**full 40-character** hash of the commit you just made — `git rev-parse HEAD`, not a short hash). Same call shape and rules as **Report each iteration's score to LLM-Obs**;
 this is the only submission with `iteration:0` and `decision:baseline`.
 
 ### Step 2.5 — Census the baseline failures
@@ -239,8 +239,10 @@ Call `submit_llmobs_experiment_events` with a single metric shaped exactly like 
   - `timestamp_ms`: the current wall-clock time as an epoch timestamp in **milliseconds**.
   - `tags`: `["iteration:<n>", "git.commit.sha:<sha>", "decision:<decision>"]`, where `<n>` is this
     iteration's number (`1` for the first improvement, `2` for the next, and so on), `<sha>` is the
-    full Git commit SHA of the commit this iteration created for its change (i.e. `git rev-parse
-    HEAD` after committing the iteration), and `<decision>` is this iteration's keep/discard
+    **full 40-character** Git commit SHA of the commit this iteration created for its change — the
+    complete hash from `git rev-parse HEAD` after committing the iteration (e.g.
+    `fd0fbab7c1232e125df7b22d9df856a2ef73ab65`), **never the abbreviated 7/8-char short hash** — and
+    `<decision>` is this iteration's keep/discard
     decision recorded in `iteration_results` (`kept` or `discarded`; `baseline` for iteration 0).
   - `reasoning`: this iteration's `reasoning` string from `iteration_results` — what was tried,
     which census bucket it targeted, and why it was kept or discarded (for iteration 0, that it is
