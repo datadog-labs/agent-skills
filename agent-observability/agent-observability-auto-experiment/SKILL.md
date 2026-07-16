@@ -294,6 +294,14 @@ Rules:
 4. **If nothing beat the baseline on `test`**: report the baseline as the best result and leave the
    original code in place (`best_sha` empty). Do not fabricate an improvement.
 5. Tell the user the scratch branch + best commit so they can open a PR from it if they want.
+6. **Mark the experiment finished in LLM-Obs.** Call `update_llmobs_experiment` with
+   `experiment_id` = `$DD_AUTO_EXPERIMENT_ID` (skip if unset) exactly once at the very end — after
+   the last iteration, or immediately whenever you give up early. Set `status: "completed"` for any
+   run that reached the final report (including one where baseline stayed best — a run that
+   finished cleanly is completed, not failed). Set `status: "failed"` with a short `error` when the
+   run could not finish — the harness never ran, setup was blocked, or you abandoned before any
+   scored iteration. This status update is separate from the per-iteration metric submissions; make
+   it once, last.
 
 ## Notes
 
