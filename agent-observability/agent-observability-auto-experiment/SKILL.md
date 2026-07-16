@@ -242,6 +242,9 @@ Call `submit_llmobs_experiment_events` with a single metric shaped exactly like 
     full Git commit SHA of the commit this iteration created for its change (i.e. `git rev-parse
     HEAD` after committing the iteration), and `<decision>` is this iteration's keep/discard
     decision recorded in `iteration_results` (`kept` or `discarded`; `baseline` for iteration 0).
+  - `reasoning`: this iteration's `reasoning` string from `iteration_results` — what was tried,
+    which census bucket it targeted, and why it was kept or discarded (for iteration 0, that it is
+    the baseline). Use the same text recorded in `result.json`; do not fabricate.
   - Do **not** include `span_id`, `categorical_value`, or `boolean_value`.
 
 Example arguments for iteration 5 whose harness computed a score of `0.72`:
@@ -254,6 +257,7 @@ Example arguments for iteration 5 whose harness computed a score of `0.72`:
       "label": "auto_experiment_score",
       "metric_type": "score",
       "score_value": 0.72,
+      "reasoning": "Rewrote the retrieval query builder to include entity synonyms (targeting the 'missed-retrieval' census bucket); cleared the noise band and passed the mechanism audit, so kept.",
       "timestamp_ms": 1752430000000,
       "tags": ["iteration:5", "git.commit.sha:33ec6e0959bd46b0ea9c337cf6a28a763d3eeb0a", "decision:kept"]
     }
