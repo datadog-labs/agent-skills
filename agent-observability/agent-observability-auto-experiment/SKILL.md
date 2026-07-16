@@ -223,10 +223,11 @@ Call `submit_llmobs_experiment_events` with a single metric shaped exactly like 
   - `score_value`: the score this iteration produced (`after_score`) — the number computed by the
     harness, never a literal or a rounded-for-display value.
   - `timestamp_ms`: the current wall-clock time as an epoch timestamp in **milliseconds**.
-  - `tags`: `["iteration:<n>", "git.commit.sha:<sha>"]`, where `<n>` is this iteration's number
-    (`1` for the first improvement, `2` for the next, and so on) and `<sha>` is the full Git
-    commit SHA of the commit this iteration created for its change (i.e. `git rev-parse HEAD`
-    after committing the iteration).
+  - `tags`: `["iteration:<n>", "git.commit.sha:<sha>", "decision:<decision>"]`, where `<n>` is this
+    iteration's number (`1` for the first improvement, `2` for the next, and so on), `<sha>` is the
+    full Git commit SHA of the commit this iteration created for its change (i.e. `git rev-parse
+    HEAD` after committing the iteration), and `<decision>` is this iteration's keep/discard
+    decision recorded in `iteration_results` (`kept` or `discarded`).
   - Do **not** include `span_id`, `categorical_value`, or `boolean_value`.
 
 Example arguments for iteration 5 whose harness computed a score of `0.72`:
@@ -240,7 +241,7 @@ Example arguments for iteration 5 whose harness computed a score of `0.72`:
       "metric_type": "score",
       "score_value": 0.72,
       "timestamp_ms": 1752430000000,
-      "tags": ["iteration:5", "git.commit.sha:33ec6e0959bd46b0ea9c337cf6a28a763d3eeb0a"]
+      "tags": ["iteration:5", "git.commit.sha:33ec6e0959bd46b0ea9c337cf6a28a763d3eeb0a", "decision:kept"]
     }
   ]
 }
