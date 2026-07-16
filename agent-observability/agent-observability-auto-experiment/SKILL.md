@@ -80,6 +80,13 @@ is out of scope, say so (that's a finding) — do not silently tweak in-scope-bu
 4. This run reports one score per iteration to the LLM-Obs experiment identified by the
    `DD_AUTO_EXPERIMENT_ID` environment variable (set in the environment before this skill is
    invoked — read it, don't ask the user). See **Report each iteration's score to LLM-Obs**.
+5. **Record the run context on the experiment before iterations start.** Call
+   `update_llmobs_experiment` once with `experiment_id` = `$DD_AUTO_EXPERIMENT_ID` (skip if unset)
+   and `metadata` set to a JSON struct containing the repo name and the scratch branch name, e.g.
+   `{"repo": "<repo>", "branch": "<scratch-branch>"}`. Derive `repo` from the git remote
+   (`basename -s .git $(git remote get-url origin)`, or `owner/repo`) and `branch` from the branch
+   created in step 2. `metadata` **replaces** existing metadata, so include both keys in the one
+   call. Do this in Setup, before Step 1.
 
 ## Execution model — orchestrator + fresh per-iteration sub-agents
 
