@@ -43,12 +43,13 @@ pub static DD_BROWSER_SDK_SUB_SKILLS: &[(&str, &str)] = &[
 pub const DD_DOCS_SKILL: &str = skill!("dd-docs/SKILL.md");
 
 pub static DD_LLMO_SUB_SKILLS: &[(&str, &str)] = &[
-    ("llm-obs-eval-bootstrap/SKILL.md",          skill!("dd-llmo/llm-obs-eval-bootstrap/SKILL.md")),
-    ("llm-obs-eval-pipeline/SKILL.md",           skill!("dd-llmo/llm-obs-eval-pipeline/SKILL.md")),
-    ("llm-obs-experiment-analyzer/SKILL.md",     skill!("dd-llmo/llm-obs-experiment-analyzer/SKILL.md")),
-    ("llm-obs-experiment-py-bootstrap/SKILL.md", skill!("dd-llmo/llm-obs-experiment-py-bootstrap/SKILL.md")),
-    ("llm-obs-session-classify/SKILL.md",        skill!("dd-llmo/llm-obs-session-classify/SKILL.md")),
-    ("llm-obs-trace-rca/SKILL.md",               skill!("dd-llmo/llm-obs-trace-rca/SKILL.md")),
+    ("agent-observability-eval-bootstrap/SKILL.md",          skill!("agent-observability/agent-observability-eval-bootstrap/SKILL.md")),
+    ("agent-observability-eval-pipeline/SKILL.md",           skill!("agent-observability/agent-observability-eval-pipeline/SKILL.md")),
+    ("agent-observability-experiment-analyzer/SKILL.md",     skill!("agent-observability/agent-observability-experiment-analyzer/SKILL.md")),
+    ("agent-observability-experiment-py-bootstrap/SKILL.md", skill!("agent-observability/agent-observability-experiment-py-bootstrap/SKILL.md")),
+    ("agent-observability-session-classify/SKILL.md",        skill!("agent-observability/agent-observability-session-classify/SKILL.md")),
+    ("agent-observability-trace-rca/SKILL.md",               skill!("agent-observability/agent-observability-trace-rca/SKILL.md")),
+    ("agent-observability-replay-experiment/SKILL.md",       skill!("agent-observability/agent-observability-replay-experiment/SKILL.md")),
 ];
 
 pub const DD_LOGS_SKILL: &str = skill!("dd-logs/SKILL.md");
