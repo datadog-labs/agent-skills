@@ -141,6 +141,12 @@ never literals — obey the scoring policy and the **Noise & keep/discard policy
 
 Commit `eval_harness.py`, `data.jsonl`, `data.val.jsonl`, `data.test.jsonl`, `eval_results.jsonl`.
 
+Then **report the baseline to LLM-Obs as iteration 0** — before you start the first iteration.
+Submit exactly one eval-metric datapoint with `score_value` = `before_score` and tags
+`["iteration:0", "git.commit.sha:<baseline_commit_sha>", "decision:baseline"]` (the sha is the
+commit you just made). Same call shape and rules as **Report each iteration's score to LLM-Obs**;
+this is the only submission with `iteration:0` and `decision:baseline`.
+
 ### Step 2.5 — Census the baseline failures
 Before changing anything, decompose **where the baseline loses** per the rubric's **Baseline
 failure census**: bucket every failing datapoint by root cause, write `.auto_experiment/census.json`,
@@ -210,7 +216,8 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
 Once you have a computed score for an iteration, submit **exactly one** eval-metric datapoint to
 LLM-Obs with the `submit_llmobs_experiment_events` MCP tool. Do this once per iteration, right
 after the score is computed and the iteration's commit / `result.json` is written — including
-iteration 1.
+iteration 1 and the **iteration-0 baseline** (see Step 2; there `score_value` = `before_score` and
+the decision tag is `decision:baseline`).
 
 Call `submit_llmobs_experiment_events` with a single metric shaped exactly like this:
 
@@ -227,7 +234,7 @@ Call `submit_llmobs_experiment_events` with a single metric shaped exactly like 
     iteration's number (`1` for the first improvement, `2` for the next, and so on), `<sha>` is the
     full Git commit SHA of the commit this iteration created for its change (i.e. `git rev-parse
     HEAD` after committing the iteration), and `<decision>` is this iteration's keep/discard
-    decision recorded in `iteration_results` (`kept` or `discarded`).
+    decision recorded in `iteration_results` (`kept` or `discarded`; `baseline` for iteration 0).
   - Do **not** include `span_id`, `categorical_value`, or `boolean_value`.
 
 Example arguments for iteration 5 whose harness computed a score of `0.72`:
