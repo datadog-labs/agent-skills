@@ -82,11 +82,13 @@ is out of scope, say so (that's a finding) — do not silently tweak in-scope-bu
    invoked — read it, don't ask the user). See **Report each iteration's score to LLM-Obs**.
 5. **Record the run context on the experiment before iterations start.** Call
    `update_llmobs_experiment` once with `experiment_id` = `$DD_AUTO_EXPERIMENT_ID` (skip if unset)
-   and `metadata` set to a JSON struct containing the repo name and the scratch branch name, e.g.
-   `{"repo": "<repo>", "branch": "<scratch-branch>"}`. Derive `repo` from the git remote
-   (`basename -s .git $(git remote get-url origin)`, or `owner/repo`) and `branch` from the branch
-   created in step 2. `metadata` **replaces** existing metadata, so include both keys in the one
-   call. Do this in Setup, before Step 1.
+   and `metadata` set to a JSON struct containing the repo name, the scratch branch name, and the
+   model running this skill, e.g.
+   `{"repo": "<repo>", "branch": "<scratch-branch>", "model": "<model>"}`. Derive `repo` from the
+   git remote (`basename -s .git $(git remote get-url origin)`, or `owner/repo`), `branch` from the
+   branch created in step 2, and `model` = the `provider/model-id` of the model/agent driving this
+   session (e.g. `openai/gpt-4-turbo`, `anthropic/claude-opus-4-8`). `metadata` **replaces**
+   existing metadata, so include all three keys in the one call. Do this in Setup, before Step 1.
 
 ## Execution model — orchestrator + fresh per-iteration sub-agents
 
