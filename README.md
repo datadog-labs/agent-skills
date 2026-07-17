@@ -78,13 +78,14 @@ npx skills add datadog-labs/agent-skills \
   --skill agent-observability-eval-bootstrap \
   --skill agent-observability-eval-pipeline \
   --skill agent-observability-session-classify \
+  --skill agent-observability-auto-experiment \
   --skill k9-ownership-byod-setup \
   --full-depth -y
 ```
 
 ### Agent Observability (LLMO)
 
-The `agent-observability` directory contains six skills for working with Agent Observability data:
+The `agent-observability` directory contains seven skills for working with Agent Observability data:
 
 | Skill | Purpose |
 |-------|---------|
@@ -94,6 +95,7 @@ The `agent-observability` directory contains six skills for working with Agent O
 | `agent-observability-eval-bootstrap` | Generate evaluator code from traces, optionally seeded by RCA output. Also emits a dataset from traces in `--emit-dataset` mode. |
 | `agent-observability-eval-pipeline` | Eight-phase pipeline: classify → RCA → bootstrap evaluators → create dataset → publish → generate experiment → run → analyze. Stop early with `--stop-after`. |
 | `agent-observability-session-classify` | Classify whether user intent was satisfied in a session (trace + RUM signals) |
+| `agent-observability-auto-experiment` | Local hill-climb: baseline-eval a prompt/file against LLM-Obs data, make one focused change, re-score with the same harness, keep it only if it beats the best, repeat |
 
 **Eval pipeline flow:**
 
