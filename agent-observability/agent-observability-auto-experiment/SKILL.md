@@ -295,7 +295,9 @@ Call `submit_llmobs_experiment_events` with a single metric shaped exactly like 
     complete hash from `git rev-parse HEAD` after committing the iteration (e.g.
     `fd0fbab7c1232e125df7b22d9df856a2ef73ab65`), **never the abbreviated 7/8-char short hash** — and
     `<decision>` is this iteration's keep/discard
-    decision recorded in `iteration_results` (`kept` or `discarded`; `baseline` for iteration 0).
+    decision recorded in `iteration_results` (`kept` or `discarded`; `baseline` for iteration 0;
+    `no_change` for an iteration whose feasibility probe or harness produced no measured score —
+    see **No-change iterations** below).
   - `reasoning`: this iteration's `reasoning` string from `iteration_results` — what was tried,
     which census bucket it targeted, and why it was kept or discarded (for iteration 0, that it is
     the baseline). Use the same text recorded in `result.json`; do not fabricate.
@@ -323,11 +325,31 @@ Rules:
 
 - **Exactly one metric per iteration.** Never submit more than one metric for the same iteration
   and never batch several iterations into one call.
-- **Only for scored iterations.** A `no_change` iteration has no computed score, so there is no
-  `score_value` to send — skip the submission for it (emitting a `score` metric without a real
-  score would violate the scoring policy). Record the skip in `reasoning`.
 - The value you submit is the same computed `after_score` recorded in `result.json`; the two must
   always agree.
+
+### No-change iterations — emit a carried-forward marker, not a measurement
+
+A `no_change` iteration (feasibility probe inconclusive, harness wouldn't run, judge unreachable, no
+new commit) has **no computed score**. The event schema still requires a numeric `score_value` and a
+`reasoning`, so you cannot omit them — but you must **not** invent a measurement. Emit a labeled
+carry-forward instead:
+
+- `score_value`: the **current `best_score`** carried forward (the iteration-1 baseline if nothing
+  has been kept yet). This is `no_change`'s only honest value: the best is *unchanged*, so the score
+  is *unchanged*. **Never send `0`** — `0` reads as a catastrophic regression a naive chart plots as
+  a cliff. Carried-forward best plots as a flat line, which is the truth.
+- `tags`: `decision:no_change` — **this tag, not the value, is the discriminator.** A `score_value`
+  alone can never distinguish a no-eval carry-forward from a genuinely-measured `0`; only the
+  `decision` tag can. Consumers of `auto_experiment_score` **must** branch on `decision` — exclude
+  `decision:no_change` from any score aggregate (mean/best-pick), since its value is a marker, not a
+  measurement.
+- `reasoning`: state plainly that no full eval ran, why (e.g. the probe result), and that the value
+  is the carried-forward best — not a measured score.
+
+So `no_change` is still submitted (one metric, as every iteration), but it is unambiguously a
+non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it `kept`/`discarded`
+(those assert a real measurement) and do **not** overload the value to signal state.
 
 ## Stop conditions & guards
 
@@ -339,7 +361,8 @@ Rules:
   different dimension, or accept the ceiling). Distinguish this from a real regression streak.
 - **A change with no computable score is `no_change`, never a fabricated number** (harness won't
   run / no new commit / judge unreachable / feasibility probe reached 0). Record the blocker in
-  `reasoning`.
+  `reasoning`. Its LLM-Obs submission is the carried-forward marker (`decision:no_change`,
+  `score_value` = current best), not a measured score — see **No-change iterations**.
 - Track consecutive `no_change` iterations; after **5 in a row**, stop early and report the best
   result so far with a stop reason (do not keep burning iterations).
 
