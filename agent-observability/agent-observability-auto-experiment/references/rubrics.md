@@ -19,8 +19,8 @@ run, judge unreachable, etc.), that iteration is recorded as **no_change** with 
 
 ⚠️ **A single eval run is a NOISY ESTIMATE, not a measurement.** The code under test and any
 LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
-`mean ± stdev` over **`AUTO_EXP_REPS` (default 3) full re-runs of the eval on the same data**
-(the harness does this and prints `stdev` + `rep_means`). Consequences the loop MUST obey:
+`mean ± stdev` over **`AUTO_EXP_RUNS` (default 3) full re-runs of the eval on the same data**
+(the harness does this and prints `stdev` + `run_means`). Consequences the loop MUST obey:
 
 - **Keep only a delta that clears the noise floor.** An iteration is `is_best` / kept only if
   `after_mean` beats `best_mean` by more than the noise band —
@@ -28,7 +28,7 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
   of the two runs' `stdev` and `min_delta` is a small floor from config (default `0.02` on a
   0–1 metric). A delta **within** the noise band is **not** an improvement: record it `discarded`
   (decision), not kept, no matter that the point estimate rose.
-- **Compare on the same footing.** `best_mean`/`best_stdev` come from a real R-rep harness run of
+- **Compare on the same footing.** `best_mean`/`best_stdev` come from a real R-run harness run of
   the current best, not a stale single number carried forward. When in doubt, re-run best and
   candidate back-to-back so data/endpoint drift cancels.
 - **A within-noise "win" is the classic trap.** Point estimates of 15 vs 14 mean nothing when
@@ -86,7 +86,7 @@ budget re-discovering that wording changes are noise.
 
 ## Feasibility probe — prove reachability before you pay for a full eval (`_feasibility_probe`)
 
-A full eval is the expensive step (R reps × every datapoint × real code + judge). Before spending
+A full eval is the expensive step (R runs × every datapoint × real code + judge). Before spending
 it on a hypothesis, run the **cheapest possible offline check that the lever CAN move the metric** —
 an upper bound, not a measurement. Only run the full eval on hypotheses that pass.
 
@@ -126,9 +126,9 @@ it instead of an LLM judge** — it removes an entire layer of variance and can'
 
 - If datapoints carry a **reference/expected output** (dataset `expected_output`, gold label), score
   with an exact/programmatic check (exact match, F1, set overlap, a repo evaluator, `total_examples`
-  from a pipeline, etc.) — deterministic, `stdev ≈ 0` across reps from the judge side.
+  from a pipeline, etc.) — deterministic, `stdev ≈ 0` across runs from the judge side.
 - Use an **LLM-as-judge only when no ground truth exists** (open-ended quality). Then treat it as
-  the noisiest component: bump `AUTO_EXP_REPS` (≥5), pin the model + prompt, and expect a wider
+  the noisiest component: bump `AUTO_EXP_RUNS` (≥5), pin the model + prompt, and expect a wider
   noise band.
 - Either way the metric is **computed by running code** (scoring policy) — a deterministic checker
   and an LLM judge are both legitimate `judge()` implementations; prefer the deterministic one.
@@ -172,12 +172,12 @@ it in the same commit as the code change:
 ```json
 {
   "before_score": <float 0-1 — best_mean going in>,
-  "after_score": <float 0-1 — this iteration's mean over AUTO_EXP_REPS reps>,
-  "after_stdev": <float — across-rep stdev the harness printed (the noise floor)>,
-  "reps": <int — AUTO_EXP_REPS used>,
+  "after_score": <float 0-1 — this iteration's mean over AUTO_EXP_RUNS runs>,
+  "after_stdev": <float — across-run stdev the harness printed (the noise floor)>,
+  "runs": <int — AUTO_EXP_RUNS used>,
   "delta": <after_score minus before_score>,
   "noise_band": <float — max(pooled_stdev, min_delta) used for the keep/discard gate>,
-  "reasoning": "<REQUIRED — scoring method FIRST (how generate_output ran the code, how many scoreable lines evaluate_line ran over, reps), then what was tested/failed/succeeded, how many traces were excluded and why, and any caveat about reproducing production; 2-4 sentences; never empty>",
+  "reasoning": "<REQUIRED — scoring method FIRST (how generate_output ran the code, how many scoreable lines evaluate_line ran over, runs), then what was tested/failed/succeeded, how many traces were excluded and why, and any caveat about reproducing production; 2-4 sentences; never empty>",
   "best_score": <best metric value across all iterations, considering the optimization direction>,
   "is_best": <REQUIRED — true ONLY if the delta clears the noise band (see Noise policy); false otherwise; never omit>
 }

@@ -24,19 +24,46 @@ harness spec; the metric schema). This file is the control loop; that file is th
 
 ## Inputs (the experiment config)
 
-Collect these from the user (ask only for what is missing — infer the rest). Repo = current
-working directory.
+Repo = current working directory. **Fields marked _must ask_ are mandatory — never proceed with a
+silent default; collect them from the user.** Fields marked _default_ may be filled without asking,
+but **every field (must-ask and default alike) must be shown to the user and validated before the
+run starts** (see the Mandatory intake gate below).
 
-| Field | Meaning | Default |
+| Field | Meaning | Source |
 |---|---|---|
-| `files_to_optimize` | the **edit scope**: one or more files, a **folder**, or globs. **Any code inside the scope is fair game to modify** — tool/retrieval code, the pipeline, config, data-shaping, or prompts — not just prompt wording. Everything outside the scope is off-limits. | **required** |
-| `goal` | what "better" means; the judge rubric + optimization direction | **required** |
-| `evaluators` | explicit evaluator/rubric text, if any | falls back to `goal` |
-| `model` | judge model id | **the Claude model selected in this session** (see rubric) |
-| `ml_app` | Datadog LLM-Obs app to pull traces from | required unless `dataset_id`/`trace_ids` given |
-| data source | `dataset_id` \| `trace_ids` \| recent traces for `ml_app` | see priority below |
-| `max_iterations` | how many changes to try (clamp **1–50**) | **2** |
-| `base_branch` | branch the baseline is measured on | current branch / `main` |
+| `files_to_optimize` | the **edit scope**: one or more files, a **folder**, or globs. **Any code inside the scope is fair game to modify** — tool/retrieval code, the pipeline, config, data-shaping, or prompts — not just prompt wording. Everything outside the scope is off-limits. | **must ask** |
+| `goal` | what "better" means; the judge rubric + optimization direction | **must ask** |
+| `evaluators` | explicit evaluator/rubric text — how each datapoint is scored (ground-truth check vs LLM-judge, pass criteria, direction). | **must ask** (do NOT silently fall back to `goal`) |
+| data source | where the eval data comes from — **either** a `dataset_id` **or** an `ml_app` to pull traces from (optionally narrowed by explicit `trace_ids`). | **must ask** — mandatory; the run cannot start without one of `dataset_id` / `ml_app` (priority below) |
+| `max_iterations` | how many changes to try (clamp **1–50**) | _default_ **2** |
+| `model` | judge model id | _default_: the Claude model selected in this session (see rubric) |
+| `base_branch` | branch the baseline is measured on | _default_: current branch / `main` |
+
+`runs` and `min_delta` are **not inputs** — they are **derived** from the measured baseline noise in
+Step 2.4, not chosen by anyone. Do **not** ask for them and do **not** show them in the all-params
+validation. They are computed during the run and displayed once, at the end, with their reasoning.
+
+### Mandatory intake gate — do this FIRST, before Setup
+
+Before writing any config or touching git:
+
+1. Collect every **must-ask** field from an explicit user answer. If any is missing, ask for it — do
+   **not** default, infer, or guess:
+   - **`files_to_optimize`** — the user names the concrete file(s)/folder/globs. Never assume the
+     scope from context. Resolve a folder/glob to the concrete editable file list.
+   - **`goal`** — the optimization target + direction.
+   - **`evaluators`** — how a datapoint is scored (pass/fail, metric, direction). Do not reuse
+     `goal` as the evaluator.
+   - **data source** — **mandatory**: the user must provide **either** a `dataset_id` **or** an
+     `ml_app` to find traces from (optionally narrowed by explicit `trace_ids`). Do not auto-pick,
+     do not guess an `ml_app`, and do not start the run with neither — if both are missing, ask.
+2. Fill the **default** fields (`max_iterations`, `model`, `base_branch`) with their defaults above.
+   Do **not** touch `runs`/`min_delta` here — they are derived in Step 2.4, not intake params.
+3. **Show ALL parameters back to the user — must-ask and defaulted alike — and get explicit
+   validation before starting the run.** Present the full resolved config (including the concrete
+   expanded `files_to_optimize` list and each default value) and let the user confirm or override
+   any field. Do **not** show `runs`/`min_delta` here (they aren't chosen yet). Only after the user
+   validates do you write `config.json` and proceed to Setup.
 
 Persist the config to `.auto_experiment/config.json` and update it as the run progresses (it is
 the run's state + audit trail):
@@ -47,12 +74,15 @@ the run's state + audit trail):
   "goal": "...", "evaluators": "...", "ml_app": "...",
   "dataset_id": "...", "trace_ids": [...],
   "max_iterations": 2,
-  "reps": 3,
-  "min_delta": 0.02,
+  "runs": null,
+  "min_delta": null,
   "iteration_results": [],
   "final_result": {}
 }
 ```
+
+`runs` and `min_delta` start `null` — they are **computed and written in Step 2.4** from the
+measured baseline noise, never chosen at intake.
 
 ## Scope — optimize the whole selected surface, not just the prompt
 
@@ -143,10 +173,12 @@ deterministic ground-truth metric** (reference output / programmatic checker / p
 use an LLM-as-judge only when no ground truth exists — see the rubric's **Metric selection**. **No
 score literals anywhere.**
 
-Run it against the **original, unmodified** code with `AUTO_EXP_REPS` (= config `reps`, default 3):
-the harness re-runs the whole eval R times and prints `{mean, stdev, rep_means, ...}`.
-`before_score` = the printed `mean`; also record `stdev` (the noise floor). Both computed numbers,
-never literals — obey the scoring policy and the **Noise & keep/discard policy** in the rubric.
+Run it against the **original, unmodified** code with a **fixed pilot** `AUTO_EXP_RUNS` (**3** — an
+internal bootstrap value, not a user param): the harness re-runs the whole eval R times and prints
+`{mean, stdev, run_means, ...}`. `before_score` = the printed `mean`; also record `stdev` (the
+noise floor). Both computed numbers, never literals — obey the scoring policy and the **Noise &
+keep/discard policy** in the rubric. This pilot noise is what Step 2.4 turns into the real `runs`
+and `min_delta`.
 
 Commit `eval_harness.py`, `data.jsonl`, `data.val.jsonl`, `data.test.jsonl`, `eval_results.jsonl`.
 
@@ -155,6 +187,24 @@ Submit exactly one eval-metric datapoint with `score_value` = `before_score` and
 `["iteration:0", "git.commit.sha:<baseline_commit_sha>", "decision:baseline"]` (the sha is the
 **full 40-character** hash of the commit you just made — `git rev-parse HEAD`, not a short hash). Same call shape and rules as **Report each iteration's score to LLM-Obs**;
 this is the only submission with `iteration:0` and `decision:baseline`.
+
+### Step 2.4 — Derive `runs` and `min_delta` from the measured baseline noise
+The pilot baseline (3 runs) gives a **real** noise floor (`stdev`, `run_means`). `runs` and
+`min_delta` are **computed from it**, not chosen — derive both here, silently (no user prompt; they
+are surfaced only in the final report, with reasoning):
+
+- **`runs`** — the pilot `stdev` says whether the mean is stable enough. If the standard error of
+  the mean (`stdev / sqrt(3)`) is not comfortably below the deltas you hope to detect (roughly
+  `SEM > min_delta`), **raise `runs`** so the mean is tight enough to resolve a real change, then
+  re-run the baseline at the new `runs` (this re-run's `mean`/`stdev` replace the pilot's). If the
+  pilot is already tight, `runs = 3`. Clamp to **2–10**.
+- **`min_delta`** — set it **relative to measured noise**: `min_delta = max(0.02, k · baseline_stdev)`
+  (e.g. `k ≈ 0.5`), so the floor tracks how noisy this metric actually is — a noisy metric gets a
+  higher bar, a rock-steady one keeps the small floor.
+
+Write the derived `runs` and `min_delta` into `config.json` (they started `null`) alongside the raw
+baseline `stdev` + `run_means` you derived them from (audit trail). Every downstream iteration uses
+these values. Do this once, here — do not recompute the gate mid-run.
 
 ### Step 2.5 — Census the baseline failures
 Before changing anything, decompose **where the baseline loses** per the rubric's **Baseline
@@ -297,11 +347,16 @@ Rules:
 
 1. Ask yourself the run-level wrap-up and write `final_result` into `config.json`:
    `{ "baseline_score", "best_score", "best_iteration", "best_sha", "iterations_run",
-   "stop_reason", "reasoning" }` (reasoning = what was tried across all iterations, what worked,
-   what didn't, why the winner won).
+   "stop_reason", "reasoning", "noise_calibration" }` (reasoning = what was tried across all
+   iterations, what worked, what didn't, why the winner won). `noise_calibration` records the
+   Step 2.4 derivation — **this is where `runs`/`min_delta` are first shown to the user**, since
+   they were never intake params:
+   `{ "runs_pilot", "runs_final", "baseline_stdev", "run_means", "min_delta" }`. State in the
+   summary that `runs`/`min_delta` were **computed from the measured baseline noise** (not chosen),
+   with the reasoning, so the user sees the gate that actually governed every keep/discard decision.
 2. **Held-out `test` comparison (the real headline).** Run the harness once on the **baseline**
    commit and once on the **best** commit against `.auto_experiment/data.test.jsonl`
-   (`AUTO_EXP_DATA=.auto_experiment/data.test.jsonl`), both at `reps` reps. Report the
+   (`AUTO_EXP_DATA=.auto_experiment/data.test.jsonl`), both at the derived `runs` count. Report the
    baseline-vs-best `test` delta with its noise band as the run's result — the `val` hill-climb
    gain is not the headline. If `test` did not clear the noise band even though `val` did, say so
    explicitly (the win did not generalize) and treat baseline as best.
