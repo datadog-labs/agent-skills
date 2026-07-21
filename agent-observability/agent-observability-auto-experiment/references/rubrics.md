@@ -45,9 +45,20 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
   run's **highest mean**, moves in the goal's direction, and is *close* to the band (roughly
   `|t| = |Δ| / (stdev·√(2/runs)) > 1`), it is a **promising-but-underpowered** result, not a
   confirmed null. Before discarding it for good, re-run **best and candidate back-to-back at the
-  max `runs`** (the 10 clamp) and re-apply the gate on those higher-power means. Keep only if it now
-  clears; otherwise discard with the higher-power numbers recorded. Do this for the single best
-  candidate of the run, not every within-band wobble.
+  max `runs`** and **pool with the existing runs** (e.g. 10 + 10 → 20 per side) so the comparison
+  is higher-power than any single iteration.
+  - **Decide by a two-sample t-test, NOT the raw-stdev band.** The per-iteration keep gate
+    (`|Δ| > max(pooled_stdev, min_delta)`) uses the raw run-to-run `stdev`, which is a property of
+    the metric and **does not shrink as you add runs** — so re-applying it after more runs would
+    discard a real effect no matter how many runs you gather (the gate can't be cleared by power).
+    The quantity that *does* shrink with runs is the standard error of the difference of means,
+    `SE_diff = √(stdev_best²/n_best + stdev_cand²/n_cand)`. At confirmation, keep the candidate iff
+    it moves in the goal's direction **and** `|t| = |Δ| / SE_diff > 2` (≈95%). This is the whole
+    point of spending more runs: it tightens `SE_diff` until a genuine difference becomes
+    significant even while the raw band stays put. Record BOTH numbers (raw band cleared? and the
+    t-test) for the audit; the t-test is the decision.
+  - Keep only if the t-test is significant; otherwise discard with the higher-power numbers
+    recorded. Do this for the single best candidate of the run, not every within-band wobble.
 
 ## Data-selection guidance — what enters the eval set (`_data_selection_guidance`)
 

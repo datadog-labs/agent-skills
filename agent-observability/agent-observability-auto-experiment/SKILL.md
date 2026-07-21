@@ -410,12 +410,17 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
    **highest `val` mean** was discarded only because its delta fell *within* the noise band, moves
    in the goal's direction, and sits close to the band
    (`|Δ| / (pooled_stdev · sqrt(2 / runs)) > 1`), it is **promising-but-underpowered**, not a
-   confirmed null — exactly the case a 3-run gate can't resolve. Re-run the **current best and that
-   candidate back-to-back at the max `runs` (10)** on `val`, recompute `pooled_stdev` from those two
-   higher-power runs, and re-apply the keep gate. If it now clears, it becomes the best (update
-   `best_sha`/`best_score`, record the promotion + higher-power numbers); if not, leave it discarded
-   with the higher-power numbers recorded. Do this for the **single** best candidate only — not
-   every within-band wobble — per the rubric's **Higher-power confirmation** rule.
+   confirmed null — exactly the case a low-run gate can't resolve. Re-run the **current best and
+   that candidate back-to-back at the max `runs`** on `val` and **pool with the existing runs**
+   (e.g. 10 + 10 → 20 per side). **Decide by a two-sample t-test, not the raw-stdev band**: keep iff
+   the candidate moves in the goal's direction and `|t| = |Δ| / SE_diff > 2`, where
+   `SE_diff = √(stdev_best²/n_best + stdev_cand²/n_cand)`. The raw `pooled_stdev` does NOT shrink
+   with more runs, so re-applying the per-iteration band here would discard a real effect no matter
+   how much power you add — only `SE_diff` shrinks, which is the point of the extra runs. If the
+   t-test is significant it becomes the best (update `best_sha`/`best_score`, record BOTH the raw
+   band and the t-test); if not, leave it discarded with the higher-power numbers recorded. Do this
+   for the **single** best candidate only — not every within-band wobble — per the rubric's
+   **Higher-power confirmation** rule.
 3. **Held-out `test` comparison (the real headline).** Run the harness once on the **baseline**
    commit and once on the **best** commit against `.auto_experiment/data.test.jsonl`
    (`AUTO_EXP_DATA=.auto_experiment/data.test.jsonl`), both at the derived `runs` count. Report the
