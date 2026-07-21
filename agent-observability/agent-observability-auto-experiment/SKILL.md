@@ -363,18 +363,33 @@ Call `submit_llmobs_experiment_events` with a single metric shaped exactly like 
   - `score_value`: the score this iteration produced (`after_score`) — the number computed by the
     harness, never a literal or a rounded-for-display value.
   - `timestamp_ms`: the current wall-clock time as an epoch timestamp in **milliseconds**.
-  - `tags`: `["iteration:<n>", "git.commit.sha:<sha>", "decision:<decision>"]`, where `<n>` is this
-    iteration's number (`1` for the first improvement, `2` for the next, and so on), `<sha>` is the
-    **full 40-character** Git commit SHA of the commit this iteration created for its change — the
-    complete hash from `git rev-parse HEAD` after committing the iteration (e.g.
+  - `tags`: start with `["iteration:<n>", "git.commit.sha:<sha>", "decision:<decision>"]` and
+    **also add the decision-legibility tags below**. `<n>` is this iteration's number (`1` for the
+    first improvement, `2` for the next, and so on), `<sha>` is the **full 40-character** Git commit
+    SHA of the commit this iteration created for its change — the complete hash from
+    `git rev-parse HEAD` after committing the iteration (e.g.
     `fd0fbab7c1232e125df7b22d9df856a2ef73ab65`), **never the abbreviated 7/8-char short hash** — and
-    `<decision>` is this iteration's keep/discard
-    decision recorded in `iteration_results` (`kept` or `discarded`; `baseline` for iteration 0;
-    `no_change` for an iteration whose feasibility probe or harness produced no measured score —
-    see **No-change iterations** below).
-  - `reasoning`: this iteration's `reasoning` string from `iteration_results` — what was tried,
-    which census bucket it targeted, and why it was kept or discarded (for iteration 0, that it is
-    the baseline). Use the same text recorded in `result.json`; do not fabricate.
+    `<decision>` is this iteration's keep/discard decision recorded in `iteration_results` (`kept` or
+    `discarded`; `baseline` for iteration 0; `no_change` for an iteration whose feasibility probe or
+    harness produced no measured score — see **No-change iterations** below).
+  - **Decision-legibility tags (required on every scored iteration).** `score_value` alone is a
+    common source of dashboard confusion: an iteration can post a **higher** `score_value` than the
+    kept best and still be `discarded`, because the gate compares against the *best* (not the
+    baseline) and requires statistical significance — a raw number cannot show that. Surface the
+    decision's actual basis as structured, filterable tags so the "why" sits next to the score:
+    - `basis:<significant|within_noise|regression|promoted|baseline|no_change>` — the one-word
+      reason for the decision (`significant` = cleared the t-test and was kept; `within_noise` =
+      higher/lower point estimate but not significant; `regression` = significantly worse;
+      `promoted` = a within-noise candidate later confirmed at higher power).
+    - `delta_vs_best:<±X.XXXX>` — the delta against the **current best** (the number the decision
+      actually uses), NOT vs baseline. This is what makes "higher score, still discarded" legible.
+    - `t_stat:<value>` (or `t_stat:null` when `se_diff == 0`) and `significant:<true|false>`.
+  - `reasoning`: this iteration's `reasoning` string from `iteration_results`. **Lead with a
+    one-line verdict** that states the decision and its basis in plain terms before the details,
+    e.g. `"DISCARDED — within noise of best (Δvs_best +0.016, t=0.94); higher point estimate but not
+    statistically above the best, not a regression."` Then the usual detail (what was tried, which
+    census bucket, mechanism-audit result). Use the same text recorded in `result.json`; do not
+    fabricate. The lead line + the tags must agree.
   - Do **not** include `span_id`, `categorical_value`, or `boolean_value`.
 
 Example arguments for iteration 5 whose harness computed a score of `0.72`:
@@ -387,9 +402,9 @@ Example arguments for iteration 5 whose harness computed a score of `0.72`:
       "label": "auto_experiment_score",
       "metric_type": "score",
       "score_value": 0.72,
-      "reasoning": "Rewrote the retrieval query builder to include entity synonyms (targeting the 'missed-retrieval' census bucket); t-test-significant (|t|≥2) and passed the mechanism audit, so kept.",
+      "reasoning": "KEPT — significant (Δvs_best +0.048, t=3.1). Rewrote the retrieval query builder to include entity synonyms (targeting the 'missed-retrieval' census bucket); cleared the t-test (|t|≥2) and passed the mechanism audit.",
       "timestamp_ms": 1752430000000,
-      "tags": ["iteration:5", "git.commit.sha:33ec6e0959bd46b0ea9c337cf6a28a763d3eeb0a", "decision:kept"]
+      "tags": ["iteration:5", "git.commit.sha:33ec6e0959bd46b0ea9c337cf6a28a763d3eeb0a", "decision:kept", "basis:significant", "delta_vs_best:+0.0480", "t_stat:3.1", "significant:true"]
     }
   ]
 }
