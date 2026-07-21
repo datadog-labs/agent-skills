@@ -18,8 +18,9 @@ Noise: `generate_output` (and an LLM judge) are stochastic, so a single run's me
 noisy estimate. The runner re-runs the WHOLE eval `AUTO_EXP_RUNS` times (default 3) and
 reports the mean-of-runs plus the across-run stdev. The loop feeds that stdev into the
 standard error of the difference of means, `SE_diff = √(sd_cand²/n + sd_best²/n)`, and keeps a
-change only if it is significant by a two-sample t-test (`|Δ|/SE_diff > 2`) — NOT if it clears a
-raw-stdev band (raw stdev doesn't shrink with runs). See references/rubrics.md "Noise &
+change only if it is significant by a two-sample t-test (`|Δ|/SE_diff ≥ 2`, or `|Δ| ≥ min_delta`
+when SE_diff is 0) — NOT if it clears a raw-stdev band (raw stdev doesn't shrink with runs). Only
+the mean/stdev are computed here; the gate itself lives in the loop. See references/rubrics.md "Noise &
 keep/discard policy". Point at a specific data split with `AUTO_EXP_DATA` (default data.jsonl).
 """
 

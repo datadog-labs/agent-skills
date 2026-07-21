@@ -79,11 +79,14 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
     more runs would discard a real effect no matter how many runs you gather (it can't be cleared by
     power). That is exactly why the loop does not gate on it anywhere.
     The quantity that *does* shrink with runs is the standard error of the difference of means,
-    `SE_diff = √(stdev_best²/n_best + stdev_cand²/n_cand)`. At confirmation, keep the candidate iff
-    it moves in the goal's direction **and** `|t| = |Δ| / SE_diff ≥ 2` (≈95%). This is the whole
-    point of spending more runs: it tightens `SE_diff` until a genuine difference becomes
-    significant even while the raw band stays put. Record BOTH numbers (raw band cleared? and the
-    t-test) for the audit; the t-test is the decision.
+    `SE_diff = √(stdev_best²/n_best + stdev_cand²/n_cand)`. At confirmation, apply the **same full
+    keep gate** as any iteration — keep the candidate iff it moves in the goal's direction **and**
+    `|t| = |Δ| / SE_diff ≥ 2` (≈95%) **and** `|Δ| ≥ min_delta` (the practical floor is NOT dropped
+    here — a higher-power rerun that shrinks `|Δ|` below `min_delta` must not promote). If
+    `SE_diff == 0`, decide by `|Δ| ≥ min_delta` in the goal's direction (zero-variance rule). This
+    is the whole point of spending more runs: it tightens `SE_diff` until a genuine difference
+    becomes significant even while the raw band stays put. Record BOTH numbers (raw band cleared?
+    and the t-test) for the audit; the t-test (with the floor) is the decision.
   - Keep only if the t-test is significant; otherwise discard with the higher-power numbers
     recorded. Do this for the single best candidate of the run, not every within-band wobble.
 
@@ -239,8 +242,8 @@ it in the same commit as the code change:
   "runs": <int — AUTO_EXP_RUNS used>,
   "delta": <after_score minus before_score>,
   "best_stdev": <float — the current best's across-run stdev (for SE_diff)>,
-  "se_diff": <float — √(after_stdev²/runs + best_stdev²/runs)>,
-  "t_stat": <float — |delta| / se_diff, the two-sample t used for the keep gate>,
+  "se_diff": <float — √(after_stdev²/runs + best_stdev²/runs); may be 0 for a deterministic metric>,
+  "t_stat": <float — |delta| / se_diff, the two-sample t used for the keep gate; use null when se_diff == 0 (undefined t → the zero-variance rule decides by |delta| ≥ min_delta instead)>,
   "min_delta": <float — practical-effect floor from Step 2.4>,
   "reasoning": "<REQUIRED — scoring method FIRST (how generate_output ran the code, how many scoreable lines evaluate_line ran over, runs), then what was tested/failed/succeeded, how many traces were excluded and why, and any caveat about reproducing production; 2-4 sentences; never empty>",
   "best_score": <best metric value across all iterations, considering the optimization direction>,

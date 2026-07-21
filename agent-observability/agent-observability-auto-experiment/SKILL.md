@@ -225,11 +225,10 @@ and `min_delta`.
 
 Commit `eval_harness.py`, `data.jsonl`, `data.val.jsonl`, `data.test.jsonl`, `eval_results.jsonl`.
 
-Then **report the baseline to LLM-Obs as iteration 0** — before you start the first iteration.
-Submit exactly one eval-metric datapoint with `score_value` = `before_score` and tags
-`["iteration:0", "git.commit.sha:<baseline_commit_sha>", "decision:baseline"]` (the sha is the
-**full 40-character** hash of the commit you just made — `git rev-parse HEAD`, not a short hash). Same call shape and rules as **Report each iteration's score to LLM-Obs**;
-this is the only submission with `iteration:0` and `decision:baseline`.
+**Do NOT report the baseline to LLM-Obs yet.** Step 2.4 may raise `runs` and re-run the baseline,
+which **replaces** this pilot `mean`/`stdev`. Reporting the pilot now would publish an
+`iteration:0` score that disagrees with the baseline the keep/discard gate actually uses. The
+iteration-0 report is deferred to the end of Step 2.4, once the final derived-runs baseline exists.
 
 ### Step 2.4 — Derive `runs` and `min_delta` from the measured baseline noise
 The pilot baseline (3 runs) gives a **real** noise floor (`stdev`, `run_means`). `runs` and
@@ -255,6 +254,15 @@ are surfaced only in the final report, with reasoning):
 Write the derived `runs` and `min_delta` into `config.json` (they started `null`) alongside the raw
 baseline `stdev` + `run_means` you derived them from (audit trail). Every downstream iteration uses
 these values. Do this once, here — do not recompute the gate mid-run.
+
+**Now report the baseline to LLM-Obs as iteration 0** (deferred from Step 2 so it reflects the
+final derived-runs baseline, not the pilot). Submit exactly one eval-metric datapoint with
+`score_value` = the **final** `before_score` (the re-run mean if `runs` was raised, else the pilot
+mean) and tags `["iteration:0", "git.commit.sha:<baseline_commit_sha>", "decision:baseline"]` — the
+sha is the **full 40-character** hash of the committed baseline (`git rev-parse HEAD`, not a short
+hash) and the score must match the `before_score` every downstream iteration gates against. Same
+call shape and rules as **Report each iteration's score to LLM-Obs**; this is the only submission
+with `iteration:0` and `decision:baseline`.
 
 ### Step 2.5 — Census the baseline failures
 Before changing anything, decompose **where the baseline loses** per the rubric's **Baseline
@@ -320,7 +328,8 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
    the SAME harness on `val` → `after_score`. Re-write `eval_results.jsonl` + `result.json`, commit.
 6. **Keep or discard**: keep only if the change is significant by the **two-sample t-test**
    (`|t| = |after_score − before_score| / SE_diff ≥ 2`, `SE_diff = √(after_stdev²/runs +
-   best_stdev²/runs)`) AND `|after_score − before_score| ≥ min_delta`, in the goal's direction,
+   best_stdev²/runs)`) AND `|after_score − before_score| ≥ min_delta`, in the goal's direction
+   (if `SE_diff == 0`, decide by `|Δ| ≥ min_delta` in direction — zero-variance rule),
    **and passes the Mechanism audit** (rubric) — diff `eval_results.jsonl` vs the best commit's
    (`git show <best_sha>:.auto_experiment/eval_results.jsonl`); same denominator, gain from
    datapoints the change touched. Then → update `best_sha`/`best_score`, decision `kept`. A
@@ -457,9 +466,12 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
    gate — not a pooled single-run stdev), it is **promising-but-underpowered**, not a
    confirmed null — exactly the case a low-run gate can't resolve. Re-run the **current best and
    that candidate back-to-back at the max `runs`** on `val` and **pool with the existing runs**
-   (e.g. 10 + 10 → 20 per side). **Decide by a two-sample t-test, not the raw-stdev band**: keep iff
-   the candidate moves in the goal's direction and `|t| = |Δ| / SE_diff ≥ 2`, where
-   `SE_diff = √(stdev_best²/n_best + stdev_cand²/n_cand)`. The raw `pooled_stdev` does NOT shrink
+   (e.g. 10 + 10 → 20 per side). **Decide by the SAME keep gate as any iteration** (do not weaken
+   it here): keep iff the candidate moves in the goal's direction AND `|t| = |Δ| / SE_diff ≥ 2`
+   (`SE_diff = √(stdev_best²/n_best + stdev_cand²/n_cand)`) AND `|Δ| ≥ min_delta` — the practical
+   floor still applies, so a higher-power rerun that shrinks `|Δ|` below `min_delta` does **not**
+   promote (significance alone is not enough). If `SE_diff == 0`, decide by `|Δ| ≥ min_delta` in
+   the goal's direction (zero-variance rule). The raw `pooled_stdev` does NOT shrink
    with more runs, so re-applying the per-iteration band here would discard a real effect no matter
    how much power you add — only `SE_diff` shrinks, which is the point of the extra runs. If the
    t-test is significant it becomes the best (update `best_sha`/`best_score`, record BOTH the raw
@@ -477,9 +489,11 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
 3. **Held-out `test` comparison (the real headline).** Run the harness once on the **baseline**
    commit and once on the **best** commit against `.auto_experiment/data.test.jsonl`
    (`AUTO_EXP_DATA=.auto_experiment/data.test.jsonl`), both at the derived `runs` count. Report the
-   baseline-vs-best `test` delta with its two-sample t-test (`|t| = |Δ|/SE_diff`) as the run's
-   result — the `val` hill-climb gain is not the headline. If `test` is not t-test-significant even
-   though `val` was, say so explicitly (the win did not generalize) and treat baseline as best.
+   baseline-vs-best `test` delta with its two-sample t-test (`|t| = |Δ|/SE_diff ≥ 2` AND
+   `|Δ| ≥ min_delta`; if `SE_diff == 0`, `|Δ| ≥ min_delta` in direction — same gate as every
+   keep decision) as the run's result — the `val` hill-climb gain is not the headline. If `test` is
+   not significant even though `val` was, say so explicitly (the win did not generalize) and treat
+   baseline as best.
 4. Print a per-iteration table (iteration, val delta, decision, sha) and name the best commit.
 5. **If nothing beat the baseline on `test`**: report the baseline as the best result and leave the
    original code in place (`best_sha` empty). Do not fabricate an improvement.
