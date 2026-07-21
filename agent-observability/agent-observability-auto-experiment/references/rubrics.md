@@ -30,9 +30,24 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
   (decision), not kept, no matter that the point estimate rose.
 - **Compare on the same footing.** `best_mean`/`best_stdev` come from a real R-run harness run of
   the current best, not a stale single number carried forward. When in doubt, re-run best and
-  candidate back-to-back so data/endpoint drift cancels.
+  candidate back-to-back so data/endpoint drift cancels. **`pooled_stdev` is recomputed from THESE
+  two runs' `stdev` every iteration — never frozen at the baseline's.** A change that also reduces
+  variance (e.g. a precision fix that collapses run-to-run wiggle) must be judged against the
+  *current* noise, not the baseline's; freezing the baseline band silently penalizes it.
 - **A within-noise "win" is the classic trap.** Point estimates of 15 vs 14 mean nothing when
   stdev is ~2. Do not keep it, do not report it as an improvement.
+- **Fix underpowered runs by raising power, NOT by loosening the gate.** The gate compares a
+  *difference of two means* against a single-run `stdev`; at small `runs` the standard error of that
+  difference (`≈ stdev·√(2/runs)`) is large, so a genuine moderate gain can never clear the band no
+  matter how real it is. The cure is more `runs`, not a lower threshold. **Never widen the band or
+  drop `min_delta` to let a within-noise point-estimate through** — that reopens the false-keep trap.
+- **Higher-power confirmation before final discard.** If the top within-band candidate has the
+  run's **highest mean**, moves in the goal's direction, and is *close* to the band (roughly
+  `|t| = |Δ| / (stdev·√(2/runs)) > 1`), it is a **promising-but-underpowered** result, not a
+  confirmed null. Before discarding it for good, re-run **best and candidate back-to-back at the
+  max `runs`** (the 10 clamp) and re-apply the gate on those higher-power means. Keep only if it now
+  clears; otherwise discard with the higher-power numbers recorded. Do this for the single best
+  candidate of the run, not every within-band wobble.
 
 ## Data-selection guidance — what enters the eval set (`_data_selection_guidance`)
 

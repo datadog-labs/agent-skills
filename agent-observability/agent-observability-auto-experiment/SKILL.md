@@ -214,14 +214,21 @@ The pilot baseline (3 runs) gives a **real** noise floor (`stdev`, `run_means`).
 `min_delta` are **computed from it**, not chosen — derive both here, silently (no user prompt; they
 are surfaced only in the final report, with reasoning):
 
-- **`runs`** — the pilot `stdev` says whether the mean is stable enough. If the standard error of
-  the mean (`stdev / sqrt(3)`) is not comfortably below the deltas you hope to detect (roughly
-  `SEM > min_delta`), **raise `runs`** so the mean is tight enough to resolve a real change, then
-  re-run the baseline at the new `runs` (this re-run's `mean`/`stdev` replace the pilot's). If the
-  pilot is already tight, `runs = 3`. Clamp to **2–10**.
-- **`min_delta`** — set it **relative to measured noise**: `min_delta = max(0.02, k · baseline_stdev)`
-  (e.g. `k ≈ 0.5`), so the floor tracks how noisy this metric actually is — a noisy metric gets a
-  higher bar, a rock-steady one keeps the small floor.
+- **`min_delta`** (compute first — `runs` depends on it) — set it **relative to measured noise**:
+  `min_delta = max(0.02, k · baseline_stdev)` (e.g. `k ≈ 0.5`), so the floor tracks how noisy this
+  metric actually is — a noisy metric gets a higher bar, a rock-steady one keeps the small floor.
+- **`runs`** — the gate compares a *difference of two means*, so the noise that matters is the
+  standard error of that difference: `SE_diff ≈ stdev · sqrt(2 / runs)`. For a real gain of size
+  `min_delta` to be *resolvable* (clear the band at ~2·SE), you need `SE_diff ≲ min_delta / 2`,
+  i.e. **`runs ≥ 8 · (baseline_stdev / min_delta)²`**. Compute that; if it exceeds the current
+  `runs`, **you MUST raise `runs` to it** (clamp **2–10**) and **re-run the baseline** at the new
+  `runs` (the re-run's `mean`/`stdev` replace the pilot's). This is not advisory — an underpowered
+  run makes every moderate gain permanently uncallable (the classic failure: a true +0.05 that can
+  never clear a 0.055 band at `runs=3`). Only if the pilot is already tight enough that the formula
+  yields `≤ 3` does `runs` stay `3`. If the formula wants more than the clamp of 10, set `runs = 10`
+  and **record in `config.json` that the metric is too noisy to fully resolve `min_delta` at 10
+  runs** (so downstream discards of near-band candidates are known-underpowered, not confirmed
+  nulls — see the **Higher-power confirmation** rule in the rubric).
 
 Write the derived `runs` and `min_delta` into `config.json` (they started `null`) alongside the raw
 baseline `stdev` + `run_means` you derived them from (audit trail). Every downstream iteration uses
@@ -398,17 +405,28 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
    `{ "runs_pilot", "runs_final", "baseline_stdev", "run_means", "min_delta" }`. State in the
    summary that `runs`/`min_delta` were **computed from the measured baseline noise** (not chosen),
    with the reasoning, so the user sees the gate that actually governed every keep/discard decision.
-2. **Held-out `test` comparison (the real headline).** Run the harness once on the **baseline**
+2. **Higher-power confirmation of the top within-band candidate** (do this BEFORE the held-out
+   test, and before naming the best). Scan every `discarded` iteration: if the one with the run's
+   **highest `val` mean** was discarded only because its delta fell *within* the noise band, moves
+   in the goal's direction, and sits close to the band
+   (`|Δ| / (pooled_stdev · sqrt(2 / runs)) > 1`), it is **promising-but-underpowered**, not a
+   confirmed null — exactly the case a 3-run gate can't resolve. Re-run the **current best and that
+   candidate back-to-back at the max `runs` (10)** on `val`, recompute `pooled_stdev` from those two
+   higher-power runs, and re-apply the keep gate. If it now clears, it becomes the best (update
+   `best_sha`/`best_score`, record the promotion + higher-power numbers); if not, leave it discarded
+   with the higher-power numbers recorded. Do this for the **single** best candidate only — not
+   every within-band wobble — per the rubric's **Higher-power confirmation** rule.
+3. **Held-out `test` comparison (the real headline).** Run the harness once on the **baseline**
    commit and once on the **best** commit against `.auto_experiment/data.test.jsonl`
    (`AUTO_EXP_DATA=.auto_experiment/data.test.jsonl`), both at the derived `runs` count. Report the
    baseline-vs-best `test` delta with its noise band as the run's result — the `val` hill-climb
    gain is not the headline. If `test` did not clear the noise band even though `val` did, say so
    explicitly (the win did not generalize) and treat baseline as best.
-3. Print a per-iteration table (iteration, val delta, decision, sha) and name the best commit.
-4. **If nothing beat the baseline on `test`**: report the baseline as the best result and leave the
+4. Print a per-iteration table (iteration, val delta, decision, sha) and name the best commit.
+5. **If nothing beat the baseline on `test`**: report the baseline as the best result and leave the
    original code in place (`best_sha` empty). Do not fabricate an improvement.
-5. Tell the user the scratch branch + best commit so they can open a PR from it if they want.
-6. **Mark the experiment finished in LLM-Obs.** Call `update_llmobs_experiment` with
+6. Tell the user the scratch branch + best commit so they can open a PR from it if they want.
+7. **Mark the experiment finished in LLM-Obs.** Call `update_llmobs_experiment` with
    `experiment_id` = `$DD_AUTO_EXPERIMENT_ID` (skip if unset) exactly once at the very end — after
    the last iteration, or immediately whenever you give up early. Set `status: "completed"` for any
    run that reached the final report (including one where baseline stayed best — a run that
