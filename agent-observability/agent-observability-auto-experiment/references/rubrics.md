@@ -93,6 +93,12 @@ budget re-discovering that wording changes are noise.
   (the reference is wrong). Adapt the tags to the task.
 - Write the census to `.auto_experiment/census.json` (`{tag: count, examples: [ids]}`) and commit it.
   Surface the ranked buckets.
+- **Refer to datapoints by their eval-set `id` everywhere** — census `examples`, `result.json`
+  `reasoning`, mechanism-audit notes, and the LLM-Obs `reasoning` string all name the concrete
+  `id` from `data.jsonl` (e.g. `BL11`, `BL34`), never a bare row index or an invented label. Those
+  ids are the only handle a reader has to trace a claim ("fixed BL11's INCLUDE-in-key false
+  positive") back to the actual case; a reasoning that cites ids no one can resolve is not
+  auditable. If the dataset has no stable id field, assign one deterministically and record it.
 - **Every iteration must name the census bucket it targets** (in `result.json` `reasoning`) and be a
   change plausibly able to move THAT bucket. If the dominant bucket is not reachable by editing
   `files_to_optimize` (e.g. `data/label` errors, or a `wrong_retrieval` that needs a tool the code
