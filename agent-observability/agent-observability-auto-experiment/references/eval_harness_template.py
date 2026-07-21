@@ -16,9 +16,11 @@ Usage: `python .auto_experiment/eval_harness.py`  -> writes eval_results.jsonl, 
 
 Noise: `generate_output` (and an LLM judge) are stochastic, so a single run's mean is a
 noisy estimate. The runner re-runs the WHOLE eval `AUTO_EXP_RUNS` times (default 3) and
-reports the mean-of-runs plus the across-run stdev — the loop uses that stdev as the
-noise floor for keep/discard (see references/rubrics.md "Noise & keep/discard policy").
-Point at a specific data split with `AUTO_EXP_DATA` (default data.jsonl).
+reports the mean-of-runs plus the across-run stdev. The loop feeds that stdev into the
+standard error of the difference of means, `SE_diff = √(sd_cand²/n + sd_best²/n)`, and keeps a
+change only if it is significant by a two-sample t-test (`|Δ|/SE_diff > 2`) — NOT if it clears a
+raw-stdev band (raw stdev doesn't shrink with runs). See references/rubrics.md "Noise &
+keep/discard policy". Point at a specific data split with `AUTO_EXP_DATA` (default data.jsonl).
 """
 
 from __future__ import annotations
@@ -36,9 +38,11 @@ RESULTS = HERE / "eval_results.jsonl"
 # can tell a real move from run-to-run wiggle. Same value across every iteration.
 RUNS = max(1, int(os.environ.get("AUTO_EXP_RUNS", "3")))
 
-# The optimization goal / evaluator text, copied from .auto_experiment/config.json.
-# Used verbatim as the judge rubric so scoring is reproducible.
-GOAL = os.environ.get("AUTO_EXP_GOAL", "<paste the experiment goal / evaluator rubric here>")
+# The EVALUATOR text (config `evaluators` field), copied from .auto_experiment/config.json and used
+# verbatim as the judge rubric so scoring is reproducible. This is the `evaluators` field, NOT
+# `goal` — `goal` is the optimization target; the judge must score against `evaluators`. Never
+# score against `goal`.
+EVALUATORS = os.environ.get("AUTO_EXP_EVALUATORS", "<paste the config `evaluators` rubric here>")
 
 
 def generate_output(line: dict) -> "str | None":
@@ -72,8 +76,8 @@ def judge(input_text: str, output_text: str) -> "tuple[float, str]":
       - Only fall back to another provider (OPENAI_API_KEY) or a Datadog LLM Obs evaluator if the
         session model cannot be reached.
     Pin the resolved model id so the judge is identical across every iteration.
-    Score `output_text` against GOAL. If no judge can be reached after genuinely trying, raise —
-    do NOT return a fabricated number.
+    Score `output_text` against EVALUATORS (the config `evaluators` rubric, never `goal`). If no
+    judge can be reached after genuinely trying, raise — do NOT return a fabricated number.
     """
     raise NotImplementedError("wire judge to a real LLM-as-judge call; never fabricate a score")
 
@@ -86,6 +90,11 @@ def evaluate_line(line: dict) -> "dict | None":
     input_text = line.get("input") if isinstance(line.get("input"), str) else json.dumps(line.get("input"))
     score, justification = judge(input_text, output)
     return {
+        # Stable eval-set id FIRST — required so eval_results.jsonl can be diffed and cited by id
+        # in the census / result reasoning / mechanism audit / LLM-Obs reasoning (see rubrics.md
+        # "Refer to datapoints by their eval-set id everywhere"). If the dataset has no id field,
+        # assign one deterministically when building data.jsonl and it flows through here.
+        "id": line.get("id"),
         "input": (input_text or "")[:500],
         "output": output[:500],
         "score": float(score),
@@ -124,9 +133,9 @@ def main() -> None:
             out.write(json.dumps(r) + "\n")
     mean = statistics.mean(run_means)
     stdev = statistics.pstdev(run_means) if len(run_means) > 1 else 0.0
-    # `mean` is the before_score/after_score the loop reads; `stdev` is the noise floor the
-    # keep/discard gate compares the delta against. Both computed, never literals. `excluded`
-    # must be reported in the iteration's reasoning.
+    # `mean` is the before_score/after_score the loop reads; `stdev` feeds SE_diff for the
+    # two-sample t-test keep/discard gate (raw stdev is NOT itself the threshold). Both computed,
+    # never literals. `excluded` must be reported in the iteration's reasoning.
     print(json.dumps({
         "mean": mean, "stdev": stdev, "runs": RUNS,
         "scored": len(last_results), "excluded": excluded, "run_means": run_means,

@@ -260,11 +260,15 @@ code. `after_score` = the new printed mean. Re-write `eval_results.jsonl`. Write
 the change. `delta = after_score - before_score`.
 
 Decide `is_best` per the optimization direction in `goal` **and the Noise & keep/discard policy**:
-keep only if `|after_score − before_score| > max(pooled_stdev, min_delta)`. A within-noise gain is
-`is_best: false` (discarded), not kept. If the band is cleared, run the **Mechanism audit** (rubric)
+keep only if the change moves in the goal's direction AND is significant by the **two-sample
+t-test** — `|t| = |after_score − before_score| / SE_diff > 2` where
+`SE_diff = √(after_stdev²/runs + best_stdev²/runs)` — AND `|after_score − before_score| ≥ min_delta`
+(practical-effect floor). Do **not** gate on the raw-stdev band (it never shrinks with runs). A
+change that fails the t-test is `is_best: false` (discarded), not kept. If it clears, run the
+**Mechanism audit** (rubric)
 — diff this iteration's `eval_results.jsonl` against the baseline's (same-count denominator; the
-gain comes from datapoints the change touched) before keeping. If iteration 1 clears the band AND
-passes the audit, it becomes the best (`best_sha` = this commit, `best_score` = after_score). Append
+gain comes from datapoints the change touched) before keeping. If iteration 1 is t-test-significant
+AND passes the audit, it becomes the best (`best_sha` = this commit, `best_score` = after_score). Append
 the row to `config.json` `iteration_results`.
 
 Then report this iteration's score to LLM-Obs (tag `iteration:1`) — see **Report each iteration's
@@ -289,12 +293,15 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
 5. **Feasibility probe first** (rubric): cheap offline check the change can move its target bucket;
    if it reaches 0 failing datapoints, record `no_change` and skip the full eval. Otherwise re-run
    the SAME harness on `val` → `after_score`. Re-write `eval_results.jsonl` + `result.json`, commit.
-6. **Keep or discard**: keep only if the delta clears the noise band (`|after_score − before_score|
-   > max(pooled_stdev, min_delta)`, per the Noise policy) in the goal's direction **and passes the
-   Mechanism audit** (rubric) — diff `eval_results.jsonl` vs the best commit's
+6. **Keep or discard**: keep only if the change is significant by the **two-sample t-test**
+   (`|t| = |after_score − before_score| / SE_diff > 2`, `SE_diff = √(after_stdev²/runs +
+   best_stdev²/runs)`) AND `|after_score − before_score| ≥ min_delta`, in the goal's direction,
+   **and passes the Mechanism audit** (rubric) — diff `eval_results.jsonl` vs the best commit's
    (`git show <best_sha>:.auto_experiment/eval_results.jsonl`); same denominator, gain from
    datapoints the change touched. Then → update `best_sha`/`best_score`, decision `kept`. A
-   within-noise gain, a denominator artifact, or a regression → `discarded`. Append the row.
+   t-test-insignificant gain, a denominator artifact, or a regression → `discarded`. Append the
+   row. (A borderline `discarded` here — `|t|` just under 2 — is the candidate the final
+   **Higher-power confirmation** re-tests at more runs.)
 7. Report this iteration's score to LLM-Obs (tag `iteration:<n>`) — see **Report each iteration's
    score to LLM-Obs**.
 
@@ -341,7 +348,7 @@ Example arguments for iteration 5 whose harness computed a score of `0.72`:
       "label": "auto_experiment_score",
       "metric_type": "score",
       "score_value": 0.72,
-      "reasoning": "Rewrote the retrieval query builder to include entity synonyms (targeting the 'missed-retrieval' census bucket); cleared the noise band and passed the mechanism audit, so kept.",
+      "reasoning": "Rewrote the retrieval query builder to include entity synonyms (targeting the 'missed-retrieval' census bucket); t-test-significant (|t|>2) and passed the mechanism audit, so kept.",
       "timestamp_ms": 1752430000000,
       "tags": ["iteration:5", "git.commit.sha:33ec6e0959bd46b0ea9c337cf6a28a763d3eeb0a", "decision:kept"]
     }
@@ -351,10 +358,21 @@ Example arguments for iteration 5 whose harness computed a score of `0.72`:
 
 Rules:
 
-- **Exactly one metric per iteration.** Never submit more than one metric for the same iteration
-  and never batch several iterations into one call.
+- **One metric per iteration, plus at most one correction.** Submit exactly one metric per
+  iteration at the time it is scored, and never batch several iterations into one call. The **only**
+  second event allowed for the same iteration is a **promotion correction** (see final-report
+  Higher-power confirmation): re-submitting that iteration with `decision:kept` +
+  `promoted:higher_power_confirmation` after it is promoted. That correction is not a second
+  measurement.
+- **Consumer dedup rule (state it, honor it).** Because the store is append-only, an iteration may
+  have two events (an earlier `decision:discarded` and a later promotion correction). Consumers of
+  `auto_experiment_score` MUST dedupe **per `iteration:<n>` tag, keeping the event with the latest
+  `timestamp_ms`** — that event carries the iteration's final decision. Equivalently: a
+  `promoted:higher_power_confirmation` event supersedes any earlier decision for the same
+  `iteration:<n>`. Do not average or count both.
 - The value you submit is the same computed `after_score` recorded in `result.json`; the two must
-  always agree.
+  always agree — **except a `no_change` iteration**, which has no computed `after_score` and instead
+  carries forward `best_score` as a `decision:no_change` marker (see **No-change iterations**).
 
 ### No-change iterations — emit a carried-forward marker, not a measurement
 
@@ -383,7 +401,7 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
 
 - Stop when `iteration == max_iterations`.
 - **Plateau within noise — stop early.** If the last **3** iterations all landed `discarded`
-  *within the noise band* (no delta cleared `max(pooled_stdev, min_delta)`), stop and report the
+  *within noise* (no delta reached t-test significance, `|t| ≤ 2`), stop and report the
   current best with `stop_reason: "plateau (deltas within noise)"`. Continuing past a noise plateau
   just burns budget generating within-noise wiggle; escalate instead (a new census bucket, a
   different dimension, or accept the ceiling). Distinguish this from a real regression streak.
@@ -407,8 +425,9 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
    with the reasoning, so the user sees the gate that actually governed every keep/discard decision.
 2. **Higher-power confirmation of the top within-band candidate** (do this BEFORE the held-out
    test, and before naming the best). Scan every `discarded` iteration: if the one with the run's
-   **highest `val` mean** was discarded only because its delta fell *within* the noise band, moves
-   in the goal's direction, and sits close to the band
+   **best `val` mean in the goal's optimization direction** (highest for maximize, lowest for
+   minimize) was discarded only because it was borderline-insignificant (`|t|` just under 2), moves
+   in the goal's direction, and sits close to significance
    (`|Δ| / (pooled_stdev · sqrt(2 / runs)) > 1`), it is **promising-but-underpowered**, not a
    confirmed null — exactly the case a low-run gate can't resolve. Re-run the **current best and
    that candidate back-to-back at the max `runs`** on `val` and **pool with the existing runs**
@@ -432,9 +451,9 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
 3. **Held-out `test` comparison (the real headline).** Run the harness once on the **baseline**
    commit and once on the **best** commit against `.auto_experiment/data.test.jsonl`
    (`AUTO_EXP_DATA=.auto_experiment/data.test.jsonl`), both at the derived `runs` count. Report the
-   baseline-vs-best `test` delta with its noise band as the run's result — the `val` hill-climb
-   gain is not the headline. If `test` did not clear the noise band even though `val` did, say so
-   explicitly (the win did not generalize) and treat baseline as best.
+   baseline-vs-best `test` delta with its two-sample t-test (`|t| = |Δ|/SE_diff`) as the run's
+   result — the `val` hill-climb gain is not the headline. If `test` is not t-test-significant even
+   though `val` was, say so explicitly (the win did not generalize) and treat baseline as best.
 4. Print a per-iteration table (iteration, val delta, decision, sha) and name the best commit.
 5. **If nothing beat the baseline on `test`**: report the baseline as the best result and leave the
    original code in place (`best_sha` empty). Do not fabricate an improvement.
