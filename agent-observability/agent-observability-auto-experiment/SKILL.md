@@ -421,6 +421,14 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
    band and the t-test); if not, leave it discarded with the higher-power numbers recorded. Do this
    for the **single** best candidate only — not every within-band wobble — per the rubric's
    **Higher-power confirmation** rule.
+   - **Propagate a promotion to LLM-Obs.** The iteration's metric was already submitted with its
+     iteration-level `decision:discarded`. If confirmation **promotes** it, that tag is now wrong —
+     the dashboard would show the run's best as `discarded`. Re-submit that iteration's metric
+     (same `iteration:<n>`, same sha, same `score_value`) with `decision:kept` plus a
+     `promoted:higher_power_confirmation` tag and a `reasoning` stating it supersedes the earlier
+     discarded decision (cite the t-test). This is the one sanctioned exception to "exactly one
+     metric per iteration" — the later event is a correction, not a second measurement. Leave a
+     genuinely-discarded candidate's metric as-is.
 3. **Held-out `test` comparison (the real headline).** Run the harness once on the **baseline**
    commit and once on the **best** commit against `.auto_experiment/data.test.jsonl`
    (`AUTO_EXP_DATA=.auto_experiment/data.test.jsonl`), both at the derived `runs` count. Report the
