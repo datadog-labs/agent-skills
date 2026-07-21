@@ -4,7 +4,7 @@ description: >-
   Use when a developer wants to iterate on ONE specific Agent Observability / LLM Obs trace whose output
   they didn't like — re-running that trace against their LOCAL code, seeing a concise diff of the old vs
   new output, and looping (change code → replay → diff) until satisfied. Invoked as
-  /agent-observability-replay-trace <trace-id> [what to change]. Signals: "replay this trace"; "iterate on
+  /agent-observability-replay-trace <trace-id> [changes to test]. Signals: "replay this trace"; "iterate on
   a trace"; "this trace's output is wrong, fix it and re-run"; "re-run trace <id> with <change>"; pasting a
   trace id from the Agent Observability UI with a description of what to fix. It fetches the trace via the
   datadog-llmo MCP, edits code, re-runs the app to emit a NEW trace, and diffs the two — no local server,
@@ -21,7 +21,7 @@ optionally change the code to fix it, **re-run that trace against their LOCAL co
 diff of old vs new output — repeating until they're happy. It assumes nothing about the project's layout.
 
 Invoked from the developer's coding agent (they paste a CTA from the Agent Observability UI):
-`/agent-observability-replay-trace <trace-id> [<what they didn't like>]`.
+`/agent-observability-replay-trace <trace-id> [<changes to test>]`.
 
 ## The loop (what you're building each run)
 
