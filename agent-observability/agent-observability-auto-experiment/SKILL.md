@@ -157,7 +157,7 @@ ran because you intended it to.
 | 2 | scratch branch | `git branch --show-current` equals the scratch branch off `base_branch` |
 | 3 | `config.json` written | file exists with every required field populated (incl. the resolved `files_to_optimize` list, `evaluators` verbatim, data source) |
 | 4 | `DD_AUTO_EXPERIMENT_ID` | env var read; if unset, that is recorded and per-iteration reporting is knowingly skipped |
-| 5 | run context on experiment | confirm the `update_llmobs_experiment` call **actually returned** `updated_fields` containing `"metadata"` (the tool echoes the fields it wrote). A plain intent to call does not count — you must have the response in hand. Skip only if `DD_AUTO_EXPERIMENT_ID` is unset. |
+| 5 | run context on experiment | confirm the `update_llmobs_experiment` call **actually returned a success response in hand** (not merely that you intended to call it). For the us5 MCP that response is `updated_fields` containing `"metadata"` — accept that, or any non-error response acknowledging the metadata write if the tool's shape differs. The check is "the call was made and acknowledged", so do not hard-block on one exact field name; if the tool errored or was never called, re-run it. Skip only if `DD_AUTO_EXPERIMENT_ID` is unset. |
 
 State the gate result briefly (each step ✓ with its evidence) before Step 1. This same
 "external-effect step → verify against an artifact" discipline is why per-iteration score
@@ -283,10 +283,13 @@ the change. `delta = after_score - before_score`.
 
 Decide `is_best` per the optimization direction in `goal` **and the Noise & keep/discard policy**:
 keep only if the change moves in the goal's direction AND is significant by the **two-sample
-t-test** — `|t| = |after_score − before_score| / SE_diff > 2` where
+t-test** — `|t| = |after_score − before_score| / SE_diff ≥ 2` where
 `SE_diff = √(after_stdev²/runs + best_stdev²/runs)` — AND `|after_score − before_score| ≥ min_delta`
-(practical-effect floor). Do **not** gate on the raw-stdev band (it never shrinks with runs). A
-change that fails the t-test is `is_best: false` (discarded), not kept. If it clears, run the
+(practical-effect floor). Do **not** gate on the raw-stdev band (it never shrinks with runs). If
+`SE_diff == 0` (deterministic metric — both stdevs 0), the t is undefined: keep iff
+`|after_score − before_score| ≥ min_delta` in the goal's direction (guard the division; see the
+rubric's zero-variance case). A change that fails the t-test is `is_best: false` (discarded), not
+kept. If it clears, run the
 **Mechanism audit** (rubric)
 — diff this iteration's `eval_results.jsonl` against the baseline's (same-count denominator; the
 gain comes from datapoints the change touched) before keeping. If iteration 1 is t-test-significant
@@ -316,7 +319,7 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
    if it reaches 0 failing datapoints, record `no_change` and skip the full eval. Otherwise re-run
    the SAME harness on `val` → `after_score`. Re-write `eval_results.jsonl` + `result.json`, commit.
 6. **Keep or discard**: keep only if the change is significant by the **two-sample t-test**
-   (`|t| = |after_score − before_score| / SE_diff > 2`, `SE_diff = √(after_stdev²/runs +
+   (`|t| = |after_score − before_score| / SE_diff ≥ 2`, `SE_diff = √(after_stdev²/runs +
    best_stdev²/runs)`) AND `|after_score − before_score| ≥ min_delta`, in the goal's direction,
    **and passes the Mechanism audit** (rubric) — diff `eval_results.jsonl` vs the best commit's
    (`git show <best_sha>:.auto_experiment/eval_results.jsonl`); same denominator, gain from
@@ -370,7 +373,7 @@ Example arguments for iteration 5 whose harness computed a score of `0.72`:
       "label": "auto_experiment_score",
       "metric_type": "score",
       "score_value": 0.72,
-      "reasoning": "Rewrote the retrieval query builder to include entity synonyms (targeting the 'missed-retrieval' census bucket); t-test-significant (|t|>2) and passed the mechanism audit, so kept.",
+      "reasoning": "Rewrote the retrieval query builder to include entity synonyms (targeting the 'missed-retrieval' census bucket); t-test-significant (|t|≥2) and passed the mechanism audit, so kept.",
       "timestamp_ms": 1752430000000,
       "tags": ["iteration:5", "git.commit.sha:33ec6e0959bd46b0ea9c337cf6a28a763d3eeb0a", "decision:kept"]
     }
@@ -423,7 +426,7 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
 
 - Stop when `iteration == max_iterations`.
 - **Plateau within noise — stop early.** If the last **3** iterations all landed `discarded`
-  *within noise* (no delta reached t-test significance, `|t| ≤ 2`), stop and report the
+  *within noise* (no delta reached t-test significance, `|t| < 2`), stop and report the
   current best with `stop_reason: "plateau (deltas within noise)"`. Continuing past a noise plateau
   just burns budget generating within-noise wiggle; escalate instead (a new census bucket, a
   different dimension, or accept the ceiling). Distinguish this from a real regression streak.
@@ -450,11 +453,12 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
    **best `val` mean in the goal's optimization direction** (highest for maximize, lowest for
    minimize) was discarded only because it was borderline-insignificant (`|t|` just under 2), moves
    in the goal's direction, and sits close to significance
-   (`|Δ| / (pooled_stdev · sqrt(2 / runs)) > 1`), it is **promising-but-underpowered**, not a
+   (`1 < |Δ| / SE_diff < 2`, same `SE_diff = √(after_stdev²/runs + best_stdev²/runs)` as the keep
+   gate — not a pooled single-run stdev), it is **promising-but-underpowered**, not a
    confirmed null — exactly the case a low-run gate can't resolve. Re-run the **current best and
    that candidate back-to-back at the max `runs`** on `val` and **pool with the existing runs**
    (e.g. 10 + 10 → 20 per side). **Decide by a two-sample t-test, not the raw-stdev band**: keep iff
-   the candidate moves in the goal's direction and `|t| = |Δ| / SE_diff > 2`, where
+   the candidate moves in the goal's direction and `|t| = |Δ| / SE_diff ≥ 2`, where
    `SE_diff = √(stdev_best²/n_best + stdev_cand²/n_cand)`. The raw `pooled_stdev` does NOT shrink
    with more runs, so re-applying the per-iteration band here would discard a real effect no matter
    how much power you add — only `SE_diff` shrinks, which is the point of the extra runs. If the
