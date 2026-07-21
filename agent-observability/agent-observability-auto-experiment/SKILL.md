@@ -140,6 +140,28 @@ is out of scope, say so (that's a finding) — do not silently tweak in-scope-bu
    branch created in step 2, and `model` = the `provider/model-id` of the model/agent driving this
    session (e.g. `openai/gpt-4-turbo`, `anthropic/claude-opus-4-8`). `metadata` **replaces**
    existing metadata, so include all three keys in the one call. Do this in Setup, before Step 1.
+   **Verify it landed** (see gate below) — this is the step most often silently skipped, because it
+   is an MCP side-effect with no local artifact, unlike the file/branch writes above.
+
+### Setup verification gate — do this BEFORE Step 1
+
+Setup steps 2 and 5 have **external** effects (a git branch; an MCP write to the experiment) that
+leave no obvious local trace, so a loop racing to iteration 1 can skip them and nothing downstream
+notices. Before starting Step 1, **explicitly verify every setup step against a concrete artifact**
+and do not proceed until all pass. Re-run the missing step if any check fails; never assume a step
+ran because you intended it to.
+
+| # | step | verification (must actually run the check, not recall it) |
+|---|---|---|
+| 1 | clean tree + start SHA | `git rev-parse HEAD` recorded in `config.json` `start_sha`; tree clean or unrelated changes stashed |
+| 2 | scratch branch | `git branch --show-current` equals the scratch branch off `base_branch` |
+| 3 | `config.json` written | file exists with every required field populated (incl. the resolved `files_to_optimize` list, `evaluators` verbatim, data source) |
+| 4 | `DD_AUTO_EXPERIMENT_ID` | env var read; if unset, that is recorded and per-iteration reporting is knowingly skipped |
+| 5 | run context on experiment | confirm the `update_llmobs_experiment` call **actually returned** `updated_fields` containing `"metadata"` (the tool echoes the fields it wrote). A plain intent to call does not count — you must have the response in hand. Skip only if `DD_AUTO_EXPERIMENT_ID` is unset. |
+
+State the gate result briefly (each step ✓ with its evidence) before Step 1. This same
+"external-effect step → verify against an artifact" discipline is why per-iteration score
+submissions are also confirmed by the tool's `metrics_ingested` response, not assumed.
 
 ## Execution model — orchestrator + fresh per-iteration sub-agents
 
