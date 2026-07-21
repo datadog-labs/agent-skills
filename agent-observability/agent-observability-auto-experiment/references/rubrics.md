@@ -247,14 +247,16 @@ it in the same commit as the code change:
   "min_delta": <float — practical-effect floor from Step 2.4>,
   "reasoning": "<REQUIRED — scoring method FIRST (how generate_output ran the code, how many scoreable lines evaluate_line ran over, runs), then what was tested/failed/succeeded, how many traces were excluded and why, and any caveat about reproducing production; 2-4 sentences; never empty>",
   "best_score": <best metric value across all iterations, considering the optimization direction>,
-  "is_best": <REQUIRED — true ONLY if the change is significant by the two-sample t-test (|t_stat| ≥ 2) AND |delta| ≥ min_delta, in the goal's direction; false otherwise; never omit>
+  "is_best": <REQUIRED — true ONLY if the change moves in the goal's direction AND |delta| ≥ min_delta AND EITHER |t_stat| ≥ 2 (normal case) OR se_diff == 0 (deterministic metric, t_stat null — zero-variance rule); false otherwise; never omit>
 }
 ```
 
 `is_best` drives keep/discard and must reflect the optimization direction in `goal` (higher is
-better unless the goal says to minimize) **AND be significant by the two-sample t-test**
-(`|t_stat| ≥ 2` and `|delta| ≥ min_delta`) — a t-test-insignificant point-estimate gain is
-`is_best: false`. `reasoning` is mandatory and never empty.
+better unless the goal says to minimize) **AND** `|delta| ≥ min_delta` **AND** be significant —
+either by the two-sample t-test (`|t_stat| ≥ 2`) **or**, when `se_diff == 0` (deterministic metric,
+`t_stat` null), by the zero-variance rule (a `min_delta`-sized deterministic move is real). A
+t-test-insignificant point-estimate gain (with `se_diff > 0`) is `is_best: false`. `reasoning` is
+mandatory and never empty.
 
 ## Mechanism audit — confirm the change CAUSED the gain (`_mechanism_audit`)
 

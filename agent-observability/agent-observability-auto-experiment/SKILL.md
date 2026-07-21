@@ -255,14 +255,19 @@ Write the derived `runs` and `min_delta` into `config.json` (they started `null`
 baseline `stdev` + `run_means` you derived them from (audit trail). Every downstream iteration uses
 these values. Do this once, here — do not recompute the gate mid-run.
 
-**Now report the baseline to LLM-Obs as iteration 0** (deferred from Step 2 so it reflects the
-final derived-runs baseline, not the pilot). Submit exactly one eval-metric datapoint with
-`score_value` = the **final** `before_score` (the re-run mean if `runs` was raised, else the pilot
-mean) and tags `["iteration:0", "git.commit.sha:<baseline_commit_sha>", "decision:baseline"]` — the
-sha is the **full 40-character** hash of the committed baseline (`git rev-parse HEAD`, not a short
-hash) and the score must match the `before_score` every downstream iteration gates against. Same
-call shape and rules as **Report each iteration's score to LLM-Obs**; this is the only submission
-with `iteration:0` and `decision:baseline`.
+**First commit the final baseline state, THEN report it to LLM-Obs as iteration 0** (deferred from
+Step 2 so it reflects the final derived-runs baseline, not the pilot). If Step 2.4 raised `runs` and
+re-ran the baseline, the working tree's `eval_results.jsonl` + `config.json` now hold the re-run
+numbers but the commit from Step 2 still holds the pilot — **commit the updated baseline artifacts
+now** (amend the Step 2 commit or add a new one) so a single commit contains the final
+`eval_results.jsonl`, derived `runs`/`min_delta`, and `run_means`. Only then submit exactly one
+eval-metric datapoint with `score_value` = the **final** `before_score` (the re-run mean if `runs`
+was raised, else the pilot mean) and tags `["iteration:0",
+"git.commit.sha:<baseline_commit_sha>", "decision:baseline"]` — the sha is the **full 40-character**
+hash of that just-committed final-baseline commit (`git rev-parse HEAD`), and the score must match
+the `before_score` every downstream iteration gates against. Same call shape and rules as **Report
+each iteration's score to LLM-Obs**; this is the only submission with `iteration:0` and
+`decision:baseline`.
 
 ### Step 2.5 — Census the baseline failures
 Before changing anything, decompose **where the baseline loses** per the rubric's **Baseline
@@ -344,8 +349,8 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
 Once you have a computed score for an iteration, submit **exactly one** eval-metric datapoint to
 LLM-Obs with the `submit_llmobs_experiment_events` MCP tool. Do this once per iteration, right
 after the score is computed and the iteration's commit / `result.json` is written — including
-iteration 1 and the **iteration-0 baseline** (see Step 2; there `score_value` = `before_score` and
-the decision tag is `decision:baseline`).
+iteration 1 and the **iteration-0 baseline** (reported at the end of Step 2.4; there `score_value`
+= `before_score` and the decision tag is `decision:baseline`).
 
 Call `submit_llmobs_experiment_events` with a single metric shaped exactly like this:
 
