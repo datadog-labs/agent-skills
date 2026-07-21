@@ -53,17 +53,38 @@ Before writing any config or touching git:
      scope from context. Resolve a folder/glob to the concrete editable file list.
    - **`goal`** — the optimization target + direction.
    - **`evaluators`** — how a datapoint is scored (pass/fail, metric, direction). Do not reuse
-     `goal` as the evaluator.
+     `goal` as the evaluator. **Use the user's evaluator text verbatim. NEVER invent, extend,
+     narrow, or change the metric or direction of an evaluator** — do not turn "recall" into "F1",
+     do not add a precision term the user didn't ask for, do not flip the direction. If `goal` and
+     the user's `evaluators` appear to disagree (e.g. `goal` says "balanced precision and recall"
+     but the stated evaluator is recall-only), **STOP and ask the user which one governs** — do
+     **not** silently reconcile them by rewriting the rubric. The metric the harness optimizes must
+     be the one the user approved, or every keep/discard decision optimizes the wrong objective.
    - **data source** — **mandatory**: the user must provide **either** a `dataset_id` **or** an
      `ml_app` to find traces from (optionally narrowed by explicit `trace_ids`). Do not auto-pick,
      do not guess an `ml_app`, and do not start the run with neither — if both are missing, ask.
+
+   **A detailed, specific goal is NOT permission to infer any must-ask field.** A rich goal is the
+   single most common cause of wrongly auto-filling `files_to_optimize`, `evaluators`, and the data
+   source — the more the goal spells out (a filename, a metric, a dataset), the *harder* you must
+   resist reading those as answers. A goal that mentions `v12.md` is not the user choosing
+   `files_to_optimize`; a goal that says "balanced precision and recall" is not the user handing you
+   an evaluator; a goal that names a dataset is not the user selecting the data source. **Ask
+   anyway, for every must-ask field, every time — even when you are confident you could guess it.**
+   This gate is a hard STOP: if any must-ask field lacks an explicit user answer, do not write
+   `config.json`, do not create the scratch branch, do not run the harness — ask (use
+   `AskUserQuestion`) and wait.
 2. Fill the **default** fields (`max_iterations`, `model`, `base_branch`) with their defaults above.
    Do **not** touch `runs`/`min_delta` here — they are derived in Step 2.4, not intake params.
 3. **Show ALL parameters back to the user — must-ask and defaulted alike — and get explicit
    validation before starting the run.** Present the full resolved config (including the concrete
    expanded `files_to_optimize` list and each default value) and let the user confirm or override
-   any field. Do **not** show `runs`/`min_delta` here (they aren't chosen yet). Only after the user
-   validates do you write `config.json` and proceed to Setup.
+   any field. Do **not** show `runs`/`min_delta` here (they aren't chosen yet). Show the
+   `evaluators` text **exactly as the user gave it**; if you believe it needs any change, present
+   the change as an explicit *proposal* ("you said recall-only; your goal mentions precision too —
+   score recall-only, or switch to F1?") and record only what the user picks. Never persist an
+   evaluator the user did not approve verbatim. Only after the user validates do you write
+   `config.json` and proceed to Setup.
 
 Persist the config to `.auto_experiment/config.json` and update it as the run progresses (it is
 the run's state + audit trail):
