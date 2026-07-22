@@ -3,7 +3,8 @@ name: agent-observability-auto-experiment
 description: >-
   Run an iterative code-improvement hill-climb against real Datadog LLM-Obs data, locally, with
   Claude Code as the agent. Establishes a baseline eval, makes one focused change, re-scores with
-  the same harness, keeps the change only if it beats the best, and repeats. Use when the user
+  the same harness, keeps the change if it improves the score in the goal's direction (labeling
+  within-noise gains tentative), and repeats. Use when the user
   says "run an auto experiment", "hill-climb this code", "iteratively improve X and measure the
   delta", "optimize this prompt/file against my traces", "auto-optimize against LLM-Obs", or wants
   the local equivalent of the auto_experiments worker. Works from an ml_app, a dataset_id, or a
