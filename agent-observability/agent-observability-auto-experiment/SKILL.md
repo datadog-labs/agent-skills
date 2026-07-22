@@ -36,12 +36,15 @@ run starts** (see the Mandatory intake gate below).
 | `evaluators` | explicit evaluator/rubric text — how each datapoint is scored (ground-truth check vs LLM-judge, pass criteria, direction). | **must ask** (do NOT silently fall back to `goal`) |
 | data source | where the eval data comes from — **either** a `dataset_id` **or** an `ml_app` to pull traces from (optionally narrowed by explicit `trace_ids`). | **must ask** — mandatory; the run cannot start without one of `dataset_id` / `ml_app` (priority below) |
 | `max_iterations` | how many changes to try (clamp **1–50**) | _default_ **2** |
+| `max_runs` | ceiling on the derived `runs` — how many times the harness may repeat the eval per candidate to beat variance (clamp **2–20**) | _default_ **3** |
 | `model` | judge model id | _default_: the Claude model selected in this session (see rubric) |
 | `base_branch` | branch the baseline is measured on | _default_: current branch / `main` |
 
 `runs` and `min_delta` are **not inputs** — they are **derived** from the measured baseline noise in
 Step 2.4, not chosen by anyone. Do **not** ask for them and do **not** show them in the all-params
 validation. They are computed during the run and displayed once, at the end, with their reasoning.
+`max_runs` **is** a shown default param (the ceiling the derived `runs` is clamped to) — it is not
+`runs` itself.
 
 ### Mandatory intake gate — do this FIRST, before Setup
 
@@ -74,12 +77,17 @@ Before writing any config or touching git:
    This gate is a hard STOP: if any must-ask field lacks an explicit user answer, do not write
    `config.json`, do not create the scratch branch, do not run the harness — ask (use
    `AskUserQuestion`) and wait.
-2. Fill the **default** fields (`max_iterations`, `model`, `base_branch`) with their defaults above.
-   Do **not** touch `runs`/`min_delta` here — they are derived in Step 2.4, not intake params.
+2. Fill the **default** fields (`max_iterations`, `max_runs`, `model`, `base_branch`) with their
+   defaults above. Do **not** touch `runs`/`min_delta` here — they are derived in Step 2.4, not
+   intake params (`max_runs` only caps that derivation).
 3. **Show ALL parameters back to the user — must-ask and defaulted alike — and get explicit
    validation before starting the run.** Present the full resolved config (including the concrete
    expanded `files_to_optimize` list and each default value) and let the user confirm or override
-   any field. Do **not** show `runs`/`min_delta` here (they aren't chosen yet). Show the
+   any field. Do **not** show `runs`/`min_delta` here (they aren't chosen yet), but **do** show
+   `max_runs`, and when you show it add one plain sentence explaining why the eval may run more than
+   once — e.g. *"`max_runs` caps how many times each candidate is re-evaluated: when the metric is
+   noisy, a single run can't tell a real gain from luck, so the harness repeats the eval (up to this
+   many times) and compares averages to keep decisions statistically sound."* Show the
    `evaluators` text **exactly as the user gave it**; if you believe it needs any change, present
    the change as an explicit *proposal* ("you said recall-only; your goal mentions precision too —
    score recall-only, or switch to F1?") and record only what the user picks. Never persist an
@@ -95,6 +103,7 @@ the run's state + audit trail):
   "goal": "...", "evaluators": "...", "ml_app": "...",
   "dataset_id": "...", "trace_ids": [...],
   "max_iterations": 2,
+  "max_runs": 3,
   "runs": null,
   "min_delta": null,
   "iteration_results": [],
@@ -242,14 +251,15 @@ are surfaced only in the final report, with reasoning):
   standard error of that difference: `SE_diff ≈ stdev · sqrt(2 / runs)`. For a real gain of size
   `min_delta` to be *resolvable* (clear the band at ~2·SE), you need `SE_diff ≲ min_delta / 2`,
   i.e. **`runs ≥ 8 · (baseline_stdev / min_delta)²`**. Compute that; if it exceeds the current
-  `runs`, **you MUST raise `runs` to it** (clamp **2–10**) and **re-run the baseline** at the new
-  `runs` (the re-run's `mean`/`stdev` replace the pilot's). This is not advisory — an underpowered
-  run makes every moderate gain permanently uncallable (the classic failure: a true +0.05 that can
-  never clear a 0.055 band at `runs=3`). Only if the pilot is already tight enough that the formula
-  yields `≤ 3` does `runs` stay `3`. If the formula wants more than the clamp of 10, set `runs = 10`
-  and **record in `config.json` that the metric is too noisy to fully resolve `min_delta` at 10
-  runs** (so downstream discards of near-band candidates are known-underpowered, not confirmed
-  nulls — see the **Higher-power confirmation** rule in the rubric).
+  `runs`, **you MUST raise `runs` to it** (clamp **2–`max_runs`**, default `max_runs = 3`) and
+  **re-run the baseline** at the new `runs` (the re-run's `mean`/`stdev` replace the pilot's). This
+  is not advisory — an underpowered run makes every moderate gain permanently uncallable (the
+  classic failure: a true +0.05 that can never clear a 0.055 band at `runs=3`). Only if the pilot is
+  already tight enough that the formula yields `≤ 3` does `runs` stay `3`. If the formula wants more
+  than `max_runs`, set `runs = max_runs` and **record in `config.json` that the metric is too noisy
+  to fully resolve `min_delta` at `max_runs` runs** (so downstream discards of near-band candidates
+  are known-underpowered, not confirmed nulls — see the **Higher-power confirmation** rule in the
+  rubric). The user can raise `max_runs` at intake to spend more compute on noisy metrics.
 
 Write the derived `runs` and `min_delta` into `config.json` (they started `null`) alongside the raw
 baseline `stdev` + `run_means` you derived them from (audit trail). Every downstream iteration uses
@@ -485,8 +495,8 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
    (`1 < |Δ| / SE_diff < 2`, same `SE_diff = √(after_stdev²/runs + best_stdev²/runs)` as the keep
    gate — not a pooled single-run stdev), it is **promising-but-underpowered**, not a
    confirmed null — exactly the case a low-run gate can't resolve. Re-run the **current best and
-   that candidate back-to-back at the max `runs`** on `val` and **pool with the existing runs**
-   (e.g. 10 + 10 → 20 per side). **Decide by the SAME keep gate as any iteration** (do not weaken
+   that candidate back-to-back at the `max_runs` ceiling** on `val` and **pool with the existing runs**
+   (e.g. 3 + 3 → 6 per side). **Decide by the SAME keep gate as any iteration** (do not weaken
    it here): keep iff the candidate moves in the goal's direction AND `|t| = |Δ| / SE_diff ≥ 2`
    (`SE_diff = √(stdev_best²/n_best + stdev_cand²/n_cand)`) AND `|Δ| ≥ min_delta` — the practical
    floor still applies, so a higher-power rerun that shrinks `|Δ|` below `min_delta` does **not**

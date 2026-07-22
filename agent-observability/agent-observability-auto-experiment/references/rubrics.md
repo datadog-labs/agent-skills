@@ -71,7 +71,7 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
   minimize), moves in the goal's direction, and is *close* to significance (roughly
   `1 < |t| = |Δ| / SE_diff < 2` at the per-iteration `runs`), it is a **promising-but-underpowered**
   result, not a confirmed null. Before discarding it for good, re-run **best and candidate back-to-back at the
-  max `runs`** and **pool with the existing runs** (e.g. 10 + 10 → 20 per side) so the comparison
+  `max_runs` ceiling** and **pool with the existing runs** (e.g. 3 + 3 → 6 per side) so the comparison
   is higher-power than any single iteration.
   - **Decide by the same two-sample t-test the per-iteration gate uses, NOT a raw-stdev band.** A
     raw-stdev band (`|Δ| > max(pooled_stdev, min_delta)`) uses the run-to-run `stdev`, which is a
