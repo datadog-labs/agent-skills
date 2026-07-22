@@ -30,24 +30,33 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
 `mean ± stdev` over **`AUTO_EXP_RUNS` (default 3) full re-runs of the eval on the same data**
 (the harness does this and prints `stdev` + `run_means`). Consequences the loop MUST obey:
 
-- **Keep only a delta that is statistically significant, by a two-sample t-test.** The gate
-  compares a **difference of two means** (candidate vs best), so the noise that matters is the
-  standard error of that difference, `SE_diff = √(stdev_cand²/n_cand + stdev_best²/n_best)` — NOT a
-  single run's `stdev`. An iteration is `is_best` / kept only if it moves in the goal's direction
-  **and** both:
-  - `|t| = |after_mean − best_mean| / SE_diff ≥ 2` (≈95% — significant), and
-  - `|after_mean − best_mean| ≥ min_delta` (a practical-effect floor, default `0.02` on a 0–1
-    metric, so a statistically-significant but trivially-tiny move is not kept).
+- **Keep the higher point estimate as best; significance is a CONFIDENCE label, not a keep gate.**
+  An iteration is `is_best` / kept if it **moves the point estimate in the goal's direction** and
+  **passes the Mechanism audit** (the gain is real, not a denominator artifact). It does **not** have
+  to clear the t-test to be kept — a higher-in-direction score that is only *within noise* is still
+  kept as the best, but **flagged tentative** so the score is read carefully (see next bullet). The
+  two-sample t-test still runs and is recorded — it labels *how much to trust* the move, it no longer
+  decides whether to keep it. The gate compares a **difference of two means** (candidate vs best), so
+  the noise that matters is the standard error of that difference,
+  `SE_diff = √(stdev_cand²/n_cand + stdev_best²/n_best)` — NOT a single run's `stdev`. Compute and
+  record for every kept iteration:
+  - `|t| = |after_mean − best_mean| / SE_diff` — `≥ 2` (≈95%) → confidence **significant**; `< 2`
+    → confidence **within_noise / tentative**.
+  - `|after_mean − best_mean| ≥ min_delta` (practical-effect floor, default `0.02` on a 0–1 metric)
+    — a move below the floor is **negligible / likely noise**: still kept if it improves the point
+    estimate in direction, but marked the weakest confidence.
 
   **Zero-variance case (`SE_diff == 0`).** A fully deterministic metric (both stdevs `0` — common
   for the ground-truth checkers this rubric prefers) makes `t = Δ/SE_diff` undefined (division by
-  zero). Do **not** compute the t-test then; decide by the practical floor alone: keep iff the
-  change moves in the goal's direction by `|Δ| ≥ min_delta`. A deterministic, non-noise move of at
-  least `min_delta` is a real change. (Guard the division in the harness/loop: `SE_diff == 0` →
-  treat as "infinitely significant" if `|Δ| ≥ min_delta`, else within-noise.)
+  zero). Do **not** compute the t-test then; the move is exact, so a change in the goal's direction
+  is kept at full confidence, and `|Δ| ≥ min_delta` labels it `significant` vs `within_noise`.
+  (Guard the division in the harness/loop: `SE_diff == 0` → treat as "infinitely significant" if
+  `|Δ| ≥ min_delta`, else within-noise — but either way a direction-positive deterministic move is
+  kept as best.)
 
-  A candidate that fails the t-test is **not** an improvement: record it `discarded`, no matter
-  that the point estimate rose. **Do NOT gate on a raw-stdev band** (`max(pooled_stdev, min_delta)`):
+  A candidate that only fails the t-test is **still kept** as the best when its point estimate rose
+  in the goal's direction — flagged tentative, not discarded. **Do NOT gate on a raw-stdev band**
+  (`max(pooled_stdev, min_delta)`):
   raw `stdev` is a property of the metric and does **not** shrink as you add runs, so a raw-band gate
   can never be cleared by power and would discard real effects forever. `SE_diff` **does** shrink
   with runs — which is exactly why Step 2.4 derives `runs` from the target `min_delta`, and why the
@@ -58,37 +67,37 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
   two runs' `stdev` every iteration — never frozen at the baseline's.** A change that also reduces
   variance (e.g. a precision fix that collapses run-to-run wiggle) must be judged against the
   *current* noise, not the baseline's; freezing the baseline band silently penalizes it.
-- **A within-noise "win" is the classic trap.** Point estimates of 15 vs 14 mean nothing when
-  stdev is ~2. Do not keep it, do not report it as an improvement.
-- **Fix underpowered runs by raising power, NOT by loosening the gate.** The gate is a two-sample
-  t-test on a *difference of two means*; at small `runs` the standard error of that difference
-  (`SE_diff ≈ stdev·√(2/runs)`) is large, so `|t|` stays under 2 and a genuine moderate gain can't
-  reach significance no matter how real it is. The cure is more `runs` (which shrinks `SE_diff`),
-  not a lower `|t|` threshold. **Never drop `min_delta` or accept `|t| < 2` to let a
-  within-noise point-estimate through** — that reopens the false-keep trap.
-- **Higher-power confirmation before final discard.** If the top borderline candidate has the
-  run's **best mean in the goal's optimization direction** (highest for maximize, lowest for
-  minimize), moves in the goal's direction, and is *close* to significance (roughly
-  `1 < |t| = |Δ| / SE_diff < 2` at the per-iteration `runs`), it is a **promising-but-underpowered**
-  result, not a confirmed null. Before discarding it for good, re-run **best and candidate back-to-back at the
-  `max_runs` ceiling** and **pool with the existing runs** (e.g. 3 + 3 → 6 per side) so the comparison
-  is higher-power than any single iteration.
-  - **Decide by the same two-sample t-test the per-iteration gate uses, NOT a raw-stdev band.** A
+- **A within-noise "win" is kept, but LABELED.** Point estimates of 15 vs 14 with stdev ~2 might
+  be noise — but the loop keeps the higher-in-direction candidate as the new best anyway, tagged
+  `within_noise` / tentative, and its `reasoning` MUST say the gain could be noise and the score
+  should be read carefully. What is forbidden is **hiding** the uncertainty (reporting a within-noise
+  wobble as a confident improvement), not keeping it. A candidate whose point estimate is **lower**
+  in the goal's direction is still **not** kept — best only moves when the estimate improves.
+- **Raise power to gain CONFIDENCE, not to unlock the keep.** The keep already happened (higher
+  point estimate → best). Adding `runs` shrinks `SE_diff = stdev·√(2/runs)` so `|t|` can cross 2 and
+  upgrade a tentative best from `within_noise` to `significant`. This is how you *confirm* a kept-but-
+  tentative move, not how you decide whether to keep it. Never present a `within_noise` best as
+  `significant` without the runs to back it.
+- **Higher-power confirmation to upgrade a tentative best (optional).** If the current best was kept
+  `within_noise` (highest mean in the goal's direction but `|t| < 2` at the per-iteration `runs`),
+  you MAY re-run **best and candidate back-to-back at the `max_runs` ceiling** and **pool with the
+  existing runs** (e.g. 3 + 3 → 6 per side) to tighten `SE_diff`. This does not change *what is
+  best* — it only re-labels the confidence.
+  - **Label by the same two-sample t-test the per-iteration gate uses, NOT a raw-stdev band.** A
     raw-stdev band (`|Δ| > max(pooled_stdev, min_delta)`) uses the run-to-run `stdev`, which is a
-    property of the metric and **does not shrink as you add runs** — so re-testing against it after
-    more runs would discard a real effect no matter how many runs you gather (it can't be cleared by
-    power). That is exactly why the loop does not gate on it anywhere.
+    property of the metric and **does not shrink as you add runs** — so it can never be cleared by
+    power. That is exactly why the loop does not gate on it anywhere.
     The quantity that *does* shrink with runs is the standard error of the difference of means,
-    `SE_diff = √(stdev_best²/n_best + stdev_cand²/n_cand)`. At confirmation, apply the **same full
-    keep gate** as any iteration — keep the candidate iff it moves in the goal's direction **and**
-    `|t| = |Δ| / SE_diff ≥ 2` (≈95%) **and** `|Δ| ≥ min_delta` (the practical floor is NOT dropped
-    here — a higher-power rerun that shrinks `|Δ|` below `min_delta` must not promote). If
-    `SE_diff == 0`, decide by `|Δ| ≥ min_delta` in the goal's direction (zero-variance rule). This
+    `SE_diff = √(stdev_best²/n_best + stdev_cand²/n_cand)`. At confirmation, recompute
+    `|t| = |Δ| / SE_diff`: `≥ 2` (≈95%) with `|Δ| ≥ min_delta` → relabel the best `significant`;
+    otherwise it stays kept but `within_noise`. If `SE_diff == 0`, use `|Δ| ≥ min_delta` in the
+    goal's direction (zero-variance rule). This
     is the whole point of spending more runs: it tightens `SE_diff` until a genuine difference
     becomes significant even while the raw band stays put. Record BOTH numbers (raw band cleared?
-    and the t-test) for the audit; the t-test (with the floor) is the decision.
-  - Keep only if the t-test is significant; otherwise discard with the higher-power numbers
-    recorded. Do this for the single best candidate of the run, not every within-band wobble.
+    and the t-test) for the audit; the t-test (with the floor) sets the **confidence label**.
+  - Relabel `significant` if the t-test now clears; otherwise the best stays kept but `within_noise`,
+    with the higher-power numbers recorded. Do this for the single best candidate of the run, not
+    every within-band wobble.
 
 ## Data-selection guidance — what enters the eval set (`_data_selection_guidance`)
 
@@ -243,20 +252,23 @@ it in the same commit as the code change:
   "delta": <after_score minus before_score>,
   "best_stdev": <float — the current best's across-run stdev (for SE_diff)>,
   "se_diff": <float — √(after_stdev²/runs + best_stdev²/runs); may be 0 for a deterministic metric>,
-  "t_stat": <float — |delta| / se_diff, the two-sample t used for the keep gate; use null when se_diff == 0 (undefined t → the zero-variance rule decides by |delta| ≥ min_delta instead)>,
+  "t_stat": <float — |delta| / se_diff, the two-sample t that LABELS confidence (not a keep gate); use null when se_diff == 0 (undefined t → the zero-variance rule labels by |delta| ≥ min_delta instead)>,
   "min_delta": <float — practical-effect floor from Step 2.4>,
-  "reasoning": "<REQUIRED — scoring method FIRST (how generate_output ran the code, how many scoreable lines evaluate_line ran over, runs), then what was tested/failed/succeeded, how many traces were excluded and why, and any caveat about reproducing production; 2-4 sentences; never empty>",
+  "significant": <REQUIRED bool — |t_stat| ≥ 2 AND |delta| ≥ min_delta (or se_diff == 0 with |delta| ≥ min_delta); the confidence label, NOT the keep decision>,
+  "reasoning": "<REQUIRED — scoring method FIRST (how generate_output ran the code, how many scoreable lines evaluate_line ran over, runs), then what was tested/failed/succeeded, how many traces were excluded and why, and any caveat about reproducing production; 2-4 sentences; never empty. If kept but not significant, SAY the gain may be noise and the score should be read carefully.>",
   "best_score": <best metric value across all iterations, considering the optimization direction>,
-  "is_best": <REQUIRED — true ONLY if the change moves in the goal's direction AND |delta| ≥ min_delta AND EITHER |t_stat| ≥ 2 (normal case) OR se_diff == 0 (deterministic metric, t_stat null — zero-variance rule); false otherwise; never omit>
+  "is_best": <REQUIRED — true if the change moves in the goal's direction AND passes the mechanism audit (real gain, not a denominator artifact); the t-test does NOT gate this — a higher-in-direction move that is only within noise is is_best: true with significant: false; never omit>
 }
 ```
 
 `is_best` drives keep/discard and must reflect the optimization direction in `goal` (higher is
-better unless the goal says to minimize) **AND** `|delta| ≥ min_delta` **AND** be significant —
-either by the two-sample t-test (`|t_stat| ≥ 2`) **or**, when `se_diff == 0` (deterministic metric,
-`t_stat` null), by the zero-variance rule (a `min_delta`-sized deterministic move is real). A
-t-test-insignificant point-estimate gain (with `se_diff > 0`) is `is_best: false`. `reasoning` is
-mandatory and never empty.
+better unless the goal says to minimize) **AND** pass the mechanism audit (the gain is real, not a
+denominator artifact). It does **NOT** require statistical significance: a higher-in-direction
+point-estimate gain that fails the two-sample t-test is **still `is_best: true`**, recorded with
+`significant: false` so the score is read carefully. `significant` is the confidence label — true
+when `|t_stat| ≥ 2` AND `|delta| ≥ min_delta` (or `se_diff == 0` with a `min_delta`-sized
+deterministic move). A move in the wrong direction, or one that fails the mechanism audit, is
+`is_best: false`. `reasoning` is mandatory and never empty.
 
 ## Mechanism audit — confirm the change CAUSED the gain (`_mechanism_audit`)
 

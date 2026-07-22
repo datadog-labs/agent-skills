@@ -191,8 +191,11 @@ from the real run** (leave a cell blank and say "not reached" rather than invent
 | Driving model | claude-opus-4.7 (outer) / gemini-3-flash (inner) | session Claude model (_fill from config metadata_) |
 
 **Honesty note to append:** state the subset size and that the `test` split is small → wide noise
-band / low statistical power, so a within-noise result is *not* a demonstrated improvement. If the
-held-out `test` delta did **not** clear the noise band, report the **baseline as best** and say
-plainly that the improvement did not generalize (do not report the `val` gain as the headline).
+band / low statistical power, so a within-noise result is a **tentative** improvement, not a
+confidently-demonstrated one. If the held-out `test` delta improves in the goal's direction but did
+**not** clear significance, keep the best as best but **flag it tentative** and say plainly the gain
+is within noise / did not clearly generalize (do not report the `val` gain as a confident headline).
+Only if `test` shows no improvement in direction (flat or a regression) report the **baseline as
+best**.
 Point the user at the scratch branch + best commit and the LLM-Obs experiment
 (`DD_AUTO_EXPERIMENT_ID`) so they can inspect the per-iteration trajectory.
