@@ -36,8 +36,8 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
   to clear the t-test to be kept — a higher-in-direction score that is only *within noise* is still
   kept as the best, but **flagged tentative** so the score is read carefully (see next bullet). The
   two-sample t-test still runs and is recorded — it labels *how much to trust* the move, it no longer
-  decides whether to keep it. The gate compares a **difference of two means** (candidate vs best), so
-  the noise that matters is the standard error of that difference,
+  decides whether to keep it. The t-test compares a **difference of two means** (candidate vs best),
+  so the noise that matters is the standard error of that difference,
   `SE_diff = √(stdev_cand²/n_cand + stdev_best²/n_best)` — NOT a single run's `stdev`. Compute and
   record for every kept iteration:
   - `|t| = |after_mean − best_mean| / SE_diff` — `≥ 2` (≈95%) → confidence **significant**; `< 2`
@@ -79,10 +79,11 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
   tentative move, not how you decide whether to keep it. Never present a `within_noise` best as
   `significant` without the runs to back it.
 - **Higher-power confirmation to upgrade a tentative best (optional).** If the current best was kept
-  `within_noise` (highest mean in the goal's direction but `|t| < 2` at the per-iteration `runs`),
-  you MAY re-run **best and candidate back-to-back at the `max_runs` ceiling** and **pool with the
-  existing runs** (e.g. 3 + 3 → 6 per side) to tighten `SE_diff`. This does not change *what is
-  best* — it only re-labels the confidence.
+  `within_noise` (highest mean in the goal's direction but `significant:false` at the per-iteration
+  `runs`), you MAY re-run **best and candidate back-to-back at the `max_runs` ceiling** and **pool
+  with the existing runs** (e.g. 3 + 3 → 6 per side — `max_runs` caps each harness invocation's
+  `runs`, not the pooled total, so pooling legitimately yields `n > max_runs` per side) to tighten
+  `SE_diff`. This does not change *what is best* — it only re-labels the confidence.
   - **Label by the same two-sample t-test the per-iteration gate uses, NOT a raw-stdev band.** A
     raw-stdev band (`|Δ| > max(pooled_stdev, min_delta)`) uses the run-to-run `stdev`, which is a
     property of the metric and **does not shrink as you add runs** — so it can never be cleared by

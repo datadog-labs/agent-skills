@@ -37,7 +37,7 @@ run starts** (see the Mandatory intake gate below).
 | `evaluators` | explicit evaluator/rubric text — how each datapoint is scored (ground-truth check vs LLM-judge, pass criteria, direction). | **must ask** (do NOT silently fall back to `goal`) |
 | data source | where the eval data comes from — **either** a `dataset_id` **or** an `ml_app` to pull traces from (optionally narrowed by explicit `trace_ids`). | **must ask** — mandatory; the run cannot start without one of `dataset_id` / `ml_app` (priority below) |
 | `max_iterations` | how many changes to try (clamp **1–50**) | _default_ **2** |
-| `max_runs` | ceiling on the derived `runs` — how many times the harness may repeat the eval per candidate to beat variance (clamp **2–20**) | _default_ **3** |
+| `max_runs` | ceiling on the derived `runs` — how many times the harness may repeat the eval per candidate to beat variance (clamp **3–20**; the pilot already runs 3×, so 3 is the floor) | _default_ **3** |
 | `model` | judge model id | _default_: the Claude model selected in this session (see rubric) |
 | `base_branch` | branch the baseline is measured on | _default_: current branch / `main` |
 
@@ -248,19 +248,22 @@ are surfaced only in the final report, with reasoning):
 - **`min_delta`** (compute first — `runs` depends on it) — set it **relative to measured noise**:
   `min_delta = max(0.02, k · baseline_stdev)` (e.g. `k ≈ 0.5`), so the floor tracks how noisy this
   metric actually is — a noisy metric gets a higher bar, a rock-steady one keeps the small floor.
-- **`runs`** — the gate compares a *difference of two means*, so the noise that matters is the
-  standard error of that difference: `SE_diff ≈ stdev · sqrt(2 / runs)`. For a real gain of size
-  `min_delta` to be *resolvable* (clear the band at ~2·SE), you need `SE_diff ≲ min_delta / 2`,
-  i.e. **`runs ≥ 8 · (baseline_stdev / min_delta)²`**. Compute that; if it exceeds the current
-  `runs`, **you MUST raise `runs` to it** (clamp **2–`max_runs`**, default `max_runs = 3`) and
-  **re-run the baseline** at the new `runs` (the re-run's `mean`/`stdev` replace the pilot's). This
-  is not advisory — an underpowered run makes every moderate gain permanently uncallable (the
-  classic failure: a true +0.05 that can never clear a 0.055 band at `runs=3`). Only if the pilot is
-  already tight enough that the formula yields `≤ 3` does `runs` stay `3`. If the formula wants more
-  than `max_runs`, set `runs = max_runs` and **record in `config.json` that the metric is too noisy
-  to fully resolve `min_delta` at `max_runs` runs** (so downstream discards of near-band candidates
-  are known-underpowered, not confirmed nulls — see the **Higher-power confirmation** rule in the
-  rubric). The user can raise `max_runs` at intake to spend more compute on noisy metrics.
+- **`runs`** — the confidence t-test compares a *difference of two means*, so the noise that matters
+  is the standard error of that difference: `SE_diff ≈ stdev · sqrt(2 / runs)`. For a real gain of
+  size `min_delta` to be *confirmable as significant* (clear the band at ~2·SE), you need
+  `SE_diff ≲ min_delta / 2`, i.e. **`runs ≥ 8 · (baseline_stdev / min_delta)²`**. Compute that; if it
+  exceeds the current `runs`, **you MUST raise `runs` to it** (clamp **3–`max_runs`**, default
+  `max_runs = 3`) and **re-run the baseline** at the new `runs` (the re-run's `mean`/`stdev` replace
+  the pilot's). This is not advisory — an underpowered run leaves every moderate gain permanently
+  **unconfirmable**: it is still *kept* as best (the keep only needs a higher-in-direction point
+  estimate + the mechanism audit), but can never be *labeled significant* — the classic case, a true
+  +0.05 that can never clear a 0.055 band at `runs=3`, stays a tentative `within_noise` best forever.
+  Only if the pilot is already tight enough that the formula yields `≤ 3` does `runs` stay `3`. If the
+  formula wants more than `max_runs`, set `runs = max_runs` and **record in `config.json` that the
+  metric is too noisy to fully resolve `min_delta` at `max_runs` runs** (so near-band candidates are
+  labeled tentative under known-underpowered conditions, not confidently significant — see the
+  **Higher-power confirmation** rule in the rubric). The user can raise `max_runs` at intake to spend
+  more compute on noisy metrics.
 
 Write the derived `runs` and `min_delta` into `config.json` (they started `null`) alongside the raw
 baseline `stdev` + `run_means` you derived them from (audit trail). Every downstream iteration uses
@@ -320,7 +323,8 @@ stdevs 0), the t is undefined: a direction-positive move is kept, labeled `signi
 zero-variance case). Run the **Mechanism audit** (rubric) before keeping — diff this iteration's
 `eval_results.jsonl` against the baseline's (same-count denominator; the gain comes from datapoints
 the change touched); a change that fails the audit (denominator artifact) is `is_best: false`
-(discarded), as is a move in the wrong direction. If iteration 1 moves in the goal's direction AND
+(discarded, `basis:audit_failed`), as is a move in the wrong direction (`basis:regression` if
+significantly worse). If iteration 1 moves in the goal's direction AND
 passes the audit, it becomes the best (`best_sha` = this commit, `best_score` = after_score), with
 its confidence label recorded. Append the row to `config.json` `iteration_results`.
 
@@ -354,8 +358,9 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
    `SE_diff = √(after_stdev²/runs + best_stdev²/runs)`) and the `min_delta` floor: `|t| ≥ 2` and
    `≥ min_delta` → `significant`; a higher-in-direction move only within noise → kept but
    `within_noise` (tentative), reasoning must warn the gain could be noise. `SE_diff == 0` →
-   label by `|Δ| ≥ min_delta` (zero-variance rule). A **regression** (move in the wrong direction)
-   or a **denominator artifact** (fails the audit) → `discarded`, best unchanged. Append the row.
+   label by `|Δ| ≥ min_delta` (zero-variance rule). A **regression** (`basis:regression`, move in the
+   wrong direction) or a **denominator artifact** (`basis:audit_failed`, fails the audit) →
+   `discarded`, best unchanged. Append the row.
    (A `within_noise` best is the candidate the optional **Higher-power confirmation** re-tests at
    more runs to *upgrade* its confidence, not to decide the keep.)
 7. Report this iteration's score to LLM-Obs (tag `iteration:<n>`) — see **Report each iteration's
@@ -394,12 +399,15 @@ Call `submit_llmobs_experiment_events` with a single metric shaped exactly like 
     within-noise wobble that was kept only because the point estimate rose — a raw number cannot
     show which. Surface the decision's basis **and its confidence** as structured, filterable tags
     so the "why" sits next to the score:
-    - `basis:<significant|within_noise|regression|promoted|baseline|no_change>` — the one-word
-      basis (`significant` = kept, cleared the t-test; `within_noise` = **not significant** (`|t|<2`),
-      read the score carefully — pair with the `decision` tag: `decision:kept` + `within_noise` is a
-      **tentative best** (point estimate rose in the goal's direction but within noise), while
-      `decision:discarded` + `within_noise` is a within-noise wobble that did **not** beat the best;
-      `regression` = discarded, significantly worse (moved the wrong way); `promoted` = a `within_noise`
+    - `basis:<significant|within_noise|regression|audit_failed|promoted|baseline|no_change>` — the
+      one-word basis (`significant` = kept, `significant:true` (cleared the t-test **and** `|Δ| ≥
+      min_delta`); `within_noise` = **not significant** (`significant:false` — `|t| < 2` OR
+      `|Δ| < min_delta`), read the score carefully — pair with the `decision` tag: `decision:kept` +
+      `within_noise` is a **tentative best** (point estimate rose in the goal's direction but not
+      significant), while `decision:discarded` + `within_noise` is a not-significant wobble that did
+      **not** beat the best; `regression` = discarded, significantly worse (moved the wrong way);
+      `audit_failed` = discarded, the mechanism audit failed (e.g. the denominator shrank) so the
+      higher mean is an artifact — regardless of the point estimate; `promoted` = a `within_noise`
       best later confirmed `significant` at higher power).
     - `delta_vs_best:<±X.XXXX>` — the delta against the **previous best** (the number the decision
       uses), NOT vs baseline.
@@ -478,7 +486,8 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
 
 - Stop when `iteration == max_iterations`.
 - **Plateau within noise — stop early.** If the last **3** iterations produced **no significant
-  improvement** (every delta had `|t| < 2` — whether `discarded` or kept only `within_noise`), stop
+  improvement** (every delta was `significant:false` — `|t| < 2` OR `|Δ| < min_delta` — whether
+  `discarded` or kept only `within_noise`), stop
   and report the current best with `stop_reason: "plateau (deltas within noise)"`. Continuing past a
   noise plateau just burns budget nudging the best up on within-noise wiggle; escalate instead (a new
   census bucket, a different dimension, or accept the ceiling). Distinguish this from a real
@@ -500,13 +509,17 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
    they were never intake params:
    `{ "runs_pilot", "runs_final", "baseline_stdev", "run_means", "min_delta" }`. State in the
    summary that `runs`/`min_delta` were **computed from the measured baseline noise** (not chosen),
-   with the reasoning, so the user sees the gate that actually governed every keep/discard decision.
-2. **Higher-power confirmation of a `within_noise` best** (do this BEFORE the held-out test, and
-   before naming the best). If the current best was kept only `within_noise` (its keep-time delta vs
-   the prior best was in the goal's direction but `|t| < 2`), its improvement is real-in-direction
-   but **low-confidence** — worth confirming so the headline is not a noise wobble. Re-run the
-   **current best and the prior best back-to-back at the `max_runs` ceiling** on `val` and **pool
-   with the existing runs** (e.g. 3 + 3 → 6 per side), then recompute
+   with the reasoning, so the user sees the confidence labeling that accompanied every keep/discard
+   decision.
+2. **Higher-power confirmation of a `within_noise` best** (**optional, but recommended when the final
+   best is `within_noise`**; skip it if the best is already `significant`). If you do it, do it
+   BEFORE the held-out test and before naming the best. If the current best was kept only
+   `within_noise` (its keep-time delta vs the prior best was in the goal's direction but
+   `significant:false`), its improvement is real-in-direction but **low-confidence** — worth
+   confirming so the headline is not a noise wobble. Re-run the **current best and the prior best
+   back-to-back at the `max_runs` ceiling** on `val` and **pool with the existing runs** (e.g.
+   3 + 3 → 6 per side — `max_runs` caps each harness invocation's `runs`, NOT the pooled total, so
+   pooling two invocations legitimately yields `n > max_runs` per side), then recompute
    `|t| = |Δ| / SE_diff` (`SE_diff = √(stdev_best²/n_best + stdev_prior²/n_prior)`). The best does
    **not** change here — it is already the highest-in-direction candidate; this step only re-labels
    its **confidence**. If `|t| ≥ 2` AND `|Δ| ≥ min_delta` (floor still applies), relabel it
