@@ -49,7 +49,8 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
   **Zero-variance case (`SE_diff == 0`).** A fully deterministic metric (both stdevs `0` — common
   for the ground-truth checkers this rubric prefers) makes `t = Δ/SE_diff` undefined (division by
   zero). Do **not** compute the t-test then; the move is exact, so a change in the goal's direction
-  is kept at full confidence, and `|Δ| ≥ min_delta` labels it `significant` vs `within_noise`.
+  is kept, and `|Δ| ≥ min_delta` labels it `significant` (else `within_noise` — a below-floor
+  deterministic nudge is still `significant:false`).
   (Guard the division in the harness/loop: `SE_diff == 0` → treat as "infinitely significant" if
   `|Δ| ≥ min_delta`, else within-noise — but either way a direction-positive deterministic move is
   kept as best.)
@@ -71,8 +72,9 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
   be noise — but the loop keeps the higher-in-direction candidate as the new best anyway, tagged
   `within_noise` / tentative, and its `reasoning` MUST say the gain could be noise and the score
   should be read carefully. What is forbidden is **hiding** the uncertainty (reporting a within-noise
-  wobble as a confident improvement), not keeping it. A candidate whose point estimate is **lower**
-  in the goal's direction is still **not** kept — best only moves when the estimate improves.
+  wobble as a confident improvement), not keeping it. A candidate that **does not improve** relative
+  to the goal direction (lower for maximize, higher for minimize — or flat) is still **not** kept —
+  best only moves when the point estimate improves toward the goal.
 - **Raise power to gain CONFIDENCE, not to unlock the keep.** The keep already happened (higher
   point estimate → best). Adding `runs` shrinks `SE_diff = stdev·√(2/runs)` so `|t|` can cross 2 and
   upgrade a tentative best from `within_noise` to `significant`. This is how you *confirm* a kept-but-
