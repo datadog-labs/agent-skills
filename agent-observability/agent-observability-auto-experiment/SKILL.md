@@ -88,7 +88,8 @@ Before writing any config or touching git:
    `max_runs`, and when you show it add one plain sentence explaining why the eval may run more than
    once — e.g. *"`max_runs` caps how many times each candidate is re-evaluated: when the metric is
    noisy, a single run can't tell a real gain from luck, so the harness repeats the eval (up to this
-   many times) and compares averages to keep decisions statistically sound."* Show the
+   many times) and compares averages to label each kept change with a confidence (`significant` vs
+   `within_noise`/tentative) instead of trusting a lucky single run."* Show the
    `evaluators` text **exactly as the user gave it**; if you believe it needs any change, present
    the change as an explicit *proposal* ("you said recall-only; your goal mentions precision too —
    score recall-only, or switch to F1?") and record only what the user picks. Never persist an
@@ -186,8 +187,8 @@ Split the two roles so context stays clean and iterations don't anchor on each o
   ranked `census.json` buckets (+ the bucket to target this iteration), the current `best_sha`, and
   **one-line summaries of prior attempts** (what was tried → kept/discarded, from `iteration_results`)
   so it won't repeat them. Its job: make ONE change + return a short summary (what it changed, which
-  bucket, feasibility-probe result). You (orchestrator) run the harness, apply the noise gate +
-  mechanism audit, commit/keep/discard, and update state.
+  bucket, feasibility-probe result). You (orchestrator) run the harness, apply the mechanism audit +
+  noise/confidence labeling, commit/keep/discard, and update state.
 - **Why:** a fresh bounded context per iteration avoids anchoring on dead ideas and stops the
   orchestrator's context from bloating over a long run — the same reason the production loop spawns a
   new `claude --print` per iteration instead of one long-lived agent. If sub-agents are unavailable,
@@ -323,8 +324,9 @@ stdevs 0), the t is undefined: a direction-positive move is kept, labeled `signi
 zero-variance case). Run the **Mechanism audit** (rubric) before keeping — diff this iteration's
 `eval_results.jsonl` against the baseline's (same-count denominator; the gain comes from datapoints
 the change touched); a change that fails the audit (denominator artifact) is `is_best: false`
-(discarded, `basis:audit_failed`), as is a move in the wrong direction (`basis:regression` if
-significantly worse). If iteration 1 moves in the goal's direction AND
+(discarded, `basis:audit_failed`), as is any move that does not improve the point estimate in the
+goal's direction (`basis:regression` if significantly worse, else `basis:within_noise`). If
+iteration 1 moves in the goal's direction AND
 passes the audit, it becomes the best (`best_sha` = this commit, `best_score` = after_score), with
 its confidence label recorded. Append the row to `config.json` `iteration_results`.
 
@@ -358,9 +360,13 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
    `SE_diff = √(after_stdev²/runs + best_stdev²/runs)`) and the `min_delta` floor: `|t| ≥ 2` and
    `≥ min_delta` → `significant`; a higher-in-direction move only within noise → kept but
    `within_noise` (tentative), reasoning must warn the gain could be noise. `SE_diff == 0` →
-   label by `|Δ| ≥ min_delta` (zero-variance rule). A **regression** (`basis:regression`, move in the
-   wrong direction) or a **denominator artifact** (`basis:audit_failed`, fails the audit) →
-   `discarded`, best unchanged. Append the row.
+   label by `|Δ| ≥ min_delta` (zero-variance rule). Any move that does **not** improve the point
+   estimate in the goal's direction is `discarded`, best unchanged — `basis:regression` if it is
+   *significantly* worse (`significant:true` in the wrong direction), else `basis:within_noise` (a
+   flat/slightly-worse wobble, `significant:false`). A change that fails the mechanism audit
+   (denominator artifact) is `discarded` `basis:audit_failed` regardless of its point estimate.
+   Append the row. (Basis precedence when several could apply: **`audit_failed` > `regression` >
+   `significant` > `within_noise`**.)
    (A `within_noise` best is the candidate the optional **Higher-power confirmation** re-tests at
    more runs to *upgrade* its confidence, not to decide the keep.)
 7. Report this iteration's score to LLM-Obs (tag `iteration:<n>`) — see **Report each iteration's

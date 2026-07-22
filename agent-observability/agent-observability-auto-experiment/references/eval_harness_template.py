@@ -38,9 +38,10 @@ HERE = Path(__file__).parent
 DATA = Path(os.environ.get("AUTO_EXP_DATA") or (HERE / "data.jsonl"))
 RESULTS = HERE / "eval_results.jsonl"
 
-# How many times to re-run the full eval to estimate the noise floor. >=3 so the loop
-# can tell a real move from run-to-run wiggle. Same value across every iteration.
-RUNS = max(1, int(os.environ.get("AUTO_EXP_RUNS", "3")))
+# How many times to re-run the full eval to estimate the noise floor. Floor of 3 (the pilot value)
+# so the loop can tell a real move from run-to-run wiggle; the orchestrator owns the upper cap
+# (`max_runs`). Same value across every iteration.
+RUNS = max(3, int(os.environ.get("AUTO_EXP_RUNS", "3")))
 
 # The EVALUATOR text (config `evaluators` field), copied from .auto_experiment/config.json and used
 # verbatim as the judge rubric so scoring is reproducible. This is the `evaluators` field, NOT
@@ -70,7 +71,8 @@ def judge(input_text: str, output_text: str) -> "tuple[float, str]":
     carries a reference/expected output or a programmatic checker exists (exact match, F1, set
     overlap, a repo evaluator, a pipeline count), implement `judge` as that deterministic comparison
     — it removes the judge's variance entirely. Fall back to an LLM-as-judge ONLY for open-ended
-    quality with no ground truth (then bump AUTO_EXP_RUNS >= 5; the judge is the noisiest component).
+    quality with no ground truth (the judge is the noisiest component, so propose `max_runs >= 5` at
+    intake and let Step 2.4 derive `runs` within that ceiling — do NOT hard-set AUTO_EXP_RUNS here).
 
     TODO (LLM-judge fallback only): make a REAL judge call. Model selection (see rubrics.md):
       - If the config names a judge `model`, use it.

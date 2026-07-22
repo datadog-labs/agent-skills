@@ -200,8 +200,9 @@ it instead of an LLM judge** — it removes an entire layer of variance and can'
   with an exact/programmatic check (exact match, F1, set overlap, a repo evaluator, `total_examples`
   from a pipeline, etc.) — deterministic, `stdev ≈ 0` across runs from the judge side.
 - Use an **LLM-as-judge only when no ground truth exists** (open-ended quality). Then treat it as
-  the noisiest component: bump `AUTO_EXP_RUNS` (≥5), pin the model + prompt, and expect a wider
-  noise band.
+  the noisiest component: **propose `max_runs ≥ 5` at intake** (so Step 2.4 can derive a `runs` high
+  enough to resolve the judge's noise — the default ceiling of 3 is often too low for an LLM judge),
+  pin the model + prompt, and expect a wider noise band.
 - Either way the metric is **computed by running code** (scoring policy) — a deterministic checker
   and an LLM judge are both legitimate `judge()` implementations; prefer the deterministic one.
 - State which metric kind you used in `reasoning`; a deterministic ground-truth metric is the
