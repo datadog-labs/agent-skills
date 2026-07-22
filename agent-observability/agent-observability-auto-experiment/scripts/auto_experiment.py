@@ -12,7 +12,7 @@ Every subcommand reads/writes JSON so it composes with the loop and is unit-test
 (see test_auto_experiment.py). The pure functions below hold the logic; the CLI is a thin shell.
 
 Subcommands:
-  decide          keep/discard math for one iteration (noise band, is_best)
+  decide          keep/discard math for one iteration (two-sample t-test, is_best)
   audit           per-datapoint diff + denominator guard between best and candidate results
   submit-payload  emit the exact `submit_llmobs_experiment_events` metrics payload for Claude to send
   record          append an iteration row to config.json and advance the running best pointer
@@ -31,18 +31,27 @@ import sys
 from pathlib import Path
 
 # --- keep/discard math (Noise & keep/discard policy in references/rubrics.md) ----------------
+#
+# The gate is a TWO-SAMPLE t-test on a difference of means, NOT a raw-stdev band. The band a
+# single run's stdev defines does not shrink as you add runs, so it can never be cleared by power
+# and would discard real effects forever. The standard error of the *difference* does shrink with
+# runs, which is why Step 2.4 derives `runs` from `min_delta`. Keep iff the move is in the goal's
+# direction AND |t| = |delta| / SE_diff >= 2 AND |delta| >= min_delta (a practical-effect floor).
 
-MIN_DELTA_DEFAULT = 0.02  # small floor on a 0-1 metric so a tiny-stdev run still needs a real move
+MIN_DELTA_DEFAULT = 0.02  # small floor on a 0-1 metric so a tiny-SE run still needs a real move
+T_THRESHOLD = 2.0  # |t| >= 2 ~ 95% significance (inclusive: the runs derivation lands at t=2)
 
 
-def pooled_stdev(before_stdev: float, after_stdev: float) -> float:
-    """Noise floor for the gate: the LARGER of the two runs' across-rep stdevs."""
-    return max(float(before_stdev), float(after_stdev))
+def se_diff(before_stdev: float, after_stdev: float, runs: int) -> float:
+    """Standard error of the difference of two means, each estimated over `runs` reps.
 
-
-def noise_band(before_stdev: float, after_stdev: float, min_delta: float) -> float:
-    """The band a delta must clear to count as real: max(pooled_stdev, min_delta)."""
-    return max(pooled_stdev(before_stdev, after_stdev), float(min_delta))
+    SE_diff = sqrt(before_stdev**2 / runs + after_stdev**2 / runs). This is the quantity that
+    shrinks as `runs` grows (unlike a raw stdev), so more runs can resolve a real difference.
+    """
+    r = int(runs)
+    if r <= 0:
+        raise ValueError(f"runs must be >= 1, got {runs!r}")
+    return (float(before_stdev) ** 2 / r + float(after_stdev) ** 2 / r) ** 0.5
 
 
 def decide(
@@ -50,32 +59,50 @@ def decide(
     after: float,
     before_stdev: float,
     after_stdev: float,
+    runs: int,
     min_delta: float = MIN_DELTA_DEFAULT,
     direction: str = "max",
 ) -> dict:
-    """Compute the numeric keep/discard verdict for one iteration.
+    """Compute the numeric keep/discard verdict for one iteration via a two-sample t-test.
 
-    `is_best_numeric` is TRUE only when the move is in the goal's direction AND its magnitude
-    clears the noise band. It is the NUMERIC verdict only — the loop still requires the mechanism
-    audit (see `audit`) to pass before actually keeping. `within_noise` distinguishes a
-    within-band non-move (feeds the plateau stop) from a real regression.
+    `is_best_numeric` is TRUE only when the move is in the goal's direction AND it is statistically
+    significant (|t| >= 2, or a deterministic move >= min_delta when SE_diff == 0) AND its
+    magnitude reaches the `min_delta` practical floor. It is the NUMERIC verdict only — the loop
+    still requires the mechanism audit (see `audit`) to pass before actually keeping. `within_noise`
+    (not a significant move in EITHER direction) feeds the plateau stop and distinguishes a
+    within-noise non-move from a real, significant regression.
+
+    Zero-variance case: if SE_diff == 0 (a fully deterministic metric, both stdevs 0), the t-test
+    is undefined (division by zero); `t_stat` is None and significance is decided by the floor
+    alone (|delta| >= min_delta) — a deterministic move of at least min_delta is real.
     """
     if direction not in ("max", "min"):
         raise ValueError(f"direction must be 'max' or 'min', got {direction!r}")
     delta = float(after) - float(before)
-    band = noise_band(before_stdev, after_stdev, min_delta)
+    md = float(min_delta)
+    sed = se_diff(before_stdev, after_stdev, runs)
     improved = delta > 0 if direction == "max" else delta < 0
-    cleared_band = abs(delta) > band
-    is_best_numeric = improved and cleared_band
+    meets_floor = abs(delta) >= md
+    if sed == 0.0:
+        t_stat = None
+        magnitude_significant = meets_floor  # deterministic move >= floor is real
+    else:
+        t_stat = abs(delta) / sed
+        magnitude_significant = (t_stat >= T_THRESHOLD) and meets_floor
+    is_best_numeric = improved and magnitude_significant
     return {
         "delta": delta,
-        "pooled_stdev": pooled_stdev(before_stdev, after_stdev),
-        "noise_band": band,
+        "se_diff": sed,
+        "t_stat": t_stat,  # None when se_diff == 0 (zero-variance rule applies)
+        "runs": int(runs),
+        "min_delta": md,
         "direction": direction,
         "improved": improved,
-        "cleared_band": cleared_band,
-        # within the band in either direction => not a real move (plateau candidate)
-        "within_noise": not cleared_band,
+        "meets_floor": meets_floor,
+        "significant": magnitude_significant,
+        # not a significant move in EITHER direction => within noise (plateau candidate),
+        # as opposed to a significant regression (significant but not improved)
+        "within_noise": not magnitude_significant,
         "is_best_numeric": is_best_numeric,
     }
 
@@ -144,14 +171,20 @@ def submit_payload(
     now_ms: int,
     decision: str = "",
     reasoning: str = "",
+    basis: str = "",
+    delta_vs_best: "float | None" = None,
+    t_stat: "float | None" = None,
+    significant: "bool | None" = None,
 ) -> dict:
     """Shape the EXACT `submit_llmobs_experiment_events` payload for one scored iteration.
 
     Returns `{"skip": reason}` when there is no experiment id to report to (Claude records the
     skip in `reasoning` and makes no MCP call). Otherwise returns the args dict for the MCP tool:
     exactly one `score` metric, tags carrying the iteration number, the FULL 40-char commit sha,
-    and the keep/discard `decision` (`baseline` for iteration 0), plus the iteration's `reasoning`.
-    Claude passes this straight to the tool — it never hand-builds the ms timestamp / tags / sha.
+    the keep/discard `decision` (`baseline` for iteration 0), and the **decision-legibility tags**
+    (`basis`, `delta_vs_best`, `t_stat`, `significant`) so a higher score that is still discarded
+    reads legibly on the dashboard — plus the iteration's `reasoning`. Claude passes this straight
+    to the tool — it never hand-builds the ms timestamp / tags / sha.
     """
     if not experiment_id:
         return {"skip": "DD_AUTO_EXPERIMENT_ID unset/empty — no experiment to report to"}
@@ -161,6 +194,19 @@ def submit_payload(
     tags = [f"iteration:{int(iteration)}", f"git.commit.sha:{sha}"]
     if decision:
         tags.append(f"decision:{decision}")
+    # decision-legibility tags: the "why" next to the score (see Report each iteration's score).
+    # Each is added only when provided, so bare calls stay back-compatible.
+    if basis:
+        tags.append(f"basis:{basis}")
+    if delta_vs_best is not None:
+        tags.append(f"delta_vs_best:{delta_vs_best:+.4f}")
+    if t_stat is not None:
+        tags.append(f"t_stat:{t_stat:.2f}")
+    elif significant is not None:
+        # significance was computed but t is undefined (se_diff == 0, zero-variance rule)
+        tags.append("t_stat:null")
+    if significant is not None:
+        tags.append(f"significant:{str(bool(significant)).lower()}")
     metric = {
         "label": SCORE_LABEL,
         "metric_type": "score",
@@ -244,6 +290,7 @@ def main(argv: "list[str] | None" = None) -> int:
     d.add_argument("--after", type=float, required=True)
     d.add_argument("--before-stdev", type=float, required=True)
     d.add_argument("--after-stdev", type=float, required=True)
+    d.add_argument("--runs", type=int, required=True, help="reps per side (for SE_diff); same for best+candidate")
     d.add_argument("--min-delta", type=float, default=MIN_DELTA_DEFAULT)
     d.add_argument("--direction", choices=["max", "min"], default="max")
 
@@ -261,6 +308,10 @@ def main(argv: "list[str] | None" = None) -> int:
     s.add_argument("--experiment-id", default=os.environ.get("DD_AUTO_EXPERIMENT_ID", ""))
     s.add_argument("--decision", default="", help="kept|discarded; baseline for iteration 0")
     s.add_argument("--reasoning", default="", help="this iteration's reasoning string")
+    s.add_argument("--basis", default="", help="significant|within_noise|regression|promoted|baseline|no_change")
+    s.add_argument("--delta-vs-best", type=float, default=None, help="delta against the current best")
+    s.add_argument("--t-stat", type=float, default=None, help="the two-sample t; omit for zero-variance")
+    s.add_argument("--significant", choices=["true", "false"], default=None)
 
     r = sub.add_parser("record", help="append an iteration row to config.json + advance best")
     r.add_argument("--config", required=True)
@@ -273,13 +324,15 @@ def main(argv: "list[str] | None" = None) -> int:
 
     if args.cmd == "decide":
         _emit(decide(args.before, args.after, args.before_stdev, args.after_stdev,
-                     args.min_delta, args.direction))
+                     args.runs, args.min_delta, args.direction))
     elif args.cmd == "audit":
         _emit(audit(_read_scores(args.best), _read_scores(args.candidate),
                     args.best_excluded, args.candidate_excluded))
     elif args.cmd == "submit-payload":
+        sig = None if args.significant is None else (args.significant == "true")
         _emit(submit_payload(args.iteration, args.sha, args.score, args.experiment_id,
-                             args.now_ms, args.decision, args.reasoning))
+                             args.now_ms, args.decision, args.reasoning,
+                             args.basis, args.delta_vs_best, args.t_stat, sig))
     elif args.cmd == "record":
         config = _load_config(args.config)
         config = record_row(config, json.loads(args.row))

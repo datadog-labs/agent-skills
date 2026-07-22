@@ -1,7 +1,7 @@
 """Tests for the auto-experiment orchestrator's MACHINE logic.
 
 These guard the loop's correctness core — the parts SKILL.md used to describe only in English and
-Claude had to re-derive every run: the noise-band gate, the denominator guard, the stop
+Claude had to re-derive every run: the two-sample t-test gate, the denominator guard, the stop
 conditions, the exact LLM-Obs payload. If any of these regress, the loop silently keeps
 within-noise wins, reports fabricated scores, or never stops.
 
@@ -13,65 +13,87 @@ import json
 import auto_experiment as ax
 
 
-# --- decide: the keep/discard gate -----------------------------------------------------------
+# --- decide: the keep/discard gate (two-sample t-test) ---------------------------------------
 
 
 def test_within_noise_gain_is_not_kept():
-    # point estimate rose 0.01 but stdev is 0.05 -> within noise, NOT a real move
-    r = ax.decide(before=0.70, after=0.71, before_stdev=0.05, after_stdev=0.05)
+    # point estimate rose 0.01 but stdev 0.05 over 10 runs -> t ~ 0.45 (< 2) AND below floor
+    r = ax.decide(before=0.70, after=0.71, before_stdev=0.05, after_stdev=0.05, runs=10)
     assert r["improved"] is True
-    assert r["cleared_band"] is False
+    assert r["t_stat"] < ax.T_THRESHOLD
+    assert r["significant"] is False
     assert r["within_noise"] is True
     assert r["is_best_numeric"] is False
 
 
-def test_real_gain_clears_band():
-    r = ax.decide(before=0.70, after=0.85, before_stdev=0.02, after_stdev=0.02)
-    assert r["cleared_band"] is True
+def test_significant_gain_is_kept():
+    # 0.15 gain with tight 0.02 stdev over 10 runs -> t huge, well above 2 and the floor
+    r = ax.decide(before=0.70, after=0.85, before_stdev=0.02, after_stdev=0.02, runs=10)
+    assert r["t_stat"] >= ax.T_THRESHOLD
+    assert r["significant"] is True
     assert r["is_best_numeric"] is True
 
 
-def test_min_delta_floor_applies_when_stdev_tiny():
-    # deterministic metric: stdev ~0, but a 0.01 move is below the 0.02 floor -> not kept
-    r = ax.decide(before=0.90, after=0.91, before_stdev=0.0, after_stdev=0.0, min_delta=0.02)
-    assert r["noise_band"] == 0.02
-    assert r["is_best_numeric"] is False
-    r2 = ax.decide(before=0.90, after=0.93, before_stdev=0.0, after_stdev=0.0, min_delta=0.02)
-    assert r2["is_best_numeric"] is True
+def test_more_runs_resolves_an_underpowered_gain():
+    # same 0.03 gain + 0.05 stdev: NOT significant at 10 runs, significant at 40 (SE_diff shrinks).
+    lo = ax.decide(before=0.80, after=0.83, before_stdev=0.05, after_stdev=0.05, runs=10)
+    assert lo["t_stat"] < ax.T_THRESHOLD and lo["is_best_numeric"] is False
+    hi = ax.decide(before=0.80, after=0.83, before_stdev=0.05, after_stdev=0.05, runs=40)
+    assert hi["t_stat"] >= ax.T_THRESHOLD and hi["is_best_numeric"] is True
+    assert hi["se_diff"] < lo["se_diff"]  # power tightened the standard error
 
 
-def test_pooled_stdev_takes_larger_run():
-    r = ax.decide(before=0.5, after=0.6, before_stdev=0.03, after_stdev=0.08)
-    assert r["pooled_stdev"] == 0.08
-    assert r["noise_band"] == 0.08  # 0.10 delta < 0.08? no, 0.10 > 0.08 -> cleared
-    assert r["cleared_band"] is True
+def test_min_delta_floor_blocks_significant_but_tiny_move():
+    # tiny stdev makes a 0.01 move statistically significant, but it is below the 0.02 floor
+    r = ax.decide(before=0.90, after=0.91, before_stdev=0.001, after_stdev=0.001, runs=10)
+    assert r["t_stat"] >= ax.T_THRESHOLD  # would pass the t-test alone
+    assert r["meets_floor"] is False
+    assert r["is_best_numeric"] is False  # floor still blocks it
 
 
-def test_regression_is_not_within_noise_when_it_clears_band():
-    # a real drop: improved False, cleared_band True, within_noise False (regression, not plateau)
-    r = ax.decide(before=0.80, after=0.60, before_stdev=0.02, after_stdev=0.02)
+def test_zero_variance_deterministic_move():
+    # SE_diff == 0 (deterministic metric): t is undefined; decide by the floor alone
+    below = ax.decide(before=0.90, after=0.91, before_stdev=0.0, after_stdev=0.0, runs=10, min_delta=0.02)
+    assert below["t_stat"] is None
+    assert below["is_best_numeric"] is False  # 0.01 < 0.02 floor
+    above = ax.decide(before=0.90, after=0.93, before_stdev=0.0, after_stdev=0.0, runs=10, min_delta=0.02)
+    assert above["t_stat"] is None
+    assert above["significant"] is True and above["is_best_numeric"] is True
+
+
+def test_significant_regression_is_not_within_noise():
+    # a real drop: improved False, significant True, within_noise False (regression, not plateau)
+    r = ax.decide(before=0.80, after=0.60, before_stdev=0.02, after_stdev=0.02, runs=10)
     assert r["improved"] is False
-    assert r["cleared_band"] is True
+    assert r["significant"] is True
     assert r["within_noise"] is False
     assert r["is_best_numeric"] is False
 
 
 def test_minimize_direction():
     # goal is to MINIMIZE (e.g. latency / error count): a drop is an improvement
-    r = ax.decide(before=0.80, after=0.60, before_stdev=0.02, after_stdev=0.02, direction="min")
+    r = ax.decide(before=0.80, after=0.60, before_stdev=0.02, after_stdev=0.02, runs=10, direction="min")
     assert r["improved"] is True
     assert r["is_best_numeric"] is True
-    r2 = ax.decide(before=0.60, after=0.80, before_stdev=0.02, after_stdev=0.02, direction="min")
+    r2 = ax.decide(before=0.60, after=0.80, before_stdev=0.02, after_stdev=0.02, runs=10, direction="min")
     assert r2["improved"] is False
     assert r2["is_best_numeric"] is False
 
 
 def test_bad_direction_raises():
     try:
-        ax.decide(0.5, 0.6, 0.01, 0.01, direction="sideways")
+        ax.decide(0.5, 0.6, 0.01, 0.01, runs=10, direction="sideways")
     except ValueError:
         return
     raise AssertionError("expected ValueError for bad direction")
+
+
+def test_bad_runs_raises():
+    try:
+        ax.decide(0.5, 0.6, 0.01, 0.01, runs=0)
+    except ValueError:
+        return
+    raise AssertionError("expected ValueError for runs < 1")
 
 
 # --- audit: mechanism + denominator guard ----------------------------------------------------
@@ -134,6 +156,28 @@ def test_payload_baseline_and_optional_fields():
     # no decision/reasoning => neither appears (back-compat)
     m2 = ax.submit_payload(1, "abc", 0.5, experiment_id="exp", now_ms=1)["metrics"][0]
     assert m2["tags"] == ["iteration:1", "git.commit.sha:abc"]
+
+
+def test_payload_decision_legibility_tags():
+    # a discarded-but-higher iteration: the decision tags make the "why" legible on the dashboard
+    p = ax.submit_payload(2, "abc", 0.822, experiment_id="exp", now_ms=1,
+                          decision="discarded", basis="within_noise",
+                          delta_vs_best=0.016, t_stat=0.94, significant=False)
+    tags = p["metrics"][0]["tags"]
+    assert "decision:discarded" in tags
+    assert "basis:within_noise" in tags
+    assert "delta_vs_best:+0.0160" in tags  # signed, 4dp
+    assert "t_stat:0.94" in tags
+    assert "significant:false" in tags
+
+
+def test_payload_zero_variance_t_stat_null():
+    # significance computed but t undefined (se_diff == 0) -> t_stat:null, not a fabricated number
+    p = ax.submit_payload(3, "abc", 0.95, experiment_id="exp", now_ms=1,
+                          decision="kept", basis="significant", significant=True, t_stat=None)
+    tags = p["metrics"][0]["tags"]
+    assert "t_stat:null" in tags
+    assert "significant:true" in tags
 
 
 def test_payload_skips_when_no_experiment_id():
