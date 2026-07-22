@@ -49,6 +49,7 @@ pub static DD_LLMO_SUB_SKILLS: &[(&str, &str)] = &[
     ("llm-obs-experiment-py-bootstrap/SKILL.md", skill!("dd-llmo/llm-obs-experiment-py-bootstrap/SKILL.md")),
     ("llm-obs-session-classify/SKILL.md",        skill!("dd-llmo/llm-obs-session-classify/SKILL.md")),
     ("llm-obs-trace-rca/SKILL.md",               skill!("dd-llmo/llm-obs-trace-rca/SKILL.md")),
+    ("agent-observability-replay-trace/SKILL.md", skill!("agent-observability/agent-observability-replay-trace/SKILL.md")),
 ];
 
 pub const DD_LOGS_SKILL: &str = skill!("dd-logs/SKILL.md");
