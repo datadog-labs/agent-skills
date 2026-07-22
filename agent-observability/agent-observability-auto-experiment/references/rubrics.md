@@ -225,14 +225,14 @@ Write a real, committed evaluation module `.auto_experiment/eval_harness.py` wit
   - **Judge model selection.** If the experiment config names a judge model, use it. **If no
     model is specified, default to the Claude model selected in the Claude Code session that
     invoked this skill** — i.e. the same model running this loop. Resolve that model id (the
-    session/main-loop model) and call it through whichever Anthropic credential is available
-    (`ANTHROPIC_API_KEY` / `CLAUDE_API_KEY`, or an internal Datadog/AI-gateway route). Only fall
-    back to another provider (e.g. `OPENAI_API_KEY`) or an internal Datadog LLM Obs evaluator if
-    the session model cannot be reached. Pin the resolved model id in `eval_harness.py` so the
-    judge is identical across every iteration, and state in `reasoning` which model you used.
-  - **Figure out how to make a real judge call yourself**: probe for an available LLM
-    credential/endpoint and use whichever works. If, after genuinely trying, no judge can be
-    reached, STOP and report the blocker — do NOT fabricate a score.
+    session/main-loop model) and call it through the LLM credential the environment already
+    provides for this project (e.g. a standard Anthropic env var). Pin the resolved model id in
+    `eval_harness.py` so the judge is identical across every iteration, and state in `reasoning`
+    which model you used.
+  - **Make a real judge call using the project's existing LLM configuration.** Use the endpoint
+    and credential the project is already set up to use — do not collect, log, or transmit
+    credentials anywhere else. If no LLM is reachable, STOP and report the blocker — do NOT
+    fabricate a score.
 - a runner that applies `evaluate_line` to EVERY scoreable line of `data.jsonl` (per the
   exclusion rule above), writes each result to `.auto_experiment/eval_results.jsonl` (the eval-set
   **`id`** first, then input snippet, output, score, justification — the `id` is required so the
