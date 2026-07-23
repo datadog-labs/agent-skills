@@ -154,15 +154,28 @@ is out of scope, say so (that's a finding) — do not silently tweak in-scope-bu
    invoked — read it, don't ask the user). See **Report each iteration's score to LLM-Obs**.
 5. **Record the run context on the experiment before iterations start.** Call
    `update_llmobs_experiment` once with `experiment_id` = `$DD_AUTO_EXPERIMENT_ID` (skip if unset)
-   and `metadata` set to a JSON struct containing the repo name, the scratch branch name, and the
-   model running this skill, e.g.
-   `{"repo": "<repo>", "branch": "<scratch-branch>", "model": "<model>"}`. Derive `repo` from the
-   git remote (`basename -s .git $(git remote get-url origin)`, or `owner/repo`), `branch` from the
-   branch created in step 2, and `model` = the `provider/model-id` of the model/agent driving this
-   session (e.g. `openai/gpt-4-turbo`, `anthropic/claude-opus-4-8`). `metadata` **replaces**
-   existing metadata, so include all three keys in the one call. Do this in Setup, before Step 1.
-   **Verify it landed** (see gate below) — this is the step most often silently skipped, because it
-   is an MCP side-effect with no local artifact, unlike the file/branch writes above.
+   and `metadata` set to a JSON struct containing the repo name, the scratch branch name, the
+   model running this skill, and an `estimated_duration_time` (seconds; **`null` at Setup** — no
+   iteration has run yet), e.g.
+   `{"repo": "<repo>", "branch": "<scratch-branch>", "model": "<model>", "estimated_duration_time": null}`.
+   Derive `repo` from the git remote (`basename -s .git $(git remote get-url origin)`, or
+   `owner/repo`), `branch` from the branch created in step 2, and `model` = the `provider/model-id`
+   of the model/agent driving this session (e.g. `openai/gpt-4-turbo`, `anthropic/claude-opus-4-8`).
+   `metadata` **replaces** existing metadata, so include all four keys in the one call. Do this in
+   Setup, before Step 1. **Verify it landed** (see gate below) — this is the step most often silently
+   skipped, because it is an MCP side-effect with no local artifact, unlike the file/branch writes
+   above.
+
+   **`estimated_duration_time` — refresh it after every iteration.** After each iteration's score is
+   reported (including iteration 0), call `update_llmobs_experiment` again and set
+   `estimated_duration_time` to how long that iteration just took, in **seconds** — the elapsed time
+   between the iteration's `time_start` and `time_end` (per **Per-iteration timing**). It is a
+   rolling single-iteration estimate: each update **overwrites** it with the most recent iteration's
+   duration (not a cumulative sum), so a consumer can project the remaining run as
+   `estimated_duration_time × iterations_left`. Because `metadata` **replaces**, re-send `repo`,
+   `branch`, `model` unchanged in the same call alongside the new `estimated_duration_time`. Skip if
+   `DD_AUTO_EXPERIMENT_ID` is unset. Use the real elapsed wall-clock; never estimate or round to a
+   guess.
 
 ### Setup verification gate — do this BEFORE Step 1
 
@@ -399,6 +412,10 @@ LLM-Obs with the `submit_llmobs_experiment_events` MCP tool. Do this once per it
 after the score is computed and the iteration's commit / `result.json` is written — including
 iteration 1 and the **iteration-0 baseline** (reported at the end of Step 2.4; there `score_value`
 = `before_score` and the decision tag is `decision:baseline`).
+
+Immediately after this submission, **refresh `estimated_duration_time`** on the experiment metadata
+with this iteration's elapsed seconds (see **Setup** step 5) — one `update_llmobs_experiment` call,
+re-sending `repo`/`branch`/`model` unchanged.
 
 Call `submit_llmobs_experiment_events` with a single metric shaped exactly like this:
 
