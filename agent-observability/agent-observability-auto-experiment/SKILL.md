@@ -81,11 +81,11 @@ Before writing any config or touching git:
    skill requires a valid experiment ID. This id is the LLM-Obs experiment every iteration reports to
    (it is a skill argument, not read from the environment); persist it into `config.json` as
    `dd_auto_experiment_id` for the audit trail. Then, if `lapdog` is available on `PATH`, tag the
-   current Lapdog session as the baseline iteration (replace `EXPERIMENT_ID` with `$experiment-id`):
+   current Lapdog session with the experiment id (replace `EXPERIMENT_ID` with `$experiment-id`):
 
    ```bash
    if command -v lapdog >/dev/null 2>&1; then
-     lapdog tags set auto_experiment_id:EXPERIMENT_ID iteration:0
+     lapdog tags set auto_experiment_id:EXPERIMENT_ID 2>/dev/null
    fi
    ```
 
@@ -281,15 +281,6 @@ Split the two roles so context stays clean and iterations don't anchor on each o
 
 ## Iteration 1 — baseline + first improvement
 
-At the beginning of iteration 1, before Step 1, update the current Lapdog session tag when `lapdog`
-is available on `PATH`:
-
-```bash
-if command -v lapdog >/dev/null 2>&1; then
-  lapdog tags set iteration:1
-fi
-```
-
 Mirrors `build_initial_prompt`. Four steps, in order.
 
 ### Step 1 — Load the evaluation data
@@ -437,15 +428,6 @@ Then report this iteration's score to LLM-Obs (tag `iteration:1`) — see **Repo
 score to LLM-Obs**.
 
 ## Iterations 2+ — hill climb
-
-At the beginning of every iteration 2+, before restoring the best-so-far, update the current Lapdog
-session tag when `lapdog` is available on `PATH` (replace `<n>` with the actual iteration number):
-
-```bash
-if command -v lapdog >/dev/null 2>&1; then
-  lapdog tags set iteration:<n>
-fi
-```
 
 Mirrors `build_followup_prompt`. Baseline is already known — **do not recompute it**.
 
