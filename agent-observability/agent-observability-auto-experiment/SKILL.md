@@ -7,8 +7,8 @@ description: >-
   within-noise gains tentative), and repeats. Use when the user
   says "run an auto experiment", "hill-climb this code", "iteratively improve X and measure the
   delta", "optimize this prompt/file against my traces", "auto-optimize against LLM-Obs", or wants
-  the local equivalent of the auto_experiments worker. Works from an ml_app, a dataset_id, or a
-  list of trace_ids.
+  the local equivalent of the auto_experiments worker. Works from a local dataset file, an ml_app,
+  a dataset_id, or a list of trace_ids.
 ---
 
 # auto-experiment — local hill-climb improvement loop
@@ -35,7 +35,7 @@ run starts** (see the Mandatory intake gate below).
 | `files_to_optimize` | the **edit scope**: one or more files, a **folder**, or globs. **Any code inside the scope is fair game to modify** — tool/retrieval code, the pipeline, config, data-shaping, or prompts — not just prompt wording. Everything outside the scope is off-limits. | **must ask** |
 | `goal` | what "better" means; the judge rubric + optimization direction | **must ask** |
 | `evaluators` | explicit evaluator/rubric text — how each datapoint is scored (ground-truth check vs LLM-judge, pass criteria, direction). | **must ask** (do NOT silently fall back to `goal`) |
-| data source | where the eval data comes from — **either** a `dataset_id` **or** an `ml_app` to pull traces from (optionally narrowed by explicit `trace_ids`). | **must ask** — mandatory; the run cannot start without one of `dataset_id` / `ml_app` (priority below) |
+| data source | where the eval data comes from — a **`local_dataset_path`** (a local `.jsonl`/`.csv` file on disk), **or** a `dataset_id`, **or** an `ml_app` to pull traces from (optionally narrowed by explicit `trace_ids`). | **must ask** — mandatory; the run cannot start without one of `local_dataset_path` / `dataset_id` / `ml_app` (priority below) |
 | `max_iterations` | how many changes to try (clamp **1–50**) | _default_ **2** |
 | `max_runs` | ceiling on the derived `runs` — how many times the harness may repeat the eval per candidate to beat variance (clamp **3–20**; the pilot already runs 3×, so 3 is the floor) | _default_ **3** |
 | `model` | judge model id | _default_: the Claude model selected in this session (see rubric) |
@@ -64,9 +64,10 @@ Before writing any config or touching git:
      but the stated evaluator is recall-only), **STOP and ask the user which one governs** — do
      **not** silently reconcile them by rewriting the rubric. The metric the harness optimizes must
      be the one the user approved, or every keep/discard decision optimizes the wrong objective.
-   - **data source** — **mandatory**: the user must provide **either** a `dataset_id` **or** an
-     `ml_app` to find traces from (optionally narrowed by explicit `trace_ids`). Do not auto-pick,
-     do not guess an `ml_app`, and do not start the run with neither — if both are missing, ask.
+   - **data source** — **mandatory**: the user must provide a **`local_dataset_path`** (a local
+     `.jsonl`/`.csv` file), **or** a `dataset_id`, **or** an `ml_app` to find traces from
+     (optionally narrowed by explicit `trace_ids`). Do not auto-pick, do not guess an `ml_app`, do
+     not invent a file path, and do not start the run with none — if all are missing, ask.
 
    **A detailed, specific goal is NOT permission to infer any must-ask field.** A rich goal is the
    single most common cause of wrongly auto-filling `files_to_optimize`, `evaluators`, and the data
@@ -103,7 +104,7 @@ the run's state + audit trail):
 {
   "repo_url": "...", "base_branch": "...", "files_to_optimize": [...],
   "goal": "...", "evaluators": "...", "ml_app": "...",
-  "dataset_id": "...", "trace_ids": [...],
+  "local_dataset_path": "...", "dataset_id": "...", "trace_ids": [...],
   "max_iterations": 2,
   "max_runs": 3,
   "runs": null,
@@ -203,17 +204,25 @@ Mirrors `build_initial_prompt`. Four steps, in order.
 Pick the data source in this priority order and materialize it to `.auto_experiment/data.jsonl`
 (one scoreable datapoint per line: the input, plus expected/reference output if present):
 
-1. **`dataset_id` present** → `get_llmobs_dataset_records` + `get_llmobs_full_dataset_records`.
-2. **else non-empty `trace_ids`** → `get_llmobs_trace` (full tree), `get_llmobs_span_details`,
+1. **`local_dataset_path` present** → read the file directly from disk (no MCP call). Accept
+   `.jsonl` (one datapoint per line) or `.csv` (header row → keys; map an `input`/`expected_output`
+   column if present). Resolve the path relative to the repo root, verify it exists (STOP and ask if
+   it does not — never fabricate data), normalize each row to the same `{input, expected_output?,
+   id?}` shape as the other sources, and copy it to `.auto_experiment/data.jsonl`. Assign a
+   deterministic `id` to any row lacking one. This source is fully offline.
+2. **else `dataset_id` present** → `get_llmobs_dataset_records` + `get_llmobs_full_dataset_records`.
+3. **else non-empty `trace_ids`** → `get_llmobs_trace` (full tree), `get_llmobs_span_details`,
    `get_llmobs_span_content`.
-3. **else** → fetch the last ~30 LLM traces for `ml_app` (search LLM-Obs spans), and record the
+4. **else** → fetch the last ~30 LLM traces for `ml_app` (search LLM-Obs spans), and record the
    trace IDs you used back into `config.json` `trace_ids` so later iterations reuse the SAME
    corpus.
 
-Extract input/output per the **messages-source guidance** in `references/rubrics.md` (score the
-`messages` field on the child LLM span, not the thin root `input.value`). Apply the
-**data-selection guidance**: keep only traces with a scoreable target span; exclude infra/setup
-spans from the set entirely.
+For the **trace-derived sources** (`trace_ids` / `ml_app`), extract input/output per the
+**messages-source guidance** in `references/rubrics.md` (score the `messages` field on the child LLM
+span, not the thin root `input.value`) and apply the **data-selection guidance**: keep only traces
+with a scoreable target span; exclude infra/setup spans from the set entirely. For a
+`local_dataset_path` or a `dataset_id`, the rows are already datapoints — take input/expected output
+from their fields directly and skip the span-extraction step.
 
 Then **split once, deterministically** (hash of datapoint id, ~70/30) into
 `.auto_experiment/data.val.jsonl` (the hill-climb gate) and `.auto_experiment/data.test.jsonl`
