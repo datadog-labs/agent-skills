@@ -9,6 +9,7 @@ description: >-
   delta", "optimize this prompt/file against my traces", "auto-optimize against LLM-Obs", or wants
   the local equivalent of the auto_experiments worker. Works from a local dataset file, an ml_app,
   a dataset_id, or a list of trace_ids.
+arguments: [experiment-id]
 ---
 
 # auto-experiment — local hill-climb improvement loop
@@ -74,6 +75,19 @@ validation. They are computed during the run and displayed once, at the end, wit
 ### Mandatory intake gate — do this FIRST, before Setup
 
 Before writing any config or touching git:
+
+0. **Validate the `$experiment-id` argument.** Check that `$experiment-id` (the skill argument) is a
+   non-empty string and a valid UUID. If it is not, **abort** and tell the user that invoking this
+   skill requires a valid experiment ID. This id is the LLM-Obs experiment every iteration reports to
+   (it is a skill argument, not read from the environment); persist it into `config.json` as
+   `dd_auto_experiment_id` for the audit trail. Then, if `lapdog` is available on `PATH`, tag the
+   current Lapdog session as the baseline iteration (replace `EXPERIMENT_ID` with `$experiment-id`):
+
+   ```bash
+   if command -v lapdog >/dev/null 2>&1; then
+     lapdog tags set auto_experiment_id:EXPERIMENT_ID iteration:0
+   fi
+   ```
 
 1. Collect every **must-ask** field from an explicit user answer. If any is missing, ask for it — do
    **not** default, infer, or guess:
@@ -174,12 +188,11 @@ is out of scope, say so (that's a finding) — do not silently tweak in-scope-bu
    best commit at the end.
 3. Write `.auto_experiment/config.json`. Add `.auto_experiment/` output files to nothing special
    — they are committed on purpose (they are the audit trail).
-4. This run reports one score per iteration to the LLM-Obs experiment identified by
-   `dd_auto_experiment_id` in `config.json` (provided to the run at intake — don't ask the user). If
-   it is absent, per-iteration reporting is knowingly skipped. See **Report each iteration's score to
-   LLM-Obs**.
+4. This run reports one score per iteration to the LLM-Obs experiment identified by the
+   `$experiment-id` argument (validated at the intake gate; persisted to `config.json` as
+   `dd_auto_experiment_id`). See **Report each iteration's score to LLM-Obs**.
 5. **Record the run context on the experiment before iterations start.** Call
-   `update_llmobs_experiment` once with `experiment_id` = the config's `dd_auto_experiment_id` (skip if absent)
+   `update_llmobs_experiment` once with `experiment_id` = `$experiment-id`
    and `metadata` set to a JSON struct containing the repo name, the scratch branch name, the
    model running this skill, and an `estimated_duration_time` (seconds; **`null` at Setup** — no
    iteration has run yet), e.g.
@@ -207,7 +220,7 @@ is out of scope, say so (that's a finding) — do not silently tweak in-scope-bu
    So it **counts down** as the run proceeds — a large ETA early, `0` after the final iteration (the
    optimization is over, no time remains). Each update **overwrites** the field with the latest ETA.
    Because `metadata` **replaces**, re-send `repo`, `branch`, `model` unchanged in the same call
-   alongside the new `estimated_duration_time`. Skip if no `dd_auto_experiment_id` is configured. Base it on
+   alongside the new `estimated_duration_time` (use `experiment_id` = `$experiment-id`). Base it on
    real measured elapsed times, never a guessed number.
 
 ### Setup verification gate — do this BEFORE Step 1
@@ -223,8 +236,8 @@ ran because you intended it to.
 | 1 | clean tree + start SHA | `git rev-parse HEAD` recorded in `config.json` `start_sha`; tree clean or unrelated changes stashed |
 | 2 | scratch branch | `git branch --show-current` equals the scratch branch off `base_branch` |
 | 3 | `config.json` written | file exists with every required field populated (incl. the resolved `files_to_optimize` list, `evaluators` verbatim, data source) |
-| 4 | experiment id | `dd_auto_experiment_id` read from `config.json`; if absent, that is recorded and per-iteration reporting is knowingly skipped |
-| 5 | run context on experiment | confirm the `update_llmobs_experiment` call **actually returned a success response in hand** (not merely that you intended to call it). For the us5 MCP that response is `updated_fields` containing `"metadata"` — accept that, or any non-error response acknowledging the metadata write if the tool's shape differs. The check is "the call was made and acknowledged", so do not hard-block on one exact field name; if the tool errored or was never called, re-run it. Skip only if no `dd_auto_experiment_id` is configured. |
+| 4 | experiment id | `$experiment-id` validated as a UUID at the intake gate and persisted to `config.json` as `dd_auto_experiment_id` |
+| 5 | run context on experiment | confirm the `update_llmobs_experiment` call **actually returned a success response in hand** (not merely that you intended to call it). For the us5 MCP that response is `updated_fields` containing `"metadata"` — accept that, or any non-error response acknowledging the metadata write if the tool's shape differs. The check is "the call was made and acknowledged", so do not hard-block on one exact field name; if the tool errored or was never called, re-run it. |
 
 State the gate result briefly (each step ✓ with its evidence) before Step 1. This same
 "external-effect step → verify against an artifact" discipline is why per-iteration score
@@ -252,6 +265,15 @@ Split the two roles so context stays clean and iterations don't anchor on each o
   narrative of previous attempts beyond their one-line outcomes.
 
 ## Iteration 1 — baseline + first improvement
+
+At the beginning of iteration 1, before Step 1, update the current Lapdog session tag when `lapdog`
+is available on `PATH`:
+
+```bash
+if command -v lapdog >/dev/null 2>&1; then
+  lapdog tags set iteration:1
+fi
+```
 
 Mirrors `build_initial_prompt`. Four steps, in order.
 
@@ -400,6 +422,15 @@ score to LLM-Obs**.
 
 ## Iterations 2+ — hill climb
 
+At the beginning of every iteration 2+, before restoring the best-so-far, update the current Lapdog
+session tag when `lapdog` is available on `PATH` (replace `<n>` with the actual iteration number):
+
+```bash
+if command -v lapdog >/dev/null 2>&1; then
+  lapdog tags set iteration:<n>
+fi
+```
+
 Mirrors `build_followup_prompt`. Baseline is already known — **do not recompute it**.
 
 1. **Restore to the best-so-far**, so a discarded attempt cannot contaminate this one:
@@ -453,9 +484,8 @@ iteration; see **Setup** step 5) and `update_llmobs_experiment` — one call, re
 
 Call `submit_llmobs_experiment_events` with a single metric shaped exactly like this:
 
-- `experiment_id`: the `dd_auto_experiment_id` from `config.json` (do not ask the user and do not
-  invent one). If it is absent or empty, skip the submission and note that in the iteration
-  `reasoning`.
+- `experiment_id`: `$experiment-id` (the validated skill argument, also persisted to `config.json`
+  as `dd_auto_experiment_id`). Do not ask the user and do not invent one.
 - `metrics`: an array containing exactly one object with these fields and no others:
   - `label`: always the literal string `auto_experiment_score`.
   - `metric_type`: `score`.
@@ -506,7 +536,7 @@ Example arguments for iteration 5 whose harness computed a score of `0.72`:
 
 ```json
 {
-  "experiment_id": "<the dd_auto_experiment_id from config.json>",
+  "experiment_id": "$experiment-id",
   "metrics": [
     {
       "label": "auto_experiment_score",
@@ -630,7 +660,7 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
    original code in place (`best_sha` empty). Do not fabricate an improvement.
 6. Tell the user the scratch branch + best commit so they can open a PR from it if they want.
 7. **Mark the experiment finished in LLM-Obs.** Call `update_llmobs_experiment` with
-   `experiment_id` = the config's `dd_auto_experiment_id` (skip if absent) exactly once at the very end — after
+   `experiment_id` = `$experiment-id` exactly once at the very end — after
    the last iteration, or immediately whenever you give up early. Set `status: "completed"` for any
    run that reached the final report (including one where baseline stayed best — a run that
    finished cleanly is completed, not failed). Set `status: "failed"` with a short `error` when the
