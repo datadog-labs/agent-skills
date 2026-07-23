@@ -166,16 +166,23 @@ is out of scope, say so (that's a finding) — do not silently tweak in-scope-bu
    skipped, because it is an MCP side-effect with no local artifact, unlike the file/branch writes
    above.
 
-   **`estimated_duration_time` — refresh it after every iteration.** After each iteration's score is
-   reported (including iteration 0), call `update_llmobs_experiment` again and set
-   `estimated_duration_time` to how long that iteration just took, in **seconds** — the elapsed time
-   between the iteration's `time_start` and `time_end` (per **Per-iteration timing**). It is a
-   rolling single-iteration estimate: each update **overwrites** it with the most recent iteration's
-   duration (not a cumulative sum), so a consumer can project the remaining run as
-   `estimated_duration_time × iterations_left`. Because `metadata` **replaces**, re-send `repo`,
-   `branch`, `model` unchanged in the same call alongside the new `estimated_duration_time`. Skip if
-   `DD_AUTO_EXPERIMENT_ID` is unset. Use the real elapsed wall-clock; never estimate or round to a
-   guess.
+   **`estimated_duration_time` — the ETA to the end of the whole optimization, refreshed after every
+   iteration.** It is **not** a single iteration's duration — it is the estimated **seconds still
+   remaining until the full run finishes** (all `max_iterations` done). After each iteration's score
+   is reported (including iteration 0), recompute it and `update_llmobs_experiment` again:
+   - measure each iteration's real elapsed time from its `time_start`/`time_end` (per
+     **Per-iteration timing**);
+   - `avg_iter = mean(elapsed of every iteration completed so far)` (include iteration 0's baseline
+     build; it is the most representative per-iteration cost you have);
+   - `iterations_left = max_iterations − <improvement iterations completed>` (iteration 0 is the
+     baseline, not an improvement, so after it `iterations_left = max_iterations`);
+   - `estimated_duration_time = round(avg_iter × iterations_left)` seconds.
+
+   So it **counts down** as the run proceeds — a large ETA early, `0` after the final iteration (the
+   optimization is over, no time remains). Each update **overwrites** the field with the latest ETA.
+   Because `metadata` **replaces**, re-send `repo`, `branch`, `model` unchanged in the same call
+   alongside the new `estimated_duration_time`. Skip if `DD_AUTO_EXPERIMENT_ID` is unset. Base it on
+   real measured elapsed times, never a guessed number.
 
 ### Setup verification gate — do this BEFORE Step 1
 
@@ -413,9 +420,10 @@ after the score is computed and the iteration's commit / `result.json` is writte
 iteration 1 and the **iteration-0 baseline** (reported at the end of Step 2.4; there `score_value`
 = `before_score` and the decision tag is `decision:baseline`).
 
-Immediately after this submission, **refresh `estimated_duration_time`** on the experiment metadata
-with this iteration's elapsed seconds (see **Setup** step 5) — one `update_llmobs_experiment` call,
-re-sending `repo`/`branch`/`model` unchanged.
+Immediately after this submission, **recompute `estimated_duration_time`** (the ETA in seconds to
+the end of the whole run — `avg_iteration_elapsed × iterations_left`, → `0` after the last
+iteration; see **Setup** step 5) and `update_llmobs_experiment` — one call, re-sending
+`repo`/`branch`/`model` unchanged.
 
 Call `submit_llmobs_experiment_events` with a single metric shaped exactly like this:
 
