@@ -117,6 +117,15 @@ the run's state + audit trail):
 `runs` and `min_delta` start `null` — they are **computed and written in Step 2.4** from the
 measured baseline noise, never chosen at intake.
 
+**Per-iteration timing.** Every `iteration_results` row (including iteration 0, the baseline)
+records `time_start` and `time_end` as **ISO-8601 UTC** wall-clock strings (e.g.
+`"2026-07-22T14:03:11Z"`). Capture `time_start` the moment the iteration begins — for iteration 0
+when the baseline harness build starts, for each improvement iteration the moment its sub-agent
+briefing is issued — and `time_end` the moment that iteration's score/commit is written (right
+before you append the row). They are wall-clock stamps, never estimated or backfilled; if an
+iteration spans a pause, record the real elapsed times. A row therefore looks like
+`{"iteration": 2, "decision": "kept", ..., "time_start": "...Z", "time_end": "...Z"}`.
+
 ## Scope — optimize the whole selected surface, not just the prompt
 
 `files_to_optimize` is a **scope**, not a prompt pointer. It may be a set of files, a directory, or
@@ -337,7 +346,8 @@ the change touched); a change that fails the audit (denominator artifact) is `is
 goal's direction (`basis:regression` if significantly worse, else `basis:within_noise`). If
 iteration 1 moves in the goal's direction AND
 passes the audit, it becomes the best (`best_sha` = this commit, `best_score` = after_score), with
-its confidence label recorded. Append the row to `config.json` `iteration_results`.
+its confidence label recorded. Append the row to `config.json` `iteration_results`, including
+`time_start` (when this iteration began) and `time_end` (now) per **Per-iteration timing**.
 
 Then report this iteration's score to LLM-Obs (tag `iteration:1`) — see **Report each iteration's
 score to LLM-Obs**.
@@ -374,7 +384,8 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
    *significantly* worse (`significant:true` in the wrong direction), else `basis:within_noise` (a
    flat/slightly-worse wobble, `significant:false`). A change that fails the mechanism audit
    (denominator artifact) is `discarded` `basis:audit_failed` regardless of its point estimate.
-   Append the row. (Basis precedence when several could apply: **`audit_failed` > `regression` >
+   Append the row, including `time_start` (when this iteration began, step 4) and `time_end` (now)
+   per **Per-iteration timing**. (Basis precedence when several could apply: **`audit_failed` > `regression` >
    `significant` > `within_noise`**.)
    (A `within_noise` best is the candidate the optional **Higher-power confirmation** re-tests at
    more runs to *upgrade* its confidence, not to decide the keep.)
@@ -428,6 +439,9 @@ Call `submit_llmobs_experiment_events` with a single metric shaped exactly like 
       uses), NOT vs baseline.
     - `t_stat:<value>` (or `t_stat:null` when `se_diff == 0`) and `significant:<true|false>` — for a
       `within_noise` best, `significant:false` is what flags the kept score as low-confidence.
+    - `time_start:<iso>` and `time_end:<iso>` — this iteration's ISO-8601 UTC wall-clock start/end,
+      copied verbatim from the `iteration_results` row (see **Per-iteration timing** above) so the
+      experiment view can show per-iteration duration. Must match the row exactly; never fabricate.
   - `reasoning`: this iteration's `reasoning` string from `iteration_results`. **Lead with a
     one-line verdict** that states the decision and its basis in plain terms before the details,
     e.g. `"KEPT (tentative) — higher point estimate in the goal's direction (Δvs_best +0.016) but
@@ -449,7 +463,7 @@ Example arguments for iteration 5 whose harness computed a score of `0.72`:
       "score_value": 0.72,
       "reasoning": "KEPT — significant (Δvs_best +0.048, t=3.1). Rewrote the retrieval query builder to include entity synonyms (targeting the 'missed-retrieval' census bucket); cleared the t-test (|t|≥2) and passed the mechanism audit.",
       "timestamp_ms": 1752430000000,
-      "tags": ["iteration:5", "git.commit.sha:33ec6e0959bd46b0ea9c337cf6a28a763d3eeb0a", "decision:kept", "basis:significant", "delta_vs_best:+0.0480", "t_stat:3.1", "significant:true"]
+      "tags": ["iteration:5", "git.commit.sha:33ec6e0959bd46b0ea9c337cf6a28a763d3eeb0a", "decision:kept", "basis:significant", "delta_vs_best:+0.0480", "t_stat:3.1", "significant:true", "time_start:2026-07-22T14:31:07Z", "time_end:2026-07-22T14:38:52Z"]
     }
   ]
 }
