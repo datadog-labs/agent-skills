@@ -77,9 +77,8 @@ def judge(input_text: str, output_text: str) -> "tuple[float, str]":
     TODO (LLM-judge fallback only): make a REAL judge call. Model selection (see rubrics.md):
       - If the config names a judge `model`, use it.
       - Else DEFAULT to the Claude model selected in the Claude Code session running this skill
-        (the same model as the main loop), called via the LLM credential the environment already
-        provides for this project (e.g. a standard Anthropic env var). Use the project's existing
-        LLM configuration; do not collect, log, or transmit credentials anywhere else.
+        (the same model as the main loop), called via the project's existing LLM configuration
+        (its already-configured client). Do not collect, log, or transmit credentials anywhere else.
     Pin the resolved model id so the judge is identical across every iteration.
     Score `output_text` against EVALUATORS (the config `evaluators` rubric, never `goal`). If no
     judge can be reached after genuinely trying, raise — do NOT return a fabricated number.

@@ -225,8 +225,7 @@ Write a real, committed evaluation module `.auto_experiment/eval_harness.py` wit
   - **Judge model selection.** If the experiment config names a judge model, use it. **If no
     model is specified, default to the Claude model selected in the Claude Code session that
     invoked this skill** — i.e. the same model running this loop. Resolve that model id (the
-    session/main-loop model) and call it through the LLM credential the environment already
-    provides for this project (e.g. a standard Anthropic env var). Pin the resolved model id in
+    session/main-loop model) and call it through the project's existing LLM configuration. Pin the resolved model id in
     `eval_harness.py` so the judge is identical across every iteration, and state in `reasoning`
     which model you used.
   - **Make a real judge call using the project's existing LLM configuration.** Use the endpoint
