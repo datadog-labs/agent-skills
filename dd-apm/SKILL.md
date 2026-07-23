@@ -39,6 +39,14 @@ Match the user's request to one of the entries below. Each entry has the same sh
 
 ---
 
+**Sampling / ingestion volume / adaptive sampling** — trigger when the user mentions setting or changing a sample rate, dropping or keeping traces for a service/resource, reducing APM ingestion, onboarding a service to adaptive sampling, tuning agent priority/error/rare TPS, or diagnosing why a sampling rule isn't applying.
+
+**Immediately read** `.claude/skills/dd-apm/sampling/SKILL.md` now — do not proceed from memory or the summary above.
+
+> ⚠️ **Do NOT** tell users to set `DD_TRACE_SAMPLE_RATE` or `DD_TRACE_SAMPLING_RULES` before checking the Ingestion Control UI for existing remote rules. UI-authored rules (priority 2) and adaptive rules (priority 3) **override** local env vars (priority 4–6), so the env var change will silently appear to do nothing.
+
+---
+
 **Service rename / service remapping** — trigger when the user mentions renaming a service, collapsing multiple service names, stripping suffixes/prefixes, or cleaning up inferred services.
 
 **Immediately read** `.claude/skills/dd-apm/service-remapping/SKILL.md` now — do not proceed from memory.
@@ -57,7 +65,7 @@ When a request could plausibly fit more than one entry above, use these tiebreak
 | Single host, VM, or EC2 with no orchestrator | linux-ssi |
 | "Several services that should be one" | service-remapping — the sub-skill picks the rule type based on whether the duplicates are real instrumented services or inferred entities (DBs, queues, external APIs) |
 | "My service shows under the wrong name" | First check `DD_SERVICE` on the deploy. If correct and the name is still wrong → service-remapping. |
-| "Reduce APM volume / cost / noise" | No sub-skill yet. Ask whether the user means sampling (fewer ingested traces) or retention filters (less indexed data) before suggesting commands. |
+| "Reduce APM volume / cost / noise" | sampling — read `.claude/skills/dd-apm/sampling/SKILL.md` |
 
 ---
 
