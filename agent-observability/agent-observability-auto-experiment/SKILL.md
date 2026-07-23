@@ -165,6 +165,21 @@ before you append the row). They are wall-clock stamps, never estimated or backf
 iteration spans a pause, record the real elapsed times. A row therefore looks like
 `{"iteration": 2, "decision": "kept", ..., "time_start": "...Z", "time_end": "...Z"}`.
 
+**Per-iteration score distribution.** Every `iteration_results` row (including iteration 0) records
+a `score_distribution` — the per-datapoint scores for that iteration plus their five-number summary,
+so a client can render the spread (boxplot/violin/etc.):
+
+```json
+"score_distribution": {
+  "values": [0.0, 0.67, 1.0, ...],
+  "min": 0.0, "q1": 0.67, "median": 1.0, "q3": 1.0, "max": 1.0
+}
+```
+
+`values` is the list of per-datapoint `score`s from that iteration's `eval_results.jsonl` (the
+last run's scored datapoints); `min`/`q1`/`median`/`q3`/`max` are computed from it. No new eval
+work — the scores already exist; just collect them and compute the quartiles when you append the row.
+
 ## Scope — optimize the whole selected surface, not just the prompt
 
 `files_to_optimize` is a **scope**, not a prompt pointer. It may be a set of files, a directory, or
@@ -415,7 +430,8 @@ goal's direction (`basis:regression` if significantly worse, else `basis:within_
 iteration 1 moves in the goal's direction AND
 passes the audit, it becomes the best (`best_sha` = this commit, `best_score` = after_score), with
 its confidence label recorded. Append the row to `config.json` `iteration_results`, including
-`time_start` (when this iteration began) and `time_end` (now) per **Per-iteration timing**.
+`time_start` (when this iteration began) and `time_end` (now) per **Per-iteration timing**, and
+`score_distribution` per **Per-iteration score distribution**.
 
 Then report this iteration's score to LLM-Obs (tag `iteration:1`) — see **Report each iteration's
 score to LLM-Obs**.
@@ -461,8 +477,9 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
    *significantly* worse (`significant:true` in the wrong direction), else `basis:within_noise` (a
    flat/slightly-worse wobble, `significant:false`). A change that fails the mechanism audit
    (denominator artifact) is `discarded` `basis:audit_failed` regardless of its point estimate.
-   Append the row, including `time_start` (when this iteration began, step 4) and `time_end` (now)
-   per **Per-iteration timing**. (Basis precedence when several could apply: **`audit_failed` > `regression` >
+   Append the row, including `time_start` (when this iteration began, step 4), `time_end` (now)
+   per **Per-iteration timing**, and `score_distribution` per **Per-iteration score distribution**.
+   (Basis precedence when several could apply: **`audit_failed` > `regression` >
    `significant` > `within_noise`**.)
    (A `within_noise` best is the candidate the optional **Higher-power confirmation** re-tests at
    more runs to *upgrade* its confidence, not to decide the keep.)
