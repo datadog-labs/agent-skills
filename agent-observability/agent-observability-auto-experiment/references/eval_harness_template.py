@@ -18,10 +18,13 @@ Noise: `generate_output` (and an LLM judge) are stochastic, so a single run's me
 noisy estimate. The runner re-runs the WHOLE eval `AUTO_EXP_RUNS` times (default 3) and
 reports the mean-of-runs plus the across-run stdev. The loop feeds that stdev into the
 standard error of the difference of means, `SE_diff = √(sd_cand²/n + sd_best²/n)`, and keeps a
-change only if it is significant by a two-sample t-test (`|Δ|/SE_diff ≥ 2`, or `|Δ| ≥ min_delta`
-when SE_diff is 0) — NOT if it clears a raw-stdev band (raw stdev doesn't shrink with runs). Only
-the mean/stdev are computed here; the gate itself lives in the loop. See references/rubrics.md "Noise &
-keep/discard policy". Point at a specific data split with `AUTO_EXP_DATA` (default data.jsonl).
+change as best whenever its point estimate improves in the goal's direction (and passes the
+mechanism audit). The two-sample t-test (`|Δ|/SE_diff ≥ 2`, or `|Δ| ≥ min_delta` when SE_diff is 0)
+is a CONFIDENCE label — a higher-in-direction move that is only within noise is kept but flagged
+tentative, not discarded — NOT a keep gate, and NOT a raw-stdev band (raw stdev doesn't shrink with
+runs). Only the mean/stdev are computed here; the gate itself lives in the loop. See
+references/rubrics.md "Noise & keep/discard policy". Point at a specific data split with
+`AUTO_EXP_DATA` (default data.jsonl).
 """
 
 from __future__ import annotations
@@ -35,9 +38,10 @@ HERE = Path(__file__).parent
 DATA = Path(os.environ.get("AUTO_EXP_DATA") or (HERE / "data.jsonl"))
 RESULTS = HERE / "eval_results.jsonl"
 
-# How many times to re-run the full eval to estimate the noise floor. >=3 so the loop
-# can tell a real move from run-to-run wiggle. Same value across every iteration.
-RUNS = max(1, int(os.environ.get("AUTO_EXP_RUNS", "3")))
+# How many times to re-run the full eval to estimate the noise floor. Floor of 3 (the pilot value)
+# so the loop can tell a real move from run-to-run wiggle; the orchestrator owns the upper cap
+# (`max_runs`). Same value across every iteration.
+RUNS = max(3, int(os.environ.get("AUTO_EXP_RUNS", "3")))
 
 # The EVALUATOR text (config `evaluators` field), copied from .auto_experiment/config.json and used
 # verbatim as the judge rubric so scoring is reproducible. This is the `evaluators` field, NOT
@@ -67,15 +71,15 @@ def judge(input_text: str, output_text: str) -> "tuple[float, str]":
     carries a reference/expected output or a programmatic checker exists (exact match, F1, set
     overlap, a repo evaluator, a pipeline count), implement `judge` as that deterministic comparison
     — it removes the judge's variance entirely. Fall back to an LLM-as-judge ONLY for open-ended
-    quality with no ground truth (then bump AUTO_EXP_RUNS >= 5; the judge is the noisiest component).
+    quality with no ground truth (the judge is the noisiest component, so propose `max_runs >= 5` at
+    intake and let Step 2.4 derive `runs` within that ceiling — do NOT hard-set AUTO_EXP_RUNS here).
 
     TODO (LLM-judge fallback only): make a REAL judge call. Model selection (see rubrics.md):
       - If the config names a judge `model`, use it.
       - Else DEFAULT to the Claude model selected in the Claude Code session running this skill
-        (the same model as the main loop), called via ANTHROPIC_API_KEY / CLAUDE_API_KEY or an
-        internal Datadog/AI-gateway route.
-      - Only fall back to another provider (OPENAI_API_KEY) or a Datadog LLM Obs evaluator if the
-        session model cannot be reached.
+        (the same model as the main loop), called via the LLM credential the environment already
+        provides for this project (e.g. a standard Anthropic env var). Use the project's existing
+        LLM configuration; do not collect, log, or transmit credentials anywhere else.
     Pin the resolved model id so the judge is identical across every iteration.
     Score `output_text` against EVALUATORS (the config `evaluators` rubric, never `goal`). If no
     judge can be reached after genuinely trying, raise — do NOT return a fabricated number.
@@ -135,8 +139,10 @@ def main() -> None:
     mean = statistics.mean(run_means)
     stdev = statistics.pstdev(run_means) if len(run_means) > 1 else 0.0
     # `mean` is the before_score/after_score the loop reads; `stdev` feeds SE_diff for the
-    # two-sample t-test keep/discard gate (raw stdev is NOT itself the threshold). Both computed,
-    # never literals. `excluded` must be reported in the iteration's reasoning.
+    # two-sample t-test that LABELS a kept move's confidence (significant vs within_noise) — the
+    # keep decision itself is "point estimate improved in the goal's direction", not the t-test, and
+    # never the raw stdev. Both computed, never literals. `excluded` must be reported in the
+    # iteration's reasoning.
     print(json.dumps({
         "mean": mean, "stdev": stdev, "runs": RUNS,
         "scored": len(last_results), "excluded": excluded, "run_means": run_means,
