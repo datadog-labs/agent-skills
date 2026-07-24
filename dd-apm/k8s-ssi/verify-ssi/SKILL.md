@@ -143,7 +143,7 @@ ERROR: Config missing but `ddTraceConfigs` was configured — check it is presen
 ## Done
 
 Exit when ALL of the following are true:
-- [ ] Step 1: target pods appear in `instrumented-pods list`
+- [ ] Step 1: target pods have SSI init containers injected (`datadog-lib-<language>-init`)
 - [ ] Step 2: service appears in `tracers list` with active status
 - [ ] Step 3: tracer config matches what was set in `DatadogAgent`
 

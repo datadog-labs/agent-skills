@@ -98,12 +98,11 @@ Read this before investigating. It gives you the mental model to reason about no
 5. Application process loads the library automatically on startup via `LD_PRELOAD`
 
 **What each diagnostic layer can see:**
-- **pup** — sees what Datadog's backend received. Blind to cluster-side injection failures. If pup shows no instrumented pods, the problem is in the cluster.
+- **pup** — sees what Datadog's backend received. Blind to cluster-side injection failures. If pup shows no tracer telemetry for the service, the problem is in the cluster.
 - **kubectl** — sees cluster state. Blind to whether data reached Datadog. If kubectl shows the init container but pup shows no traces, the problem is post-injection.
 
 **What healthy looks like:**
-- `pup fleet instrumented-pods list` shows the pod with correct language/version
-- `pup fleet tracers list` shows the service as active
+- `pup fleet tracers list` shows the service as active, with the expected language
 - `kubectl get pod -o jsonpath='{.spec.initContainers[*].name}'` includes `datadog-lib-<language>-init`
 
 **Known silent failures — SSI produces no error when these occur:**
@@ -127,7 +126,7 @@ Run all seven simultaneously and surface them back to the user as the diagnostic
 
 ```bash
 pup traces search --query "service:<SERVICE_NAME>" --from 1h --limit 5
-pup fleet instrumented-pods list <CLUSTER_NAME>
+pup fleet tracers list --filter "service:<SERVICE_NAME>"
 pup apm troubleshooting list --hostname <NODE_HOSTNAME> --timeframe 1h
 pup apm service-library-config get --service-name <SERVICE_NAME> --env <ENV>
 kubectl get pod <POD_NAME> -n <APP_NAMESPACE> \
@@ -151,7 +150,7 @@ Your final response is the deliverable — not your investigation transcript. It
   - `pup apm troubleshooting list --hostname <NODE_HOSTNAME>` — surfaces injection errors Datadog received from the node
   - `pup apm service-library-config get --service-name <SERVICE_NAME> --env <ENV>` — shows the tracer's runtime SDK config
 
-  Run them if `pup` is available; recommend them for the user to run if it isn't. Do **not** substitute `pup fleet instrumented-pods list` or `pup traces search` for these — those are different checks and do not satisfy the runbook. If you don't know `<ENV>`, state your assumed value and run the command anyway.
+  Run them if `pup` is available; recommend them for the user to run if it isn't. Do **not** substitute `pup traces search` for these — it is a different check and does not satisfy the runbook. If you don't know `<ENV>`, state your assumed value and run the command anyway.
 - **Stopping at the first root cause.** When multiple services are affected, investigate and report each one independently — they may have different causes — and give per-service remediation.
 
 ---
@@ -164,10 +163,10 @@ Before investigating, explicitly state your ranked hypotheses based on triage ou
 
 | Triage signal | Strong hypothesis |
 |---|---|
-| Traces arriving + pod in instrumented list | Not a real problem — likely a UI filter or time window. Tell the user and stop |
-| No traces + pod NOT in instrumented list + no init container | Injection never happened — investigate: namespace targeting, webhook, pod-selector, opt-out annotation, pod not restarted |
-| No traces + pod NOT in instrumented list + init container present | Injection attempted but failed — check `pup apm troubleshooting list` for injection errors |
-| No traces + pod in instrumented list + init container present | Tracer injected but not reporting — investigate: connectivity, DD_SITE, API key |
+| Traces arriving + service in tracers list | Not a real problem — likely a UI filter or time window. Tell the user and stop |
+| No traces + service NOT in tracers list + no init container | Injection never happened — investigate: namespace targeting, webhook, pod-selector, opt-out annotation, pod not restarted |
+| No traces + service NOT in tracers list + init container present | Injection attempted but failed — check `pup apm troubleshooting list` for injection errors |
+| No traces + service in tracers list + init container present | Tracer reporting telemetry but traces not arriving — investigate: connectivity, DD_SITE, API key, trace sampling |
 | Pod events show CrashLoopBackOff or init container errors | Init container failure — check existing ddtrace, runtime version |
 | Traces arriving but wrong service/env | UST labels missing or misconfigured on the Deployment |
 
@@ -203,7 +202,7 @@ kubectl wait --for=condition=Ready pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --t
 ### Claude runs
 
 ```bash
-pup fleet instrumented-pods list <CLUSTER_NAME>
+pup fleet tracers list --filter "service:<SERVICE_NAME>"
 ```
 
 **Does the namespace carry the Admission Controller opt-in label?**
@@ -402,10 +401,10 @@ Re-run triage to confirm the fix worked:
 
 ```bash
 pup traces search --query "service:<SERVICE_NAME>" --from 1h --limit 5
-pup fleet instrumented-pods list <CLUSTER_NAME>
+pup fleet tracers list --filter "service:<SERVICE_NAME>"
 ```
 
-If traces are arriving and the pod is in the instrumented list — resolved. Automatically proceed to `onboarding-summary` now — do not ask the user for permission.
+If traces are arriving and the service appears in `pup fleet tracers list` — resolved. Automatically proceed to `onboarding-summary` now — do not ask the user for permission.
 
 ERROR: Still not resolved — return to Step 2 with the new triage data and form updated hypotheses.
 
