@@ -98,12 +98,11 @@ Read this before investigating. It gives you the mental model to reason about no
 5. Application process loads the library automatically on startup via `LD_PRELOAD`
 
 **What each diagnostic layer can see:**
-- **pup** — sees what Datadog's backend received. Blind to cluster-side injection failures. If pup shows no instrumented pods, the problem is in the cluster.
+- **pup** — sees what Datadog's backend received. Blind to cluster-side injection failures. If pup shows no tracer telemetry for the service, the tracer was either never injected (cluster-side — confirm with the kubectl init-container check) or injected but unable to report yet (connectivity, DD_SITE, API key, or telemetry lag). Don't assume the cluster; cross-check kubectl.
 - **kubectl** — sees cluster state. Blind to whether data reached Datadog. If kubectl shows the init container but pup shows no traces, the problem is post-injection.
 
 **What healthy looks like:**
-- `pup fleet instrumented-pods list` shows the pod with correct language/version
-- `pup fleet tracers list` shows the service as active
+- `pup fleet tracers list` shows the service as active, with the expected language
 - `kubectl get pod -o jsonpath='{.spec.initContainers[*].name}'` includes `datadog-lib-<language>-init`
 
 **Known silent failures — SSI produces no error when these occur:**
@@ -127,7 +126,7 @@ Run all seven simultaneously and surface them back to the user as the diagnostic
 
 ```bash
 pup traces search --query "service:<SERVICE_NAME>" --from 1h --limit 5
-pup fleet instrumented-pods list <CLUSTER_NAME>
+pup fleet tracers list --filter "service:<SERVICE_NAME>"
 pup apm troubleshooting list --hostname <NODE_HOSTNAME> --timeframe 1h
 pup apm service-library-config get --service-name <SERVICE_NAME> --env <ENV>
 kubectl get pod <POD_NAME> -n <APP_NAMESPACE> \
@@ -151,7 +150,7 @@ Your final response is the deliverable — not your investigation transcript. It
   - `pup apm troubleshooting list --hostname <NODE_HOSTNAME>` — surfaces injection errors Datadog received from the node
   - `pup apm service-library-config get --service-name <SERVICE_NAME> --env <ENV>` — shows the tracer's runtime SDK config
 
-  Run them if `pup` is available; recommend them for the user to run if it isn't. Do **not** substitute `pup fleet instrumented-pods list` or `pup traces search` for these — those are different checks and do not satisfy the runbook. If you don't know `<ENV>`, state your assumed value and run the command anyway.
+  Run them if `pup` is available; recommend them for the user to run if it isn't. Do **not** substitute `pup traces search` for these — it is a different check and does not satisfy the runbook. If you don't know `<ENV>`, state your assumed value and run the command anyway.
 - **Stopping at the first root cause.** When multiple services are affected, investigate and report each one independently — they may have different causes — and give per-service remediation.
 
 ---
@@ -164,10 +163,10 @@ Before investigating, explicitly state your ranked hypotheses based on triage ou
 
 | Triage signal | Strong hypothesis |
 |---|---|
-| Traces arriving + pod in instrumented list | Not a real problem — likely a UI filter or time window. Tell the user and stop |
-| No traces + pod NOT in instrumented list + no init container | Injection never happened — investigate: namespace targeting, webhook, pod-selector, opt-out annotation, pod not restarted |
-| No traces + pod NOT in instrumented list + init container present | Injection attempted but failed — check `pup apm troubleshooting list` for injection errors |
-| No traces + pod in instrumented list + init container present | Tracer injected but not reporting — investigate: connectivity, DD_SITE, API key |
+| Traces arriving + service in tracers list | Both signals are service-scoped, so on a partial rollout they can be positive while the specific pod the user named is uninstrumented. First confirm **this** pod is instrumented (init container present in the triage kubectl check, or the `admission.datadoghq.com/status: injected` annotation). If it is, it's likely a UI filter or time window — tell the user and stop |
+| No traces + service NOT in tracers list + no init container | Injection never happened — investigate: namespace targeting, webhook, pod-selector, opt-out annotation, pod not restarted |
+| No traces + service NOT in tracers list + init container present | Tracer injected but not reporting — `tracers list` is telemetry-derived, so a correctly injected pod is absent when it can't report or hasn't yet. Investigate: Agent connectivity, DD_SITE mismatch, API key, blocked egress, or no traffic / telemetry lag. (A true injection failure shows up as an *absent* init container or as init-container errors — the CrashLoopBackOff row below — not here.) |
+| No traces + service in tracers list + init container present | Tracer is reporting telemetry (so Agent connectivity, API key, and DD_SITE are working) but spans aren't arriving — investigate trace-specific causes: sampling rules, an ingestion/retention filter, or the trace-agent receiver |
 | Pod events show CrashLoopBackOff or init container errors | Init container failure — check existing ddtrace, runtime version |
 | Traces arriving but wrong service/env | UST labels missing or misconfigured on the Deployment |
 
@@ -203,8 +202,15 @@ kubectl wait --for=condition=Ready pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --t
 ### Claude runs
 
 ```bash
-pup fleet instrumented-pods list <CLUSTER_NAME>
+# Primary — authoritative and immediate: confirm the restarted pod now carries the init container
+kubectl get pod <POD_NAME> -n <APP_NAMESPACE> \
+  -o jsonpath='{.spec.initContainers[*].name}'
+# Secondary — eventual: the service reappears here once the restarted pod reports telemetry
+# (subject to a propagation delay of a minute or more, and only if the pod serves traffic)
+pup fleet tracers list --filter "service:<SERVICE_NAME>"
 ```
+
+The kubectl init-container check is the authoritative post-restart signal — the pod is injected the moment that init container appears. `tracers list` is telemetry-derived and lags, so don't read an empty result immediately after a restart as "injection didn't happen."
 
 **Does the namespace carry the Admission Controller opt-in label?**
 When the Admission Controller runs with `mutateUnlabelled: false`, injection happens only in namespaces explicitly labeled `admission.datadoghq.com/mutate-pods=true`. A namespace missing this label silently has SSI skipped for every pod in it — a common cause when most cluster services are instrumented but one namespace's services aren't.
@@ -402,10 +408,10 @@ Re-run triage to confirm the fix worked:
 
 ```bash
 pup traces search --query "service:<SERVICE_NAME>" --from 1h --limit 5
-pup fleet instrumented-pods list <CLUSTER_NAME>
+pup fleet tracers list --filter "service:<SERVICE_NAME>"
 ```
 
-If traces are arriving and the pod is in the instrumented list — resolved. Automatically proceed to `onboarding-summary` now — do not ask the user for permission.
+If traces are arriving and the service appears in `pup fleet tracers list` — resolved. Automatically proceed to `onboarding-summary` now — do not ask the user for permission.
 
 ERROR: Still not resolved — return to Step 2 with the new triage data and form updated hypotheses.
 
