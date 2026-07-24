@@ -78,10 +78,6 @@ kubectl get datadogagent datadog -n <AGENT_NAMESPACE> \
 kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> \
   -o jsonpath='{.items[0].spec.initContainers[*].name}'
 
-# Pod confirmed instrumented — init containers in pod spec
-kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> \
-  -o jsonpath='{.items[0].spec.initContainers[*].name}'
-
 # Service visible and traced in APM
 DD_SITE=<DD_SITE> pup apm services list --env <ENV> --from 1h
 
