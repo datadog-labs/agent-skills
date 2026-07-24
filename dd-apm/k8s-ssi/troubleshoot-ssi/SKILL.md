@@ -114,7 +114,7 @@ Read this before investigating. It gives you the mental model to reason about no
 
 **Reasoning shortcuts:**
 - No init container → webhook didn't fire → check: namespace targeting, pod-selector, opt-out annotation, webhook registration, pod not restarted
-- Init container present + no traces → injection attempted but failed or tracer not reporting → check: existing ddtrace, runtime version, Agent connectivity, DD_SITE mismatch
+- Init container present + no traces → check whether the service is in `pup fleet tracers list`: **absent** → tracer not reporting (Agent connectivity, DD_SITE mismatch, API key, blocked egress; or the tracer never loaded — existing ddtrace/OTel, unsupported runtime); **present** → reporting telemetry but spans not arriving (no traffic, sampling, ingestion/retention filter)
 
 ---
 
@@ -164,9 +164,9 @@ Before investigating, explicitly state your ranked hypotheses based on triage ou
 | Triage signal | Strong hypothesis |
 |---|---|
 | Traces arriving + service in tracers list | Both signals are service-scoped, so on a partial rollout they can be positive while the specific pod the user named is uninstrumented. First confirm **this** pod is instrumented (init container present in the triage kubectl check, or the `admission.datadoghq.com/status: injected` annotation). If it is, it's likely a UI filter or time window — tell the user and stop |
-| No traces + service NOT in tracers list + no init container | Injection never happened — investigate: namespace targeting, webhook, pod-selector, opt-out annotation, pod not restarted |
-| No traces + service NOT in tracers list + init container present | Tracer injected but not reporting — `tracers list` is telemetry-derived, so a correctly injected pod is absent when it can't report or hasn't yet. Investigate: Agent connectivity, DD_SITE mismatch, API key, blocked egress, or no traffic / telemetry lag. (A true injection failure shows up as an *absent* init container or as init-container errors — the CrashLoopBackOff row below — not here.) |
-| No traces + service in tracers list + init container present | Tracer is reporting telemetry (so Agent connectivity, API key, and DD_SITE are working) but spans aren't arriving — investigate trace-specific causes: sampling rules, an ingestion/retention filter, or the trace-agent receiver |
+| No traces + no init container on this pod | Injection never happened for this pod — investigate: namespace targeting, webhook, pod-selector, opt-out annotation, pod not restarted (partial rollout). The per-pod init-container check is authoritative: on a partial rollout the service can still appear in `tracers list` from other pods, so a service-scoped positive must not mask this pod being uninstrumented |
+| No traces + service NOT in tracers list + init container present | Tracer injected but not reporting — `tracers list` is telemetry-derived, so a correctly injected pod is absent when it can't report or hasn't yet. Investigate: Agent connectivity, DD_SITE mismatch, API key, blocked egress, or telemetry lag. (A true injection failure shows up as an *absent* init container or as init-container errors — the CrashLoopBackOff row below — not here.) |
+| No traces + service in tracers list + init container present | Tracer is reporting telemetry (so Agent connectivity, API key, and DD_SITE are working) but spans aren't arriving — investigate trace-specific causes: no traffic / the app isn't serving requests yet, sampling rules, an ingestion/retention filter, or the trace-agent receiver |
 | Pod events show CrashLoopBackOff or init container errors | Init container failure — check existing ddtrace, runtime version |
 | Traces arriving but wrong service/env | UST labels missing or misconfigured on the Deployment |
 
@@ -202,9 +202,10 @@ kubectl wait --for=condition=Ready pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --t
 ### Claude runs
 
 ```bash
-# Primary — authoritative and immediate: confirm the restarted pod now carries the init container
-kubectl get pod <POD_NAME> -n <APP_NAMESPACE> \
-  -o jsonpath='{.spec.initContainers[*].name}'
+# Primary — authoritative and immediate: confirm the freshly-restarted pods carry the init container.
+# Label-scoped, not by <POD_NAME>: a rolling restart replaces the old pod with new-suffixed ones.
+kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> \
+  -o jsonpath='{.items[0].spec.initContainers[*].name}'
 # Secondary — eventual: the service reappears here once the restarted pod reports telemetry
 # (subject to a propagation delay of a minute or more, and only if the pod serves traffic)
 pup fleet tracers list --filter "service:<SERVICE_NAME>"
@@ -411,9 +412,9 @@ pup traces search --query "service:<SERVICE_NAME>" --from 1h --limit 5
 pup fleet tracers list --filter "service:<SERVICE_NAME>"
 ```
 
-If traces are arriving and the service appears in `pup fleet tracers list` — resolved. Automatically proceed to `onboarding-summary` now — do not ask the user for permission.
+If traces are arriving — resolved (the service may take a minute to reappear in `pup fleet tracers list`; an empty tracers list immediately after the restart is expected telemetry lag, not a failure). Automatically proceed to `onboarding-summary` now — do not ask the user for permission.
 
-ERROR: Still not resolved — return to Step 2 with the new triage data and form updated hypotheses.
+ERROR: No traces arriving — return to Step 2 with the new triage data and form updated hypotheses.
 
 ---
 
