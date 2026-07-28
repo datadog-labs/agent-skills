@@ -100,7 +100,7 @@ Fill in every value from live command output. Do not leave any placeholder unfil
 | Datadog Agent | `<N>` pod(s) Running in `<AGENT_NAMESPACE>` | OK |
 | SSI enabled | Targeting namespace `<APP_NAMESPACE>`, language `<LANGUAGE>` v`<MAJOR_VERSION>` | OK |
 | Init container injected | `datadog-lib-<language>-init` present in pod spec | OK |
-| Tracer reporting | Service `<SERVICE_NAME>`, `<LANGUAGE>`, tracer v`<TRACER_VERSION>` | OK |
+| Tracer reporting | Service `<SERVICE_NAME>` appears in `pup apm services list` with `isTraced: true` | OK |
 | APM service visible | `<SERVICE_NAME>` in env `<ENV>` | OK |
 | Traces arriving | `<N>` trace(s) found in the last hour | OK |
 
