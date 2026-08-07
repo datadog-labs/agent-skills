@@ -15,7 +15,7 @@ Public docs:
 
 Use Connections guidance when:
 
-- An Action Catalog action has a `connectionId` or Connection field.
+- An Action Catalog action requires authentication supplied by a `connectionId` or Connection field.
 - The app calls a generic HTTP action with custom authentication.
 - The app needs credentials for an integration that does not inherit auth from a Datadog integration tile.
 - Different apps or workflows should use different credential scopes.
@@ -28,12 +28,14 @@ Some integrations, such as GitHub, Jira, Microsoft Teams, Opsgenie, PagerDuty, S
 Before telling an agent to wire an action:
 
 - Identify which Action Catalog action will be used.
-- Check whether the action requires a connection, supports integration tile auth, or can run without credentials.
-- Find or create the relevant connection in Datadog Connections.
+- Check whether the action requires connection-managed authentication, supports integration tile auth, or can run without credentials.
+- Omit `connectionId` by default for the generic HTTP action. Include it only when an existing HTTP connection contains authentication the request needs.
+- If connection-managed authentication is required, find or create the relevant connection in Datadog Connections.
 - Confirm the connection is scoped with only the permissions needed for the app or workflow.
 - Copy the Connection ID from the connection details when the app implementation needs a stable ID.
 
 Connections are managed in Datadog at `https://app.datadoghq.com/actions/connections`.
+Most users will not already have a suitable HTTP connection because it must be created manually in the Datadog UI and its ID copied into the app. Do not invent or require a connection for unauthenticated requests.
 
 ## Security Guidance
 

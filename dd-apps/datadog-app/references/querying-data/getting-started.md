@@ -79,6 +79,8 @@ Backend DDSQL should use fixed SQL templates, allowlisted frontend inputs, clamp
 
 Backend functions can call Action Catalog actions through `@datadog/action-catalog`. The catalog provides reusable, typed actions for Datadog APIs, infrastructure providers, SaaS tools, generic HTTP, and other integrations, so app code does not need to hand-roll API clients for supported workflows.
 
+For every external network call, use the generic HTTP action from `@datadog/action-catalog/http/http` in a backend function. Never call `fetch`, Node.js networking APIs, or third-party HTTP clients directly. The HTTP action's `connectionId` is optional: omit it by default, and include it only when an existing manually-created Datadog HTTP connection stores authentication the request needs. See `../external-http.md` for the required pattern.
+
 Use Action Catalog actions for:
 
 - Mutations: create, update, delete, trigger, invoke, approve, assign, resolve, send, or start operations.

@@ -6,7 +6,7 @@ Use this when a Datadog App backend function needs to trigger a Datadog Workflow
 
 - Use a backend function, not frontend code. Backend functions can call `@datadog/action-catalog`.
 - Use the generic HTTP action from `@datadog/action-catalog/http/http`.
-- The HTTP action requires a connection ID for an HTTP connection configured in your Datadog org. Create or find a generic HTTP connection at `https://app.datadoghq.com/actions/connections` and copy its ID.
+- This example uses a connection because the Workflow API request needs its stored authentication. Create or find a generic HTTP connection at `https://app.datadoghq.com/actions/connections` and copy its ID. The generic HTTP action itself does not require a connection for requests that do not need connection-managed authentication.
 - Keep the app's configured Datadog site aligned with the Workflow API host. US1 apps use `https://api.datadoghq.com`.
 - The target workflow must be published and must include an API trigger. In the workflow spec, look for a trigger object containing `apiTrigger`.
 - Workflow inputs must match the workflow input schema exactly.
@@ -45,7 +45,7 @@ Do not copy browser UI curl cookies, CSRF tokens, or `_authentication_token` val
 
 Inputs go under `meta.payload`; do not send the workflow inputs as the raw JSON body.
 
-Replace `YOUR_HTTP_CONNECTION_ID` with the ID of an HTTP connection from your Datadog org (`https://app.datadoghq.com/actions/connections`).
+Replace `YOUR_HTTP_CONNECTION_ID` with the ID of an existing HTTP connection whose stored authentication can call the Workflow API. A human must create the connection in the Datadog UI (`https://app.datadoghq.com/actions/connections`) and copy its ID into the app.
 
 ```ts
 import { request } from "@datadog/action-catalog/http/http";
