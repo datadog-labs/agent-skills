@@ -68,7 +68,7 @@ hol-guard receipts
 hol-guard events
 ```
 
-Only approve a queued request after checking the Datadog target and requested scope. A Guard receipt is evidence about the local agent execution boundary; it is not a substitute for Datadog Audit Trail or other Datadog-native audit records.
+Only approve a queued request after checking both the Guard reason and the Datadog target/scope. A Guard receipt is evidence about the local agent execution boundary; it is not a substitute for Datadog Audit Trail or other Datadog-native audit records.
 
 ## Package and skill verification
 
@@ -85,5 +85,5 @@ Do not describe a clean package scan as proof that a future Datadog mutation is 
 ## References
 
 - HOL Guard: https://github.com/hashgraph-online/hol-guard
-- HOL Guard Agent Skill: https://ggithub.com/hashgraph-online/hol-guard-plugin/tree/main/skills/hol-guard
+- HOL Guard Agent Skill: https://github.com/hashgraph-online/hol-guard-plugin/tree/main/skills/hol-guard
 - Datadog Agent Skills: https://github.com/datadog-labs/agent-skills
