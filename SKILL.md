@@ -14,16 +14,21 @@ Essential Datadog skills for AI agents.
 | Skill | Description |
 |-------|-------------|
 | **dd-account-setup** | Ensure an authenticated Datadog account with a valid API key on the right region; validates keys, fixes wrong-region 403s, signs in or creates an account |
-| **dd-pup** | Primary CLI - all pup commands, auth, PATH setup |
-| **dd-monitors** | Create, manage, mute monitors and alerts |
-| **dd-logs** | Search logs, pipelines, archives |
 | **dd-apm** | Traces, services, performance analysis |
-| **dd-docs** | Search Datadog documentation |
-| **dd-llmo** | LLM Observability traces, experiments, evals |
-| **dd-browser-sdk** | Browser SDK setup, RUM, Logs, Session Replay, version migration |
-| **dd-software-delivery** | CI/CD workflow skills — unblock PR, triage flaky tests |
 | **dd-apps**              | Build Datadog Apps — scaffold, run, upload, publish, CI/CD |
+| **dd-aws-integration** | Connect an AWS account to Datadog with Terraform - cross-account IAM role, metrics and resource collection |
+| **dd-azure-integration** | Connect Azure subscriptions or management groups to Datadog with Terraform - Entra app registration, Monitoring Reader |
+| **dd-browser-sdk** | Browser SDK setup, RUM, Logs, Session Replay, version migration |
+| **dd-docs** | Search Datadog documentation |
+| **dd-gcp-integration** | Connect GCP projects or folders to Datadog with Terraform - keyless service-account impersonation |
+| **dd-llmo** | LLM Observability traces, experiments, evals |
+| **dd-logs** | Search logs, pipelines, archives |
+| **dd-monitors** | Create, manage, mute monitors and alerts |
+| **dd-oci-integration** | Connect an Oracle Cloud tenancy to Datadog with Terraform - Datadog's official OCI module |
 | **dd-product-recommender** | Recommend the right Datadog products for a codebase and/or goal (recommendation only) |
+| **dd-pup** | Primary CLI - all pup commands, auth, PATH setup |
+| **dd-software-delivery** | CI/CD workflow skills — unblock PR, triage flaky tests |
+| **dd-instrument-rum** | Instrument browser apps with Datadog Browser RUM — React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla |
 
 ## Install
 

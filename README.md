@@ -17,6 +17,7 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 | **dd-software-delivery** | CI/CD workflow skills — unblock PR pipelines, triage flaky tests (MCP + pup) |
 | **dd-apps** | Build Datadog Apps — scaffold, run locally, upload, publish, CI/CD, DDSQL data access |
 | **dd-product-recommender** | Recommend the right Datadog products for a codebase and/or goal (recommendation only) |
+| **dd-instrument-rum** | Instrument browser apps with Datadog Browser RUM — React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla |
 
 ## Install
 
