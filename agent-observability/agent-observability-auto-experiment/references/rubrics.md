@@ -116,6 +116,11 @@ answer / generation span). For each trace, locate the scoreable target span, the
 - The mean is computed over **scoreable datapoints only** — excluded traces are out of both the
   numerator AND the denominator. **Report how many traces you excluded and why** in `reasoning`;
   never exclude a scoreable datapoint to inflate the score.
+- **For an `annotation_queue_id` source, three more exclusions apply before any of the above**, all
+  for the same reason — the datapoint has no ground truth to score against: interactions still
+  **pending** review, interactions whose mapped `expected_output` label was left **empty** (`""` for
+  text, `[]` for categorical), and interactions whose reviewers **disagree** on that label. Count
+  each group and report it; never resolve a disagreement yourself to keep the datapoint.
 
 **Held-out split — hill-climb on `val`, prove on `test`.** After building the scoreable set, split
 it **once, deterministically** (e.g. by a hash of the datapoint id, ~70% / 30%) into **two Datadog
@@ -282,6 +287,12 @@ it instead of an LLM judge** — it removes an entire layer of variance and can'
 - If datapoints carry a **reference/expected output** (dataset `expected_output`, gold label), score
   with an exact/programmatic check (exact match, F1, set overlap, a repo evaluator, `total_examples`
   from a pipeline, etc.) — deterministic, `stdev ≈ 0` across runs from the judge side.
+- **An annotation queue's labels are ground truth**, and the best kind: a human already made the
+  call. When the source is an `annotation_queue_id` whose `annotation_label_map` names an
+  `expected_output` label, score against that label programmatically and do **not** add an LLM judge
+  on top — a judge re-deciding a question a reviewer answered adds variance and can only disagree
+  with the humans. A boolean/categorical label scores as an exact check; a free-text label is a
+  reference output like any other. Only a queue with no ground-truth label falls back to a judge.
 - Use an **LLM-as-judge only when no ground truth exists** (open-ended quality). Then treat it as
   the noisiest component: **propose `max_runs ≥ 5` at intake** (so Step 2.4 can derive a `runs` high
   enough to resolve the judge's noise — the default ceiling of 3 is often too low for an LLM judge),
