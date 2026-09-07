@@ -45,8 +45,9 @@ they are the thing being fitted to.
 - **Credentials are used, never harvested.** The judge call uses whichever LLM client is already
   configured (see **The judge runner**). Do not enumerate, print, log, commit or transmit any
   credential value. If no LLM is reachable, STOP and report — never work around a missing key.
-- **Nothing is published live.** The final evaluator is written with `enabled: false` and only after
-  an explicit user confirmation. This skill never turns an evaluator on; the user does, in the UI.
+- **The evaluator is created, never switched on.** Every run ends by writing a real evaluator to the
+  user's org with `enabled: false`, after confirming its name and target. It scores nothing until the
+  user enables it in the UI. This skill never turns an evaluator on.
   It also never writes annotations back into the queue (see the rubric's publish gate).
 
 ## Inputs
@@ -67,7 +68,7 @@ must-ask and defaulted alike, is shown back to the user for validation before th
 | `runs` | judge passes per row per iteration; majority vote is the prediction, disagreement is measured (clamp 1–7, odd numbers only) | _default_ **3** |
 | `eval_scope` | `span` \| `trace` \| `session` — what the published evaluator will grade. **Decided in Phase 2, not guessed**: it constrains what evidence the judge may use. | derived in Phase 2, confirmed |
 | `domain_notes` | list of product facts an agent cannot infer from the trace (what a term of art means, what "good" looks like here). Carried verbatim into every judge prompt and every sub-agent briefing. | _default_ `[]`, **but ask explicitly** |
-| `publish` | whether to write the winning judge to Datadog as a disabled evaluator draft, and under what `eval_name` | **must ask**, at the end, after the score is known |
+| `eval_name` | the name the winning judge is created under in Datadog. **Whether to create it is not a question — every run ends with an evaluator** (see Phase 8); the name, and the target it is confirmed against, are. | **must ask**, at the end, after the score is known |
 
 ### Intake gate — before anything else
 
@@ -359,27 +360,51 @@ the loop from anchoring on dead ideas and keeps your context from bloating.
 3. **State what the judge still gets wrong**, in the humans' terms. A user deciding whether to trust
    an evaluator needs its failure modes more than its headline.
 
-## Phase 8 — Publish (only on an explicit yes)
+## Phase 8 — Create the evaluator in Datadog (the run's deliverable)
 
-Ask, at this point and not before, whether to publish. If yes:
+**A run does not end with a report. It ends with an evaluator the user can open in the LLM
+Observability Evaluations list** — `https://<site>/llm/evaluations` (`app.datadoghq.com` on us1,
+`dd.datad0g.com` on staging, and so on for other sites). A fitted judge that only exists in
+`prompts/v3.md` is a measurement, not a deliverable: nobody can run it, review it, or enable it.
+
+What is **not** optional: creating it, and creating it `enabled: false`. What the user decides: the
+`eval_name`, the target (`ml_app`, `eval_scope`, `filter`, `sampling_percentage`), and — later, in
+the UI, on their own — whether to switch it on.
 
 1. **Translate the local judge into a managed evaluator.** The prompt's payload sections become
    `{{variable}}` placeholders — the ones **verified in Phase 2**, at the `eval_scope` chosen there.
    Anything the local judge saw that no placeholder can supply must be dropped, and the drop must be
    reported: it is a real fidelity gap between the score you measured and the evaluator you shipped.
-2. Call `create_or_update_llmobs_evaluator` with `enabled: false`, `eval_name` from the user,
-   `application_name` = `ml_app`, `eval_scope`, the `filter` (if the evidence map selects a specific
-   span), `integration_provider` + `model_name` for the judge, `temperature: 0`,
+   Trace-scoped templates address other spans of the same trace with a selector, e.g.
+   `{{spans[meta.span.kind:llm].meta.input.messages[*].content}}` or
+   `{{spans[meta.span.name:my_span].meta.output.value}}` — verify the exact syntax against a real
+   evaluator in the org (Phase 2) rather than trusting this line.
+2. **Confirm the target with the user, then write it.** Show the resolved `eval_name`,
+   `application_name`, `eval_scope`, `filter`, `model_name`, `sampling_percentage` and the rendered
+   `prompt_template`, and let them correct any of it. Then call
+   `create_or_update_llmobs_evaluator` with `enabled: false`, `temperature: 0`,
    `parsing_type: "structured_output"`, an `output_schema` matching the label's type, and
    `assessment_criteria` (`pass_when` for a boolean, `pass_values` for a categorical,
    `min_threshold`/`max_threshold` for a numeric). **Updating an existing name is a full replace** —
    `get_llmobs_evaluator` first and re-send every field you intend to keep.
-3. **Never set `enabled: true`.** Tell the user the draft exists, where it is, and that enabling it
-   is theirs to do — with `sampling_percentage` low at first.
-4. **Verify the write** by reading the evaluator back, not by the call's exit status.
-5. **Recommend the fidelity check**: after they enable it on a small sample, compare its verdicts on
+3. **Never set `enabled: true`.** Enabling is the user's call, in the UI, ideally at a low
+   `sampling_percentage` first.
+4. **Verify it is findable, not just written.** Read it back with `get_llmobs_evaluator` **and**
+   confirm it appears in `list_llmobs_evals_by_ml_app` (or `list_llmobs_evals`) — that listing is
+   what backs the Evaluations page. Never verify by the write call's exit status. Then give the user
+   the URL: `https://<site>/llm/evaluations`, plus the `eval_name` to look for and the fact that it
+   is disabled.
+5. **Record it in `config.json`** (`published_evaluator`: name, ml_app, eval_scope, enabled, the
+   verified-listing result, and the deployable score it was measured at) and name it in `report.md`.
+   The report's headline must be the **deployable** score, not the fitted one.
+6. **Recommend the fidelity check**: after they enable it on a small sample, compare its verdicts on
    the *already labelled* rows against the human labels one more time. The local score was measured
    on a renderer you controlled; the deployed score is the one that matters.
+
+**If the run cannot produce an evaluator, say so as a failure of the run, not as a skipped step.** A
+judge that scored below the constant-class baseline, a corpus that failed the minimum-labels gate, or
+evidence no `eval_scope` can reach are all legitimate reasons to stop without writing — and each one
+must be reported as *"no evaluator was created, because …"*, with the blocker named.
 
 The pending interactions in the queue are **not** annotated by this skill. Predicting a label is not
 the same as recording that a human agreed with it, and writing predictions into a human review queue

@@ -101,8 +101,15 @@ Before keeping a candidate, diff its per-row correctness against the best's:
 
 ## 9. Publish gate (`_publish_gate`)
 
-- Publish only after an explicit user yes, at the end, with the score in hand.
+- **The run's deliverable is an evaluator in the user's org, findable at `<site>/llm/evaluations`.**
+  Ending with a report and a prompt file on disk is an unfinished run. Creating it is not gated on a
+  yes; its *name and target* are confirmed with the user, and its being switched on is theirs alone.
 - Always `enabled: false`. This skill never turns an evaluator on.
+- The only sanctioned reasons to finish without one: the minimum-labels gate failed, the judge never
+  beat the constant-class baseline, or no `eval_scope` can reach the evidence the label needs. Each
+  is reported as "no evaluator was created, because …" — never as silence.
+- **Confirm it is listed, not merely written**: `list_llmobs_evals_by_ml_app` is what backs the
+  Evaluations page, so a write that does not show up there has not been delivered.
 - `create_or_update_llmobs_evaluator` is a **full replace**. Read the existing config back first and
   re-send every field to keep, or the update silently clobbers prompt, schema and sampling.
 - Verify by reading the evaluator back, not by the call's exit status.
