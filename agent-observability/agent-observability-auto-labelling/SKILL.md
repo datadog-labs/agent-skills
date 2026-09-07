@@ -389,8 +389,12 @@ the UI, on their own — whether to switch it on.
    `get_llmobs_evaluator` first and re-send every field you intend to keep.
 3. **Never set `enabled: true`.** Enabling is the user's call, in the UI, ideally at a low
    `sampling_percentage` first.
-3b. **Some sites refuse API creation outright — have the fallback ready.** Verified on
-   `datad0g.com`: `create_or_update_llmobs_evaluator` answers
+3b. **Some sites refuse API creation outright — have the fallback ready.** This is
+   **site-dependent, and the difference is a rollout, not a capability**: the identical call with
+   the identical payload was *accepted* on a us5 prod org and *refused* on `datad0g.com`, which runs
+   ahead and has versioned custom evaluators. So probe, do not assume — and expect the refusal to
+   reach more sites over time rather than fewer. On the refusing side,
+   `create_or_update_llmobs_evaluator` answers
    **`400 "custom evaluator \"<name>\" is versioned and can only be edited from the LLM
    Observability UI"`**, for a name that does not exist yet and for any other name, so it is a
    property of the site rather than a collision. When that happens: confirm nothing partial landed
