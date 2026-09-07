@@ -389,6 +389,26 @@ the UI, on their own — whether to switch it on.
    `get_llmobs_evaluator` first and re-send every field you intend to keep.
 3. **Never set `enabled: true`.** Enabling is the user's call, in the UI, ideally at a low
    `sampling_percentage` first.
+3b. **Some sites refuse API creation outright — have the fallback ready.** Verified on
+   `datad0g.com`: `create_or_update_llmobs_evaluator` answers
+   **`400 "custom evaluator \"<name>\" is versioned and can only be edited from the LLM
+   Observability UI"`**, for a name that does not exist yet and for any other name, so it is a
+   property of the site rather than a collision. When that happens: confirm nothing partial landed
+   (`get_llmobs_evaluator` 404s, the listing is unchanged), then **write the full config to
+   `.auto_labelling/evaluator_config.json`** — every field of step 2, ready to paste into
+   *Evaluations → New Evaluator* — and report it as *"no evaluator was created, because the API
+   refuses it on this site; here is the UI-ready config"*. That is a delivered fallback, not a
+   silent skip, and the run's own state file must record the blocker.
+3c. **`output_schema` is a bare JSON Schema on write.** The `{name, schema, strict}` wrapper that
+   `get_llmobs_evaluator` *returns* is rejected on write as `invalid BYOP output schema`. Do not
+   round-trip a read straight back into a write without unwrapping it.
+3d. **Pick the judge provider from what actually works in the org, not from the enum.** The
+   `integration_provider` enum does not include every provider real evaluators use (an existing
+   evaluator was on `datadog`/`gpt-5.4-mini`, which the enum has no value for), and an org can carry
+   a *configured but broken* integration — one org showed OpenAI answering 401 inside another
+   evaluator's error field. Read an existing evaluator's provider, and if the model the judge was
+   fitted on is not reachable, say so and leave the choice to the user rather than guessing a model
+   the org cannot call.
 4. **Verify it is findable, not just written.** Read it back with `get_llmobs_evaluator` **and**
    confirm it appears in `list_llmobs_evals_by_ml_app` (or `list_llmobs_evals`) — that listing is
    what backs the Evaluations page. Never verify by the write call's exit status. Then give the user
