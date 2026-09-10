@@ -81,7 +81,7 @@ npx skills add datadog-labs/agent-skills \
   --skill agent-observability-eval-pipeline \
   --skill agent-observability-session-classify \
   --skill agent-observability-auto-experiment \
-  --skill agent-observability-auto-labelling \
+  --skill agent-observability-build-eval-from-annotations \
   --skill agent-observability-replay-trace \
   --skill k9-ownership-byod-setup \
   --full-depth -y
@@ -100,7 +100,7 @@ The `agent-observability` directory contains nine skills for working with Agent 
 | `agent-observability-eval-pipeline` | Eight-phase pipeline: classify → RCA → bootstrap evaluators → create dataset → publish → generate experiment → run → analyze. Stop early with `--stop-after`. |
 | `agent-observability-session-classify` | Classify whether user intent was satisfied in a session (trace + RUM signals) |
 | `agent-observability-auto-experiment` | Local hill-climb: baseline-eval a prompt/file against LLM-Obs data, make one focused change, re-score with the same harness, keep it only if it beats the best, repeat |
-| `agent-observability-auto-labelling` | Fit an evaluator to human labels: read an annotation queue, find where the labelled property lives in the trace, draft an LLM judge, score it against the existing labels, hill-climb its errors, publish the winner as a disabled evaluator draft |
+| `agent-observability-build-eval-from-annotations` | Build an evaluator from an annotation queue's human labels: find where the labelled property lives in the trace, draft an LLM judge, score it against the existing labels, hill-climb its errors, publish the winner as a disabled evaluator |
 | `agent-observability-replay-trace` | Iterate on one trace: re-run it against local code, diff old vs new output, loop until satisfied (CLI, no server; edit → replay → diff) |
 
 **Eval pipeline flow:**
@@ -120,7 +120,7 @@ Use `agent-observability-eval-pipeline` to run all three steps in sequence with 
 Use `agent-observability-session-classify` independently to evaluate whether individual assistant sessions
 satisfied user intent, combining Agent Observability trace data with RUM behavioral signals.
 
-Use `agent-observability-auto-labelling` when an annotation queue already holds human labels: it fits an
+Use `agent-observability-build-eval-from-annotations` when an annotation queue already holds human labels: it fits an
 LLM judge to those labels, scores it against them, iterates on its errors, and publishes the winner as a
 disabled evaluator draft. `agent-observability-eval-bootstrap` is the no-labels counterpart — it proposes
 evaluators from trace inspection alone, with nothing to measure them against.

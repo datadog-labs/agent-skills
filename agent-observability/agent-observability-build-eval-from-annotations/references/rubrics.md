@@ -1,4 +1,4 @@
-# auto-labelling rubrics (non-negotiable)
+# build-eval-from-annotations rubrics (non-negotiable)
 
 The SKILL.md file is the control loop. This file is the law. Read it in full before iteration 1.
 
@@ -10,6 +10,12 @@ The SKILL.md file is the control loop. This file is the law. Read it in full bef
   say why — not a licence to change the corpus. Removing inconvenient rows is how a fitted judge
   gets a score nobody can reproduce.
 - Never fabricate a label for a pending row to enlarge the corpus. Pending means unlabelled.
+- **A dataset's `expected_output` is not ground truth.** Only the human's `value` in the queue is.
+  They can and do disagree: on a live queue, a row whose `output` and `expected_output` were
+  *identical* was marked **fail** by the reviewer on two of three labels — the dataset was simply
+  wrong, and fitting to it would have taught the judge the app's own mistake. Where the two
+  disagree, count it and report it as a finding about the dataset; never resolve it by preferring
+  `expected_output`, and never show it to the judge.
 - Never write predictions back into the annotation queue. The queue is the ground-truth store; a
   prediction recorded there is indistinguishable from a human label to the next reader, and it
   destroys the only asset this skill depends on.
@@ -23,6 +29,14 @@ The SKILL.md file is the control loop. This file is the law. Read it in full bef
   scores near-perfectly and predicts nothing.
 - The human's identity, the annotation timestamp, the `assessment` field, and anything else that
   exists only because a human already graded the row, are all leakage. Exclude them from the payload.
+- **A prior prediction of the same label is leakage too**, even though no human produced it: the
+  app's own `output.<label>`, a dataset `expected_output.<label>`, an earlier evaluator's verdict.
+  In a **replicator** run these must be stripped by the evidence map — a judge shown the answer
+  copies it, scores about as well as the app, and has learned nothing. In a **grader** or
+  **corrector** run the app's `output` is the object of judgement and therefore legitimate, but
+  `expected_output` never is.
+- Under **corrector** framing, check the judge against the *app* as well as the human: a judge that
+  reproduces the app's verdicts exactly is an expensive copy of it, whatever its headline says.
 - Metadata that *is* legitimately available at eval time (span names, durations, error flags, tool
   names) may be used — say so explicitly in `evidence_map.json` so the publish step knows to carry
   it across.
@@ -74,6 +88,19 @@ is also a live vulnerability in whatever the evaluator will grade.
   rate, which is a first-class quality signal: a judge at 85% with a 30% flip rate is less useful
   than one at 82% that is stable, and the report must show both.
 - `runs` must be odd, so a majority always exists.
+- **Categorical values are lists, and equality is set equality.** `["b","a"]` and `["a","b"]` are
+  the same answer and must never be scored as a disagreement or split the majority vote. Partial
+  credit for a partly-right multi-select is allowed only through an explicit `match_mode` the user
+  chose, with a taxonomy the user supplied — never through the judge's own view of how close it was.
+- **Every verdict carries `reasoning` and `confidence` by default** — locally and in the published
+  evaluator. `confidence` is a percentage, an **integer 0–100**, never a 0–1 probability, and it is
+  **reported, never used to decide**: it may not weight the vote, break a tie, gate a keep, or
+  exclude a row. A judge allowed to duck the question by answering "not confident" stops predicting.
+- A usable label with a missing or out-of-range confidence is **kept and counted**, not downgraded
+  to unparseable, and an out-of-scale value is flagged rather than rescaled. Report confidence
+  against correctness (mean when right vs when wrong, accuracy per band): a judge as confident on
+  its errors as on its hits has a decorative field, and the user must be told before they route
+  anything on it.
 
 ## 7. Mechanism audit — confirm the change caused the gain (`_mechanism_audit`)
 
@@ -110,6 +137,9 @@ Before keeping a candidate, diff its per-row correctness against the best's:
   is reported as "no evaluator was created, because …" — never as silence.
 - **Confirm it is listed, not merely written**: `list_llmobs_evals_by_ml_app` is what backs the
   Evaluations page, so a write that does not show up there has not been delivered.
+- **Close the run with the evaluator's name and the Evaluations URL, as the final output.** A score
+  the user cannot act on is not a deliverable; they need to know what to look for and where.
+  `enabled: false` is a disabled evaluator, **not** a draft — do not call it one.
 - `create_or_update_llmobs_evaluator` is a **full replace**. Read the existing config back first and
   re-send every field to keep, or the update silently clobbers prompt, schema and sampling.
 - Verify by reading the evaluator back, not by the call's exit status.
