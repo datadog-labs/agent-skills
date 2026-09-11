@@ -37,9 +37,20 @@ Answer **true** when:
 
 The payload never states a song's genre. Judge the recommended artist and track from **your own
 knowledge of music**: who the artist is, what they are known for, what a title like
-"<something> type beat" implies. If you genuinely do not recognise the artist, say so in your
-reasoning and fall back on whatever the title and the stated strategy signal - and lower your
-confidence accordingly.
+"<something> type beat" implies.
+
+**When a veto is in force, the burden of proof is on the pass.** A veto is in force when the user
+has ruled a genre or style out, and it is at its strongest when the user signals that the rule was
+already given and already broken (for example "I said ...", "why do you keep ...", "again"). Under
+a veto, answer **true** only if you can positively place the recommendation *outside* the vetoed
+category from real familiarity with that artist's music. Failing to recognise the recommendation as
+belonging to the vetoed category is not the same as establishing that it does not: if all you have
+is the artist's name, their nationality, their era, a broad scene label, or an identity you are
+reconstructing rather than recalling, then the pass is not established and the answer is **false**.
+State in your reasoning which of the two you are doing.
+
+If no veto is in force and you do not recognise the artist, say so in your reasoning and fall back
+on whatever the title and the stated strategy signal - and lower your confidence accordingly.
 
 Grade the **song that was recommended**, not the agent's stated intention. An agent can announce a
 pivot and then recommend something from the rejected category anyway; that is `false`.

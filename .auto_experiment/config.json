@@ -52,9 +52,69 @@
     "true": 10,
     "false": 3
   },
-  "iteration_results": [],
-  "best_sha": null,
-  "best_score": null,
+  "iteration_results": [
+    {
+      "iteration": 1,
+      "before_score": 0.8,
+      "after_score": 0.9333333333333333,
+      "delta": 0.1333333333333333,
+      "after_stdev": 0.09428090415820632,
+      "after_run_means": [
+        1.0,
+        0.8,
+        1.0
+      ],
+      "se_diff": 0.05443310539518172,
+      "t_stat": 2.4495,
+      "significant": true,
+      "decision": "kept",
+      "basis": "significant",
+      "is_best": true,
+      "sha": "44287f8cd028fc4bcfdbab72336fa80a7fd24bcb",
+      "census_bucket": "veto_resolved_in_the_app_s_favour",
+      "mechanism_audit": {
+        "passed": true,
+        "denominator_before": 13,
+        "denominator_after": 13,
+        "gained": 1,
+        "lost": 0,
+        "gained_ids": [
+          "10459dc6-c5d6-452c-9ec0-d4a40f61d0d5"
+        ],
+        "lost_ids": []
+      },
+      "score_distribution": {
+        "n": 13,
+        "zero": 0,
+        "perfect": 13,
+        "min": 1.0,
+        "q1": 1.0,
+        "median": 1.0,
+        "q3": 1.0,
+        "max": 1.0,
+        "values": [
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0,
+          1.0
+        ]
+      },
+      "reasoning": "KEPT - significant (delta vs best +0.1333, t=2.45, min_delta 0.02). Targeted the veto_resolved_in_the_app_s_favour census bucket: the judge was treating 'I do not recognise this as the vetoed genre' as evidence that it is not, so the prompt now puts the burden of proof on the pass whenever the user has vetoed a genre - a name, nationality, era or broad scene label is explicitly not enough, and the no-veto fallback is preserved verbatim. Mechanism audit PASSES: same 13-row denominator, 1 row gained (10459dc6), 0 lost, and the gained row is exactly the one the change targets. Read the significance carefully: it is arithmetically real but rests on a single row of a 3-row minority class, and the after-stdev (0.094) is far larger than the baseline stdev (0.0) that min_delta was derived from, so the 0.02 floor is optimistic. The gained row answered false in 2 of 3 full re-runs at confidence 55 - it sits on the judge's decision boundary rather than being settled. All scores in-sample; 13 rows, no holdout.",
+      "time_start": "2026-09-11T13:12:00Z",
+      "time_end": "2026-09-11T13:18:00Z"
+    }
+  ],
+  "best_sha": "44287f8cd028fc4bcfdbab72336fa80a7fd24bcb",
+  "best_score": 0.9333333333333333,
   "final_result": null,
   "noise_calibration": {
     "runs_pilot": 3,
@@ -163,5 +223,87 @@
       1.0,
       1.0
     ]
+  },
+  "iter1_diagnostics": {
+    "metric": "f1_minority",
+    "label_field": null,
+    "match_mode": "exact",
+    "split": "all",
+    "headline": 1.0,
+    "rows_scored": 13,
+    "rows_excluded_unusable": 0,
+    "excluded_ids": [],
+    "raw_accuracy": 1.0,
+    "wilson_95_on_accuracy": [
+      0.7719,
+      1.0
+    ],
+    "constant_class_baseline": 0.375,
+    "mean_credit": 1.0,
+    "per_class_recall": {
+      "True": 1.0,
+      "False": 1.0
+    },
+    "class_support": {
+      "True": 10,
+      "False": 3
+    },
+    "classes_below_floor": {
+      "False": 3
+    },
+    "confusion": {
+      "truth=True|pred=True": 10,
+      "truth=False|pred=False": 3
+    },
+    "flip_rate": 0.0,
+    "correct_by_row": {
+      "097c138e-85d4-4aed-8a3e-5871eb4a461e": true,
+      "10459dc6-c5d6-452c-9ec0-d4a40f61d0d5": true,
+      "117e0325-61e9-47ac-9a37-9e94b81b1805": true,
+      "1e9aaa92-ae88-4407-ac40-b98ead6ca06a": true,
+      "1eb0c8be-de6d-4ac6-abf6-e3235858ee7f": true,
+      "2d4d6890-69fb-4a21-9bbb-20c383827e5b": true,
+      "53f134a8-0367-4f1b-bf2d-5e46bc40c6e8": true,
+      "6d7d778a-a8b2-476e-b9b9-ce42a10bbb29": true,
+      "709f57fe-6954-48b3-8d6a-4fff0635e78a": true,
+      "719918b6-3902-41d2-8844-f53e9234a184": true,
+      "93ca399d-aa1c-4e75-b319-ab179847f2e5": true,
+      "96a1c1c5-79cf-4daf-9b07-aeb8274aa318": true,
+      "a42731b7-cde8-4d5c-8684-46150ffe8dae": true
+    },
+    "confidence": {
+      "rows_with_confidence": 13,
+      "rows_without_confidence": 0,
+      "mean_confidence": 82.4,
+      "mean_confidence_when_right": 82.4,
+      "mean_confidence_when_wrong": null,
+      "accuracy_by_confidence_band": {
+        "0-59%": {
+          "rows": 1,
+          "accuracy": 1.0
+        },
+        "60-79%": {
+          "rows": 2,
+          "accuracy": 1.0
+        },
+        "80-89%": {
+          "rows": 8,
+          "accuracy": 1.0
+        },
+        "90-100%": {
+          "rows": 1,
+          "accuracy": 1.0
+        }
+      }
+    },
+    "vs_baseline": {
+      "gained": 1,
+      "lost": 0,
+      "mcnemar_p": 1.0,
+      "gained_ids": [
+        "10459dc6-c5d6-452c-9ec0-d4a40f61d0d5"
+      ],
+      "lost_ids": []
+    }
   }
 }

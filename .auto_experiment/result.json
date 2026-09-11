@@ -1,0 +1,59 @@
+{
+  "iteration": 1,
+  "before_score": 0.8,
+  "after_score": 0.9333333333333333,
+  "delta": 0.1333333333333333,
+  "after_stdev": 0.09428090415820632,
+  "after_run_means": [
+    1.0,
+    0.8,
+    1.0
+  ],
+  "se_diff": 0.05443310539518172,
+  "t_stat": 2.4495,
+  "significant": true,
+  "decision": "kept",
+  "basis": "significant",
+  "is_best": true,
+  "sha": "44287f8cd028fc4bcfdbab72336fa80a7fd24bcb",
+  "census_bucket": "veto_resolved_in_the_app_s_favour",
+  "mechanism_audit": {
+    "passed": true,
+    "denominator_before": 13,
+    "denominator_after": 13,
+    "gained": 1,
+    "lost": 0,
+    "gained_ids": [
+      "10459dc6-c5d6-452c-9ec0-d4a40f61d0d5"
+    ],
+    "lost_ids": []
+  },
+  "score_distribution": {
+    "n": 13,
+    "zero": 0,
+    "perfect": 13,
+    "min": 1.0,
+    "q1": 1.0,
+    "median": 1.0,
+    "q3": 1.0,
+    "max": 1.0,
+    "values": [
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "reasoning": "KEPT - significant (delta vs best +0.1333, t=2.45, min_delta 0.02). Targeted the veto_resolved_in_the_app_s_favour census bucket: the judge was treating 'I do not recognise this as the vetoed genre' as evidence that it is not, so the prompt now puts the burden of proof on the pass whenever the user has vetoed a genre - a name, nationality, era or broad scene label is explicitly not enough, and the no-veto fallback is preserved verbatim. Mechanism audit PASSES: same 13-row denominator, 1 row gained (10459dc6), 0 lost, and the gained row is exactly the one the change targets. Read the significance carefully: it is arithmetically real but rests on a single row of a 3-row minority class, and the after-stdev (0.094) is far larger than the baseline stdev (0.0) that min_delta was derived from, so the 0.02 floor is optimistic. The gained row answered false in 2 of 3 full re-runs at confidence 55 - it sits on the judge's decision boundary rather than being settled. All scores in-sample; 13 rows, no holdout.",
+  "time_start": "2026-09-11T13:12:00Z",
+  "time_end": "2026-09-11T13:18:00Z"
+}
