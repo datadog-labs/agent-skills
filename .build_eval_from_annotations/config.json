@@ -20,8 +20,8 @@
   "max_runs": 3,
   "runs": 3,
   "domain_notes": [],
-  "eval_scope": null,
-  "eval_name": null,
+  "eval_scope": "span",
+  "eval_name": "follows_feedback",
   "split_mode": "all_rows",
   "data_note": {
     "total_interactions": 19,
@@ -40,6 +40,47 @@
     "in_sample": true,
     "in_sample_note": "13 usable rows <= 40, so no holdout. Every reported score is in-sample and therefore optimistic."
   },
-  "published_evaluator": null,
+  "published_evaluator": {
+    "eval_name": "follows_feedback",
+    "ml_app": "music-recommender",
+    "eval_scope": "span",
+    "root_spans_only": true,
+    "filter": "has_feedback:true",
+    "sampling_percentage": 100,
+    "integration_provider": "anthropic",
+    "model_name": "claude-opus-5",
+    "enabled": false,
+    "verified_in_listing": true,
+    "deployable_score": {
+      "metric": "f1_minority",
+      "value": 0.9333333333333333,
+      "run_means": [
+        0.8,
+        1.0,
+        1.0
+      ],
+      "stdev": 0.09428090415820632,
+      "rows": 7,
+      "class_balance": {
+        "true": 4,
+        "false": 3
+      },
+      "constant_class_baseline": 0.6,
+      "in_sample": true
+    },
+    "fitted_score_all_rows": {
+      "metric": "f1_minority",
+      "value": 0.9333333333333333,
+      "rows": 13,
+      "constant_class_baseline": 0.375,
+      "in_sample": true
+    },
+    "fidelity_gaps": [
+      "confidence is not a typed output field: the write was refused with 'invalid BYOP output schema' when confidence was an integer property, so it was retried without it. The shipped schema emits boolean_eval + reasoning, and the prompt requires reasoning to end with 'Confidence: NN%'. Confidence survives as text, not as a queryable number.",
+      "No other evaluator in this org runs on an anthropic provider, so the Anthropic integration is unverified. The write was accepted, but that only records configuration - it may error on its first real span.",
+      "The evidence itself has no gap: {{span_input}}/{{span_output}} at span scope with root_spans_only resolve to exactly the two fields the local renderer used, verified against the live feedback_actionability evaluator on the same ml_app.",
+      "The app last emitted spans on 2026-09-03. The evaluator will score nothing until music-recommender runs again."
+    ]
+  },
   "backend_note": "User first chose pup. pup 1.8.0 is installed but authenticated only against prod (datadoghq.com, org 8dee7c38-00cb-11ea-a77b-8b5a08d3b091); the queue is on staging (datad0g.com). Verified: `pup llm-obs annotation-queues list --queue-ids ac4252d8-...` returns an empty data array. Run stopped and asked; user switched the backend to mcp (datadog-staging server) for the whole run."
 }
