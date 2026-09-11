@@ -1,13 +1,19 @@
 {
   "goal": "Predict the human follows_feedback label on the annotation queue's labelled rows. Direction: MAXIMIZE F1 on the false class (the rows where the app ignored the user's feedback).",
   "evaluators": "F1 on the false class (label value == false, i.e. the app did NOT follow the user's feedback). Higher is better. Always reported alongside: confusion matrix, Wilson 95% CI on the headline, flip rate across runs, constant-class baseline, per-class recall and support, confidence calibration (mean confidence when right vs wrong, accuracy per band).",
-  "files_to_optimize": [".build_eval_from_annotations/prompts/judge.md"],
+  "files_to_optimize": [
+    ".build_eval_from_annotations/prompts/judge.md"
+  ],
   "harness_provided_by": "agent-observability-build-eval-from-annotations",
   "harness_path": ".auto_experiment/eval_harness.py",
   "runtime": "python",
   "annotation_queue_id": "ac4252d8-825e-410a-a3f6-5200d97c2118",
   "annotation_label_map": {
-    "expected_output": {"label_schema_id": "959fgf6w", "name": "follows_feedback", "type": "boolean"},
+    "expected_output": {
+      "label_schema_id": "959fgf6w",
+      "name": "follows_feedback",
+      "type": "boolean"
+    },
     "filter": null
   },
   "project_id": "457c54a8-f2d9-4f5e-84d3-451af1ff8cde",
@@ -17,8 +23,8 @@
   "dd_experiment_name": "auto-labelling-follows-feedback-judge-1789131950730",
   "max_iterations": 10,
   "max_runs": 3,
-  "runs": null,
-  "min_delta": null,
+  "runs": 3,
+  "min_delta": 0.02,
   "model": "claude-opus-5",
   "base_branch": "till.wohlfarth/auto-labelling-skill",
   "scratch_branch": "auto-experiment/follows-feedback-judge",
@@ -42,9 +48,120 @@
   "split_mode": "all_rows",
   "corpus_path": ".build_eval_from_annotations/corpus/rows.jsonl",
   "corpus_count": 13,
-  "class_balance": {"true": 10, "false": 3},
+  "class_balance": {
+    "true": 10,
+    "false": 3
+  },
   "iteration_results": [],
   "best_sha": null,
   "best_score": null,
-  "final_result": null
+  "final_result": null,
+  "noise_calibration": {
+    "runs_pilot": 3,
+    "runs_final": 3,
+    "baseline_stdev": 0.0,
+    "run_means": [
+      0.8,
+      0.8,
+      0.8
+    ],
+    "min_delta": 0.02,
+    "derivation": "min_delta = max(0.02, 0.5 * baseline_stdev) = max(0.02, 0.0) = 0.02. runs >= 8*(baseline_stdev/min_delta)^2 = 8*(0.0/0.02)^2 = 0, below the floor of 3, so runs stays at the pilot 3 and the baseline was NOT re-run. The judge scored 0.8 on all three full re-runs and flipped no row, so the metric is effectively deterministic at this corpus size; the 0.02 floor is what any keep must clear."
+  },
+  "baseline_score": 0.8,
+  "baseline_diagnostics": {
+    "metric": "f1_minority",
+    "label_field": null,
+    "match_mode": "exact",
+    "split": "all",
+    "headline": 0.8,
+    "rows_scored": 13,
+    "rows_excluded_unusable": 0,
+    "excluded_ids": [],
+    "raw_accuracy": 0.9231,
+    "wilson_95_on_accuracy": [
+      0.6669,
+      0.9863
+    ],
+    "constant_class_baseline": 0.375,
+    "mean_credit": 0.9231,
+    "per_class_recall": {
+      "True": 1.0,
+      "False": 0.6667
+    },
+    "class_support": {
+      "True": 10,
+      "False": 3
+    },
+    "classes_below_floor": {
+      "False": 3
+    },
+    "confusion": {
+      "truth=True|pred=True": 10,
+      "truth=False|pred=True": 1,
+      "truth=False|pred=False": 2
+    },
+    "flip_rate": 0.0,
+    "correct_by_row": {
+      "097c138e-85d4-4aed-8a3e-5871eb4a461e": true,
+      "10459dc6-c5d6-452c-9ec0-d4a40f61d0d5": false,
+      "117e0325-61e9-47ac-9a37-9e94b81b1805": true,
+      "1e9aaa92-ae88-4407-ac40-b98ead6ca06a": true,
+      "1eb0c8be-de6d-4ac6-abf6-e3235858ee7f": true,
+      "2d4d6890-69fb-4a21-9bbb-20c383827e5b": true,
+      "53f134a8-0367-4f1b-bf2d-5e46bc40c6e8": true,
+      "6d7d778a-a8b2-476e-b9b9-ce42a10bbb29": true,
+      "709f57fe-6954-48b3-8d6a-4fff0635e78a": true,
+      "719918b6-3902-41d2-8844-f53e9234a184": true,
+      "93ca399d-aa1c-4e75-b319-ab179847f2e5": true,
+      "96a1c1c5-79cf-4daf-9b07-aeb8274aa318": true,
+      "a42731b7-cde8-4d5c-8684-46150ffe8dae": true
+    },
+    "confidence": {
+      "rows_with_confidence": 13,
+      "rows_without_confidence": 0,
+      "mean_confidence": 82.3,
+      "mean_confidence_when_right": 83.2,
+      "mean_confidence_when_wrong": 71.3,
+      "accuracy_by_confidence_band": {
+        "60-79%": {
+          "rows": 3,
+          "accuracy": 0.6667
+        },
+        "80-89%": {
+          "rows": 9,
+          "accuracy": 1.0
+        },
+        "90-100%": {
+          "rows": 1,
+          "accuracy": 1.0
+        }
+      }
+    }
+  },
+  "baseline_distribution": {
+    "n": 13,
+    "zero": 1,
+    "perfect": 12,
+    "min": 0.0,
+    "q1": 1.0,
+    "median": 1.0,
+    "q3": 1.0,
+    "max": 1.0,
+    "values": [
+      0.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ]
+  }
 }

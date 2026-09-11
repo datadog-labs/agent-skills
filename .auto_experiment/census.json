@@ -1,0 +1,25 @@
+{
+  "failing_total": 1,
+  "described": 1,
+  "coverage_note": "1 of 1 failures inspected. The corpus is 13 rows; the baseline gets 12 right.",
+  "descriptions": [
+    {
+      "id": "10459dc6-c5d6-452c-9ec0-d4a40f61d0d5",
+      "truth": false,
+      "predicted": true,
+      "confidence": [70, 72, 72],
+      "what_happened": "The user said 'I said I don't want rap! why do you continue giving me rap?!' and the app recommended 'Slank - Woke Up, Pt. 2 (Make Good)'. All three passes identified Slank as an Indonesian rock band, concluded the pick moves away from the rejected genre, and answered true. The human reviewer answered false. The disagreement is entirely about identifying what the recommended track actually is - the judge resolved an artist it half-recognised in the app's favour. This row drew the judge's three lowest confidences of the whole corpus (70/72/72, against a corpus mean of 82.3), so the judge's own uncertainty already marks it.",
+      "note": "The two false rows the judge DID catch were ones where the rejected category is legible from the text itself: a 'type beat' title (rap instrumental convention) and Boogiemonsters (a widely-known 90s hip-hop group). The miss is the case where identification is genuinely hard."
+    }
+  ],
+  "buckets": [
+    {
+      "name": "veto_resolved_in_the_app_s_favour",
+      "failures": 1,
+      "description": "The user has explicitly vetoed a category, the judge cannot positively place the recommendation outside that category, and it passes the row anyway. The judge treats 'I don't recognise this as rap' as evidence of 'this is not rap'.",
+      "reachable_by_editing_scope": true,
+      "lever": "Burden of proof in the judge prompt: under an explicit veto, a pass must be positively established, not assumed."
+    }
+  ],
+  "overfitting_warning": "This bucket's entire support on this corpus is the 3 minority-class rows, all of which are 'no rap' vetoes. A change that targets it can only be measured against 3 rows, and a 1-row gain moves F1(false) by 0.2. Any improvement here is in-sample and cannot be shown to generalise from this corpus."
+}
