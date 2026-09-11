@@ -141,8 +141,20 @@ get is accuracy **without the floor beside it**:
   Ending with a report and a prompt file on disk is an unfinished run. Creating it is not gated on a
   yes; its *name and target* are confirmed with the user, and its being switched on is theirs alone.
 - Always `enabled: false`. This skill never turns an evaluator on.
+- **The publish gate is evaluated on the HOLDOUT, never on the fitted score.** A train gain says
+  nothing about generalisation, and the loop's own significance test cannot tell you it does:
+  a real run produced an iteration that improved the fitted F1 from 0.255 to 0.485 at `|t| = 11.70`
+  — the most confident result of the whole run — and scored **0.000** on the holdout, catching none
+  of its three positives. The control judge from a previous run scored 0.667 on the same rows
+  through the same harness, so this was overfitting, not instrumentation. Publish on the holdout
+  number or do not publish.
+- **A run that ends worse than what is already deployed does not overwrite it.** A write is a full
+  replace with no version history in the org, so a weaker judge silently destroys a better one.
+  Compare against the deployed evaluator's measured score before writing, and if the new one loses,
+  report that and leave it alone.
 - The only sanctioned reasons to finish without one: the minimum-labels gate failed, the judge never
-  beat the constant-class baseline, or no `eval_scope` can reach the evidence the label needs. Each
+  beat the constant-class baseline **on the holdout**, it lost to the evaluator already deployed, or
+  no `eval_scope` can reach the evidence the label needs. Each
   is reported as "no evaluator was created, because …" — never as silence.
 - **Confirm it is listed, not merely written**: `list_llmobs_evals_by_ml_app` is what backs the
   Evaluations page, so a write that does not show up there has not been delivered.
