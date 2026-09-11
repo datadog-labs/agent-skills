@@ -115,7 +115,30 @@
   ],
   "best_sha": "a84e1bbd15e4478277e341948e1cf4d93ddc9c73",
   "best_score": 0.9333333333333333,
-  "final_result": null,
+  "final_result": {
+    "baseline_score": 0.8,
+    "best_score": 0.9333333333333333,
+    "best_iteration": 1,
+    "best_sha": "a84e1bbd15e4478277e341948e1cf4d93ddc9c73",
+    "iterations_run": 1,
+    "stop_reason": "ceiling - after iteration 1 the judge agrees with every labelled row (13/13 on the scored run, confusion matrix 10 TN / 3 TP, zero errors), so the failure census is empty and there is no bucket left to target. Rubric _overfitting: 'Stop at the ceiling. A judge that agrees with every train row has nothing left to learn from them.' The only remaining signal is run-to-run instability on one boundary row, and a change aimed at that row would be memorisation, not a criterion.",
+    "reasoning": "One change was tried and kept. Baseline: the first judge draft already scored F1(false)=0.8 with a perfectly stable metric (3 re-runs all 0.8, no row flipped) against a constant-class floor of 0.375, and its single error was an artist-identification call - it half-recognised the recommended artist, could not place it inside the vetoed genre, and resolved that uncertainty in the app's favour. Iteration 1 inverted the burden of proof under a veto: a pass must now be positively established from real familiarity with the artist's music, and a name, nationality, era or broad scene label is explicitly declared insufficient. That is a general criterion over the STRUCTURE of the evidence, not over any artist or genre, and the no-veto fallback was preserved verbatim so rows with no stated constraint are untouched. It flipped exactly the targeted row and nothing else: gained 1, lost 0, same 13-row denominator, mechanism audit passed, t=2.45. What did NOT get measured: the change can only ever push labels toward false under a veto, and this corpus contains no TRUE row where the user vetoed a genre - so the rule's false-positive risk is structurally invisible here. That is the first thing to check when more rows are labelled.",
+    "noise_calibration": {
+      "runs_pilot": 3,
+      "runs_final": 3,
+      "baseline_stdev": 0.0,
+      "run_means": [
+        0.8,
+        0.8,
+        0.8
+      ],
+      "min_delta": 0.02,
+      "note": "runs and min_delta were COMPUTED from the measured baseline noise, not chosen: min_delta = max(0.02, 0.5*0.0) = 0.02, and runs >= 8*(0.0/0.02)^2 = 0 fell below the floor of 3, so runs stayed 3 and the baseline was not re-run. Caveat the report must carry: the baseline happened to be perfectly stable, so min_delta landed on its absolute floor. Iteration 1's own stdev was 0.094 - five times the floor - which means the 0.02 bar every keep was judged against is more permissive than the metric's real noise at this corpus size."
+    },
+    "held_out_test": null,
+    "held_out_test_note": "There is no held-out split and therefore no held-out headline. 13 usable rows is below build-eval-from-annotations' 40-row threshold, and stratifying a 3-row class would put the only examples of a class on one side and score the judge on the other. split_mode=all_rows: BOTH the baseline and the best score are in-sample and optimistic. The auto-experiment step that opens the test dataset was skipped for this reason, not forgotten.",
+    "in_sample": true
+  },
   "noise_calibration": {
     "runs_pilot": 3,
     "runs_final": 3,
