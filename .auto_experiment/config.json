@@ -70,7 +70,7 @@
       "decision": "kept",
       "basis": "significant",
       "is_best": true,
-      "sha": "44287f8cd028fc4bcfdbab72336fa80a7fd24bcb",
+      "sha": "a84e1bbd15e4478277e341948e1cf4d93ddc9c73",
       "census_bucket": "veto_resolved_in_the_app_s_favour",
       "mechanism_audit": {
         "passed": true,
@@ -113,7 +113,7 @@
       "time_end": "2026-09-11T13:18:00Z"
     }
   ],
-  "best_sha": "44287f8cd028fc4bcfdbab72336fa80a7fd24bcb",
+  "best_sha": "a84e1bbd15e4478277e341948e1cf4d93ddc9c73",
   "best_score": 0.9333333333333333,
   "final_result": null,
   "noise_calibration": {
