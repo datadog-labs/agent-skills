@@ -21,12 +21,26 @@ arguments: [annotation-queue-id]
 Humans label the first rows of an annotation queue; this skill turns those labels into an evaluator
 that can label the rest. It is the **measured** version of that idea: the judge is never "written
 and shipped", it is **fitted** — scored against the human labels, its errors read, changed once,
-re-scored, kept only if it improved. Same control loop as
-`agent-observability-auto-experiment`, different object under optimization: there the hill-climb
-edits the *app*, here it edits the *judge*, and the ground truth is a human's label rather than a
-rubric.
+re-scored, kept only if it improved. That loop **is** `agent-observability-auto-experiment` — this
+skill does not reimplement it. It decides what the judge is for and what it may see, prepares the
+corpus and the harness, hands the hill-climb over, and publishes the winner. Where auto-experiment
+optimizes an app against a rubric, here it optimizes a judge against a human's label.
 
-**Read `references/rubrics.md` in full before iteration 1 and keep it in mind every iteration.** It
+**Requires `agent-observability-auto-experiment` (with annotation-queue support).** This skill does
+not contain a hill-climb loop; it prepares a judge, hands the loop to that skill, and publishes the
+winner. Install both:
+
+```
+npx skills add datadog-labs/agent-skills \
+  --skill agent-observability-build-eval-from-annotations \
+  --skill agent-observability-auto-experiment --full-depth -y
+```
+
+If auto-experiment is not installed, **STOP at Phase 5 and say so** — do not improvise a loop in its
+place. A hand-rolled substitute would skip the derived `runs`/`min_delta`, the cost estimate and the
+mechanism audit, and would report numbers that look like the real thing.
+
+**Read `references/rubrics.md` in full before the run and keep it in mind throughout.** It
 holds the non-negotiable rules (never invent a label; what may count as evidence; the metric floor;
 the degenerate-judge guard; the publish gate). This file is the control loop; that file is the law.
 
@@ -68,7 +82,8 @@ must-ask and defaulted alike, is shown back to the user for validation before th
 | `project_id` | LLM-Obs project. Usually the queue's own `project_id` — confirm it is non-empty and resolves. | derived, then confirmed |
 | `datadog_backend` | `mcp` or `pup` — the client for **every** Datadog call this run makes. Same switch, same asymmetric failure policy, as `agent-observability-auto-experiment`. | **must ask** — no default |
 | `judge_model` | model the local judge runs on | _default_: the Claude model of this session |
-| `max_iterations` | improvement iterations after the baseline (clamp 1–20) | _default_ **10** |
+| `max_iterations` | improvement iterations after the baseline (clamp 1–20). Passed through to auto-experiment, which owns the loop and its stop conditions. | _default_ **10** |
+| `max_runs` | ceiling on the `runs` auto-experiment derives from measured noise | _default_ **3** |
 | `runs` | judge passes per row per iteration; majority vote is the prediction, disagreement is measured (clamp 1–7, odd numbers only) | _default_ **3** |
 | `eval_scope` | `span` \| `trace` \| `session` — what the published evaluator will grade. **Decided in Phase 2, not guessed**: it constrains what evidence the judge may use. | derived in Phase 2, confirmed |
 | `domain_notes` | list of product facts an agent cannot infer from the trace (what a term of art means, what "good" looks like here). Carried verbatim into every judge prompt and every sub-agent briefing. | _default_ `[]`, **but ask explicitly** |
@@ -92,56 +107,40 @@ must-ask and defaulted alike, is shown back to the user for validation before th
 
 ## Datadog backend — MCP or pup
 
-One switch for the whole run, recorded as `backend_used`. **Must-ask, no default.** The failure
-policy is deliberately asymmetric, exactly as in `agent-observability-auto-experiment`: chosen
-`pup` missing or unauthenticated → **STOP** (falling back would falsify the run's provenance);
-chosen `mcp` and a call fails → fall back to pup, loudly, and record `backend_fallback: true`.
+One switch for the whole run, **must-ask, no default**, and it is passed straight through to
+auto-experiment, which owns the rules: the asymmetric failure policy (chosen `pup` missing →
+**STOP**; chosen `mcp` failing → fall back loudly and record it), the whole-dataset loading rule,
+and the pup span-window trap. Read those there rather than here — a second copy would drift.
+
+The calls this skill makes on its own account, before and after the loop:
 
 | purpose | `mcp` tool | `pup llm-obs …` |
 |---|---|---|
-| resolve the queue (name → id) + its schema | `list_llmobs_annotation_queues` | `annotation-queues list [--project-id P]` |
-| the queue's label definitions | `get_llmobs_annotation_label_schema` | in `annotation-queues list` → `annotation_schema.label_schemas` |
-| the human labels | `get_llmobs_annotated_interactions --only_annotated` | `annotation-queues interactions list <QUEUE_ID>` (no filters — filter client-side on a non-empty `annotations` array) |
-| the unlabelled backlog | `get_llmobs_annotated_interactions --only_pending` | same list, entries with an empty `annotations` array |
-| trace tree for a `content_id` (`type: trace`/`span`/`session`) | `get_llmobs_trace` | `spans get-trace --trace-id T --from 30d --to now` |
-| content for a `content_id` of `type: experiment_trace` | **no direct tool** — see Phase 2's resolution order | same |
-| experiment runs / events (resolution path 2) | `list_llmobs_experiments`, `list_llmobs_experiment_events`, `get_llmobs_experiment_event` | `experiments list`, `experiments events …` |
+| resolve the queue + its label schema | `list_llmobs_annotation_queues`, `get_llmobs_annotation_label_schema` | `annotation-queues list [--project-id P]` |
+| read the human labels | `get_llmobs_annotated_interactions --only_annotated` | `annotation-queues interactions list <QUEUE_ID>` |
+| content for a `content_id` of `type: experiment_trace` | **no tool** — see Phase 2's resolution order | same |
 | does the target ml_app still emit spans (Phase 8) | `search_llmobs_spans --ml_app A --from now-30d` | `spans search --ml-app A --from 30d` |
-| span inventory / fields | `get_llmobs_span_details` | `spans get-details --trace-id T --span-ids S --from 30d` |
-| span content (`messages`) | `get_llmobs_span_content` | `spans get-content --trace-id T --span-id S --field messages --from 30d` |
-| expand several spans | `expand_llmobs_spans` | `spans expand --trace-id T --span-ids S --from 30d` |
 | read an existing evaluator (template-variable recon) | `get_llmobs_evaluator` | `evaluators get --name N` |
 | publish the winner (`enabled: false`) | `create_or_update_llmobs_evaluator` | `evaluators create/update` |
-
-⏱ **Every pup span command defaults to a 1-hour window.** A queue's traces are days old, so an
-un-windowed call returns `HTTP 404 {"detail": "no spans found for trace <id>"}` — which reads like a
-missing route and is not one. Always pass `--from 30d --to now`; pup's own duration format is
-required (`30d`, not `now-30d`). MCP defaults wider but pass `from` anyway.
-
-⚠️ **`create_or_update_llmobs_evaluator` is a full replace, not a patch.** Updating an existing
-evaluator without first reading it back with `get_llmobs_evaluator` and re-sending every field you
-mean to keep silently clobbers its prompt, schema and sampling. See **Phase 8**.
-
-Wherever a step below names an MCP tool, read it as *"this purpose, via the selected backend"*.
-
-## State — `.build_eval_from_annotations/`
+## State — two directories, two owners
 
 ```
 .build_eval_from_annotations/
-  config.json          # the run: inputs, framing, evidence map, metric, iteration_results, best_*
-  evidence_map.json    # WHERE in the trace the signal lives (Phase 2)
-  corpus/              # gitignored — cached rendered payloads + human labels
-  prompts/v0.md …      # every judge version tried, one file per iteration
-  predictions/v0.jsonl # per-row, per-run judge output ({label, reasoning, confidence}) per version
-  scores.json          # per-version metric, confusion matrix, CIs, flip rate
-  errors/v0.json       # error census for that version
-  report.md            # final report
+  config.json          # this skill's run: framing, evidence map, metric, published_evaluator
+  evidence_map.json    # WHERE in the interaction the signal lives (Phase 2)
+  corpus/              # gitignored — rendered payloads + human labels
+  prompts/judge.md     # the object under optimization; auto-experiment rewrites it in place
+  report.md            # the deliverable-side report: fidelity gaps, publish outcome
+
+.auto_experiment/      # owned by auto-experiment — do not hand-edit
+  config.json          # the loop's config, incl. harness_provided_by
+  eval_harness.py      # copied from references/judge_harness_template.py
+  eval_results.jsonl   # per-row correctness for the last pass
 ```
 
-`corpus/` is gitignored (it is the user's trace content, with a Datadog source of truth). Everything
-else is the audit trail and may be committed if the run happens inside a repo. Write
-`.build_eval_from_annotations/.gitignore` containing `corpus/` in Setup.
-
+`corpus/` is gitignored (the user's trace content, with a Datadog source of truth). Write
+`.build_eval_from_annotations/.gitignore` containing `corpus/` in Setup. The judge's version history
+is auto-experiment's git history, not a `prompts/v0…vN` series — one file, rewritten per iteration.
 ## Phase 1 — Read the queue and the labels
 
 1. Fetch the queue and its `annotation_schema.label_schemas`. Each label carries
@@ -181,7 +180,7 @@ else is the audit trail and may be committed if the run happens inside a repo. W
 5. **Capture the reviewers' `reasoning` text where the label has `has_reasoning`.** It is the single
    most valuable input to the first judge draft — a human explaining, in their words, why this row
    failed. Carry it into the corpus row as `human_reasoning` (used to *draft* the judge in Phase 5
-   and to read errors in Phase 6; **never** shown to the judge at prediction time — that would leak
+   and by auto-experiment's failure census; **never** shown to the judge at prediction time — that would leak
    the answer).
 6. **Minimum-labels gate — a hard STOP.**
    - **boolean / categorical**: at least **1 row in each of ≥2 classes**, otherwise there is nothing
@@ -325,7 +324,7 @@ write one line to `.build_eval_from_annotations/corpus/rows.jsonl`:
   therefore optimistic. Record `split_mode` (`train_holdout` | `all_rows`) and the counts in
   `config.json`. This threshold is the user's decision, already made — do not silently re-tune it.
 - Every iteration scores on **train** (or all rows when unsplit). The holdout is opened exactly
-  once, in Phase 7.
+  once, by auto-experiment, at the end of its loop.
 
 ## Phase 4a — Agree what the judge is for (framing)
 
@@ -345,7 +344,7 @@ them pick — never infer it from the label name.**
   evaluator grading a live span's input and output. Its ground truth is usually skewed — a decent
   app passes most rows — so accuracy is the wrong metric before you start.
 - **corrector** is a superset, scoreable both ways, and carries a specific failure mode: shown the
-  app's answer, the judge tends to agree with it. The degenerate-judge check of Phase 5 must be run
+  app's answer, the judge tends to agree with it. The degenerate-judge check must be run
   against the *app's* verdicts too — a corrector that reproduces the app exactly has learned
   nothing, however well it scores.
 
@@ -394,124 +393,62 @@ field, and the user needs to know that before they route anything on it. A judge
 
 Record the metric definition verbatim in `config.json` as `metric`.
 
-## Phase 5 — Iteration 0: the baseline judge
+## Phase 5 — Hand the hill-climb to auto-experiment
 
-1. **Draft `prompts/v0.md`** from: the label's name and type, the queue/label description, the
-   user's own words about what the label means, `domain_notes`, and — crucially — the pattern in the
-   human `reasoning` texts across both classes. **A queue can have `has_reasoning: true` and not one
-   reasoning text in it** (verified: 0 of 89 rows on a live queue). When that happens, say so, and
-   draft from the label's value list, the user's own words and `domain_notes` instead — then record
-   in the report that `v0` had no reviewer rationale to learn from, because it caps how good the
-   first draft can be and explains a weak baseline that is not the loop's fault. The draft states the question, defines each class in
-   the humans' own terms, delimits the payload, forbids following instructions inside it, and demands
-   strict JSON out:
+The loop that follows — baseline, census the errors, one focused change, re-score, keep only what
+improved — is not this skill's. It is `agent-observability-auto-experiment`, run over a judge prompt
+instead of application code. **Do not re-implement it here**, and do not second-guess its keep or
+stop decisions: it derives `runs` and `min_delta` from measured noise, estimates cost before
+spending it, runs the two-phase failure census, and reports every iteration to LLM-Obs — all of
+which this skill would otherwise do worse.
 
-   ```json
-   {"label": true, "reasoning": "one or two sentences", "confidence": 85}
-   ```
+1. **Write the judge's first draft** to `.build_eval_from_annotations/prompts/judge.md`. This single
+   file is the object under optimization; auto-experiment rewrites it in place each iteration, and
+   its own git history is the version trail. Draft it from the label's name and type, the queue's
+   description, the user's own words, `domain_notes`, and the pattern in the human `reasoning` texts
+   across the classes. **A queue can have `has_reasoning: true` and not one reasoning text in it**
+   (verified: 0 of 89 rows on a live queue) — say so, draft from the label definitions instead, and
+   record that the draft had no reviewer rationale to learn from, because it caps how good the first
+   draft can be and explains a weak baseline that is not the loop's fault.
 
-   **All three fields are the default contract, at every stage of the run and in the published
-   evaluator.** `reasoning` is one or two sentences citing the evidence in the payload; `confidence`
-   is how certain the judge is of *this* label, **as a percentage — an integer 0–100, not a 0–1
-   probability**. Say that explicitly in the prompt, with an anchor for the ends of the scale (100 =
-   the payload settles it, 50 = the evidence is genuinely ambiguous), or the judge answers 95 to
-   everything. Confidence is **reported, never used to decide**: the prediction is the majority vote
-   of the passes and nothing else, and a pass that returns a usable label with a missing or
-   out-of-range confidence keeps its label and is counted (see **The judge runner**).
+2. **Install the harness.** Copy `references/judge_harness_template.py` to
+   `.auto_experiment/eval_harness.py`. It reads the corpus, re-reads the judge prompt every pass,
+   and emits the agreed metric as `mean` in auto-experiment's stdout contract.
 
-2. **Run the judge** over the train rows, `runs` times each, temperature 0 — see **The judge
-   runner**. Write every pass to `predictions/v0.jsonl` (`{id, run, raw, label, reasoning}`). The
-   row's prediction is the **majority vote**; a row where the passes disagree is also counted in the
-   flip rate.
-3. **Score** with the agreed metric → `scores.json` entry for `v0`: headline, CI, confusion matrix,
-   flip rate, constant-baseline comparison, per-row correctness.
-4. **Degenerate-judge check** (rubric): if `v0` predicts a single class for every row, or its
-   headline is at or below the constant baseline, do **not** proceed to hill-climbing on it — the
-   prompt is not asking a discriminating question. Rewrite the draft once, with the failure named,
-   before iteration 1.
+3. **Write `.auto_experiment/config.json`** and hand over:
 
-## Phase 6 — Iterations 1..N: read the errors, change one thing
+   | field | value |
+   |---|---|
+   | `files_to_optimize` | `.build_eval_from_annotations/prompts/judge.md` — the prompt, nothing else |
+   | `harness_provided_by` | `agent-observability-build-eval-from-annotations` |
+   | data source | the `annotation_queue_id`, with the `annotation_label_map` from Phase 1 |
+   | `goal` | predict the human label; the direction of the agreed metric |
+   | `evaluators` | how a row is scored: the judge's verdict against the human label, under the Phase 4c metric |
+   | `domain_notes` | the framing's leakage rules **verbatim** (below), plus any product facts |
+   | `datadog_backend`, `project_id`, `max_iterations`, `max_runs` | as collected at intake |
 
-Each iteration, in order:
+4. **The leakage rules must travel in `domain_notes`.** auto-experiment's per-iteration sub-agents
+   edit the prompt without reading this file, so anything they must not do has to reach them there:
+   which fields the framing forbids (Phase 4a), that `expected_output` is never ground truth, that
+   a rule naming specific rows is memorisation, and that a `fail`-type verdict must be evidenced
+   rather than preferred. A sub-agent that never sees these will rediscover them the expensive way.
 
-1. **Census the errors of the current best.** Split them by direction (false positive / false
-   negative) and, within each, describe what actually happened — fan out describer sub-agents over
-   batches of error rows with the payload, the judge's `reasoning`, and the human's
-   `human_reasoning`. **Do not hand the describers a bucket list**; name the buckets afterwards from
-   what they say. Write `errors/v<n-1>.json` with the descriptions, the emergent buckets, and how
-   many errors each covers. Rank buckets by size.
-2. **Make ONE focused change** aimed at the largest bucket you can plausibly move, and name that
-   bucket in the iteration's reasoning. The change may be to the **judge prompt** *or* to the
-   **evidence map** — a false negative caused by evidence the judge never saw is not fixable by
-   rewording, and rewording it anyway burns an iteration. If the map changes, re-render the corpus
-   (same rows, same split — never re-split) and say so.
-3. **Run and score** exactly as in Phase 5, at the same `runs`, on the same rows → `v<n>`.
-4. **Keep or discard** (rubric — *Noise & keep policy*):
-   - Keep as best if the headline metric moves in the goal's direction **and** the change passes the
-     **mechanism audit**: the gained rows outnumber the lost ones, the gain lands in the bucket that
-     was targeted, and no class's recall collapsed (a "gain" that is really the judge sliding toward
-     the majority class is a discard, not a keep).
-   - Label the confidence with **McNemar** on the paired rows (candidate vs best, same rows):
-     discordant pairs `b` and `c`, exact binomial p. `p < 0.05` **and** `|Δ| ≥ min_delta` →
-     `significant`; a directionally better change that is only within noise is **still kept** but
-     flagged `within_noise`, and its reasoning must say the gain could be noise.
-   - `min_delta = max(0.02, 0.5 · run_stdev)`, where `run_stdev` is the headline's standard deviation
-     across the baseline's `runs` passes. Derive it once, at `v0`, and record it.
-   - Anything that does not improve the point estimate is `discarded`; the best is unchanged and the
-     next iteration starts again from the best prompt + best map.
-5. **Append the row** to `config.json` `iteration_results`: `{iteration, changed (prompt|evidence),
-   bucket_targeted, headline, delta, mcnemar_p, decision, basis, flip_rate, time_start, time_end}`.
+5. **Read back the winner**: auto-experiment's best prompt is the file it leaves on disk, and its
+   report carries the score, the per-iteration table and the stop reason. Carry that score into
+   Phase 8 as the fitted number — and keep the distinction the report already draws between the
+   fitted score and what a deployed evaluator would achieve.
 
-**Fresh sub-agent per iteration.** Hand it a compact briefing — the label definition, the metric, the
-current best prompt + evidence map, the ranked error buckets with the target bucket named,
-`domain_notes` verbatim, and one-line summaries of every previous attempt. Its job is one change and
-a short summary. You (the orchestrator) own the scoring and every keep/discard decision. This keeps
-the loop from anchoring on dead ideas and keeps your context from bloating.
+**Cost is auto-experiment's estimate, not a guess.** A judge pass is one LLM call per row, and the
+loop re-runs the whole corpus `runs` times per candidate — with `runs` derived from measured noise,
+not fixed. Show the user the estimate before the loop starts; a queue of a few hundred rows at a
+derived `runs` of 8 is a different proposition from 89 rows at 3.
 
-### Stop conditions
-
-- `iteration == max_iterations` (default 10).
-- **Three worse in a row**: 3 consecutive iterations whose headline is **below the best** → stop,
-  `stop_reason: "3 consecutive iterations worse than best"`. Count against the *best*, not against
-  the previous iteration — three successive declines from an unbeaten best is a plateau; three steps
-  down a slope you are still climbing is not.
-  - "Worse" is on the **point estimate** of the agreed metric. Significance does not enter: at the
-    corpus sizes this skill runs on, almost nothing is significant, and waiting for significance
-    means never stopping. A kept-but-`within_noise` improvement **resets** the counter — it is
-    still an improvement.
-  - An iteration that exactly ties the best is neither better nor worse: it does not reset the
-    counter and does not advance it. `max_iterations` is what bounds the loop in that case.
-  - An iteration recorded as `no_change` (nothing was measured — see below) neither resets nor
-    advances it.
-- **Ceiling reached**: the judge agrees with the humans on every train row. Stop and go to Phase 7 —
-  more iterations can only overfit.
-- **Label ceiling**: if the remaining errors are rows where the reviewers themselves were contested
-  or the human reasoning contradicts the label, stop and report it. The judge cannot beat the
-  labels' own consistency, and pushing further just fits the noise.
-- An iteration whose judge could not be scored (LLM unreachable, unparseable output on most rows,
-  **the runner killed by the OS**) is `no_change` with the blocker recorded — never a made-up
-  number, and never counted toward the plateau, since nothing was measured. 3 in a row → stop.
-  `judge_runner.py` writes `predictions/v<n>.jsonl` only on completion, so a killed run leaves no
-  partial file to mistake for a result — re-run the same version rather than scoring a short file.
-
-## Phase 7 — Holdout and final report
-
-1. **Score the best judge once on the holdout** (`split_mode: train_holdout` only). This is the
-   headline number in the report; the train score is the fitting curve, not the result. Report both,
-   with CIs, and say plainly if the holdout is materially worse — that is overfitting to a small
-   label set and the user needs to know before they publish.
-   Under `split_mode: all_rows`, there is no holdout: report the in-sample score and state that it is
-   optimistic and unvalidated.
-2. **Write `report.md`**: the queue and label, the class balance and exclusion counts, the evidence
-   map and why, the metric and why, a per-iteration table (iteration, what changed, bucket, headline,
-   Δ, McNemar p, decision), the winning prompt, the final confusion matrix + CI + flip rate, the
-   constant-class baseline, the confidence calibration (mean confidence when right vs wrong),
-   **per-class recall with the classes below the measurable floor named as not measured**,
-   **the joint exact-match rate when one judge predicts several labels**, and the honest limits (label count, reviewer disagreement, in-sample vs
-   holdout, any evidence the deployed scope cannot reach).
-3. **State what the judge still gets wrong**, in the humans' terms. A user deciding whether to trust
-   an evaluator needs its failure modes more than its headline.
-
+**What this skill gives up by delegating.** The old loop scored `runs` passes per row, took the
+majority vote, and compared versions with McNemar on the paired rows. Independent full re-runs have
+no per-row majority, and McNemar needs paired rows — so both are gone, replaced by mean ± stdev and
+the two-sample t-test on `SE_diff`. McNemar was the stronger test for this data (paired binary
+outcomes on identical rows), so this is a real trade of statistical power for a loop that is
+maintained in one place. The flip rate survives, computed across runs rather than across passes.
 ## Phase 8 — Create the evaluator in Datadog (the run's deliverable)
 
 **A run does not end with a report. It ends with an evaluator the user can open in the LLM
@@ -547,7 +484,7 @@ the UI, on their own — whether to switch it on.
    `min_threshold`/`max_threshold` for a numeric). **Updating an existing name is a full replace** —
    `get_llmobs_evaluator` first and re-send every field you intend to keep.
 2b. **The published `output_schema` carries `reasoning` and `confidence` by default**, the same
-   contract the local judge was fitted on (Phase 5) — a verdict with no explanation and no stated
+   contract the fitted judge was measured on — a verdict with no explanation and no stated
    certainty is not reviewable, and the whole point of shipping it disabled is that a human reviews it.
    `reasoning` is a plain string. `confidence` is an **integer 0–100, a percentage**, described in
    the schema as such and anchored in the `prompt_template` exactly as it was for the local judge —
@@ -643,29 +580,28 @@ destroys the ground truth any future run of this skill would need.
 
 ## The judge runner
 
-The judge is a plain local process, not an MCP tool. Use `references/judge_runner.py`: it reads
-`corpus/rows.jsonl` + a prompt file, calls the LLM `runs` times per row at temperature 0, and writes
-`predictions/v<n>.jsonl`. `references/scoring.py` turns those predictions into the `scores.json`
-entry (metric, confusion matrix, Wilson CI, flip rate, McNemar vs a previous version).
+The judge is a plain local process, not an MCP tool, and during the loop it runs **inside the
+harness** (`references/judge_harness_template.py`), not on its own. `judge_runner.py` supplies the
+LLM call and the verdict parsing; `scoring.py` supplies the metric. Both are still runnable directly
+for a one-off score outside the loop.
 
-- **Use whichever LLM client is already configured** — the Anthropic SDK if `ANTHROPIC_API_KEY` is
-  in the environment, otherwise `claude -p` on `PATH`. Do not go looking for keys; if neither works,
-  STOP and report.
-- **Rows are independent** — run them concurrently, but size the pool to the backend. On the
-  Anthropic SDK path a pass is an HTTP request and 8–12 is fine; on the `claude -p` fallback every
-  pass is a **separate Node process**, and the same 12 exhausted 62 GB of RAM mid-run on a real
-  corpus — the OS killed the job and the iteration produced nothing. Cap the CLI path at ~4–6, and
-  check which backend you are on (`pick_backend`) before choosing. Keep the runs of one row on the
-  same prompt version.
-- **Unparseable judge output is a row-level failure, not a class.** Retry that pass once; if it
-  fails again, mark the pass `unparseable`. A row whose passes are all unparseable is excluded from
-  the metric **and counted** — never silently scored wrong, never coerced to a default class.
+- **Use whichever LLM client is already configured** — the Anthropic SDK if importable, otherwise a
+  stdlib HTTPS call when `ANTHROPIC_API_KEY` is set, otherwise `claude -p` on `PATH`. Do not go
+  looking for keys; if none works, STOP and report.
+- **Size concurrency to the backend.** On the HTTP paths a pass is a request and 8–12 is fine; on
+  the `claude -p` fallback every pass is a **separate Node process**, and 12 of those exhausted
+  62 GB on a real corpus — the OS killed the run and the iteration produced nothing. Cap the CLI
+  path at ~4–6.
+- **`temperature` is rejected by the newer models** (`deprecated for this model`). The runner asks
+  for it, falls back, and records that the run is then unpinned — in which case the spread across
+  runs is the only honest read on stability, and the report must say so rather than claim
+  determinism.
+- **Unparseable judge output is a row-level failure, not a class.** Retry once, then mark the pass
+  `unparseable`; the row is excluded from the metric **and counted** — never silently scored wrong,
+  never coerced to a default class.
 - **A missing or malformed `confidence` does not void a pass.** The label is what gets scored, so a
-  pass with a usable label and a confidence that is absent, non-numeric or outside 0–100 keeps its
-  label, records `confidence: null` with the reason, and is counted in the run summary. The runner
-  never rescales: a judge that answers `0.9` is flagged, not silently promoted to 90% — guessing
-  which scale it meant invents a number.
-
+  pass with a usable label keeps it, records `confidence: null` with the reason, and is counted. The
+  runner never rescales: a judge answering `0.9` is flagged, not silently promoted to 90%.
 ## Notes
 
 - Every score comes from running the judge. If you are about to type a number, run the judge instead.

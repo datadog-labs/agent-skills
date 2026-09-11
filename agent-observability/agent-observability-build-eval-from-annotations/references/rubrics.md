@@ -1,6 +1,8 @@
 # build-eval-from-annotations rubrics (non-negotiable)
 
-The SKILL.md file is the control loop. This file is the law. Read it in full before iteration 1.
+SKILL.md prepares the judge and publishes it; the control loop itself is
+`agent-observability-auto-experiment`. This file is the law for both. Read it in full before the
+run starts.
 
 ## 1. The human label is the ground truth (`_ground_truth`)
 
@@ -65,29 +67,35 @@ is also a live vulnerability in whatever the evaluator will grade.
   not add a term the user did not ask for, do not flip the direction. If the user's metric and their
   stated goal disagree, STOP and ask which governs.
 
-## 5. Noise & keep policy (`_noise_policy`)
+## 5. Noise, keep/discard and the mechanism audit — auto-experiment's (`_noise_policy`)
 
-- **Keep** a candidate if the headline moves in the goal's direction **and** it passes the mechanism
-  audit (rule 7). The keep does not require statistical significance — with 13 labels almost nothing
-  is significant, and refusing every un-significant gain means never moving.
-- **Label** the confidence separately: McNemar exact test on the discordant pairs (candidate vs best
-  on the same rows), `p < 0.05` **and** `|Δ| ≥ min_delta` → `significant`; otherwise the keep is
-  flagged `within_noise` and its reasoning must say the gain could be noise.
-- `min_delta = max(0.02, 0.5 · run_stdev)` from the baseline's run-to-run spread, derived once at
-  `v0` and never recomputed mid-run.
-- A discarded candidate is fully reverted — next iteration starts from the best prompt **and** the
-  best evidence map, not from the loser's.
+**These rules live in `agent-observability-auto-experiment/references/rubrics.md`, not here.** Read
+its `_noise_policy` and `_mechanism_audit` sections before the loop starts. A second copy in this
+file would drift from the one the loop actually obeys, and the loop is what decides.
 
+What carries over unchanged, and is worth knowing before you read them there:
+
+- Keep on the **point estimate** plus the mechanism audit; significance is a confidence *label*, not
+  a keep gate. At the corpus sizes this skill sees, almost nothing is significant.
+- `runs` and `min_delta` are **derived from measured noise**, never chosen. Fitting a judge on 89
+  rows produced a run-to-run stdev of 0.026 on F1 — small, but not zero, and only visible because
+  the harness re-runs the whole corpus.
+- The mechanism audit's `gained > lost` clause counts rows equally. **On a skewed corpus with a
+  minority-class metric that clause can contradict the agreed metric** — trading three false alarms
+  for two caught errors is the trade an F1-on-the-rare-class headline exists to reward. When they
+  disagree, say which one you followed and why, in the iteration's reasoning. Do not resolve it
+  silently in either direction.
 ## 6. Judge output handling (`_output_handling`)
 
 - Strict JSON only. One retry per unparseable pass, then mark it `unparseable`.
 - A row whose passes are all unparseable is **excluded from the metric and counted** — never scored
   as wrong, never coerced to a default class. Both choices invent data: one punishes the judge for
   a parsing bug, the other hands it free correct answers on the majority class.
-- The prediction is the **majority vote** of `runs` passes. Rows whose passes disagree feed the flip
-  rate, which is a first-class quality signal: a judge at 85% with a 30% flip rate is less useful
-  than one at 82% that is stable, and the report must show both.
-- `runs` must be odd, so a majority always exists.
+- **There is no majority vote.** The loop re-runs the whole corpus `runs` times and scores each run
+  independently; the spread across runs *is* the noise estimate the keep decision needs. A row's
+  verdict may differ between runs, and that disagreement feeds the **flip rate**, which stays a
+  first-class quality signal: a judge at 85% with a 30% flip rate is less useful than one at 82%
+  that is stable, and the report must show both.
 - **Categorical values are lists, and equality is set equality.** `["b","a"]` and `["a","b"]` are
   the same answer and must never be scored as a disagreement or split the majority vote. Partial
   credit for a partly-right multi-select is allowed only through an explicit `match_mode` the user
@@ -102,22 +110,23 @@ is also a live vulnerability in whatever the evaluator will grade.
   its errors as on its hits has a decorative field, and the user must be told before they route
   anything on it.
 
-## 7. Mechanism audit — confirm the change caused the gain (`_mechanism_audit`)
+## 7. Metric honesty on a skewed corpus (`_skew_honesty`)
 
-Before keeping a candidate, diff its per-row correctness against the best's:
+The user picks the headline metric (SKILL.md Phase 4c). They may pick accuracy. What they may not
+get is accuracy **without the floor beside it**:
 
-- **gained > lost** on the same rows, same denominator;
-- the gained rows are predominantly in the **bucket this iteration targeted** — a gain concentrated
-  somewhere else is luck, and should be labelled as such even if kept;
-- **no class's recall collapsed.** The classic false gain on a skewed corpus is a judge drifting
-  toward the majority class: headline up, minority recall down. That is a **discard**
-  (`basis: audit_failed`), not a keep;
-- the flip rate did not blow up. A candidate that gains 3 points while becoming markedly less stable
-  is at best `within_noise`.
-
+- Always report the **constant-class baseline** — what a judge that answers with the majority class
+  every time would score — next to the headline, plus per-class recall and class support.
+- This is not pedantry. On a real 55/7 corpus, a judge told to defer unless something was "clearly
+  wrong" scored **0.855 accuracy**, gained 14 rows against the previous best, lost 3, and was the
+  **only** statistically significant change in eleven iterations — while catching **zero** of the
+  seven known errors. Every number about it was true and the judge was a rubber stamp.
+- A metric that decomposes per row (accuracy, MAE) can be a row average; F1 on a class, macro-F1,
+  κ and balanced accuracy cannot, and the harness emits them as the run's corpus score. Never
+  substitute a row average for a corpus metric because it is easier to compute.
 ## 8. Overfitting guards (`_overfitting`)
 
-- The holdout (>40 rows) is opened **exactly once**, in the final phase. Reading it mid-run turns it
+- The holdout (>40 rows) is opened **exactly once**, at the end of the loop. Reading it mid-run turns it
   into a second training set and the run loses its only honest number.
 - Under 40 rows there is no holdout, and every reported score is in-sample. Say so in the report, in
   plain language, every time.
