@@ -1,0 +1,32 @@
+{
+  "eval_scope": "span",
+  "root_spans_only": true,
+  "content_type": "trace",
+  "selectors": [
+    { "name": "recommendation_context",
+      "match": {"kind": "workflow", "name": "recommendation_cycle", "root": true},
+      "fields": ["input.value"], "take": "first", "max_chars": 4000,
+      "deployed_as": "{{span_input}}" },
+    { "name": "recommended_song",
+      "match": {"kind": "workflow", "name": "recommendation_cycle", "root": true},
+      "fields": ["output.value"], "take": "first", "max_chars": 1000,
+      "deployed_as": "{{span_output}}" }
+  ],
+  "render": "two fenced, tagged sections inside a single <payload> block, in selector order",
+  "fallback": "row is UNRENDERABLE - excluded and counted, never scored as wrong",
+  "excluded_and_why": {
+    "strategist span output (strategy + explanation)": "app's stated intent. Reachable at trace scope, but the human graded the SONG, not the plan: on row 10459dc6 the strategy said 'classic rock' and was still labelled fail. Showing it invites the judge to grade the intent and score the app's own self-report.",
+    "spotify_search tool output": "carries only track_id / artist / title / embed_url. No genre, era or style field anywhere in the trace - the genre knowledge the human used is the judge's own world knowledge, not trace content. Adds tokens, adds nothing.",
+    "span.evaluations (goal-completeness, prompt-rule-violation, discovery, ...)": "prior evaluator verdicts on the same trace. A prediction of the same property is leakage under the rubric, even though no human produced it.",
+    "annotation assessment / reviewer id / annotation timestamp": "exist only because a human already graded the row.",
+    "reviewer reasoning": "none exist on this queue (0 of 13), and would be leakage at prediction time regardless."
+  },
+  "template_variables_verified": {
+    "how": "read two live evaluators in this org with get_llmobs_evaluator",
+    "feedback_actionability (same ml_app, eval_scope span, root_spans_only true)": ["{{span_input}}", "{{span_output}}"],
+    "goal-completeness (other ml_app, eval_scope trace)": ["{{spans[meta.span.kind:llm].meta.input.messages[*].content}}", "{{spans[meta.span.kind:llm].meta.output.messages[*].content}}"],
+    "chosen": ["{{span_input}}", "{{span_output}}"],
+    "fidelity_gap": "none - the local renderer shows exactly the root span input and output that {{span_input}}/{{span_output}} resolve to at span scope with root_spans_only."
+  },
+  "rationale": "follows_feedback asks whether the next recommendation respects what the user just said. Both halves of that question live on the root recommendation_cycle span and nowhere else: its input.value carries the previous song, the user's known/liked reaction, the verbatim feedback quote when there is one, and the session insight banner; its output.value carries the song the app chose. Nothing deeper in the tree (strategist plan, Spotify tool results, three OpenAI llm calls) adds evidence about the label - they add the app's intent and opaque track ids. Because the same two fields are what {{span_input}} and {{span_output}} resolve to on a root-span-scoped evaluator, the judge is fitted on precisely what the deployed evaluator will see."
+}

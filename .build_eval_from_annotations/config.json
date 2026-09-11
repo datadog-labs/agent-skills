@@ -1,0 +1,45 @@
+{
+  "annotation_queue_id": "ac4252d8-825e-410a-a3f6-5200d97c2118",
+  "queue_name": "Music Recommender - Follows Feedback",
+  "project_id": "457c54a8-f2d9-4f5e-84d3-451af1ff8cde",
+  "site": "dd.datad0g.com",
+  "datadog_backend": "mcp",
+  "target_label": {
+    "label_schema_id": "959fgf6w",
+    "name": "follows_feedback",
+    "type": "boolean",
+    "is_assessment": true,
+    "has_reasoning": true
+  },
+  "framing": "grader",
+  "match_mode": "exact",
+  "metric": "F1 on the false class (label value == false, i.e. the app did NOT follow the user's feedback). Higher is better. Always reported alongside: confusion matrix, Wilson 95% CI on the headline, flip rate across runs, constant-class baseline, per-class recall and support, confidence calibration (mean confidence when right vs wrong, accuracy per band).",
+  "ml_app": "music-recommender",
+  "judge_model": "claude-opus-5",
+  "max_iterations": 10,
+  "max_runs": 3,
+  "runs": 3,
+  "domain_notes": [],
+  "eval_scope": null,
+  "eval_name": null,
+  "split_mode": "all_rows",
+  "data_note": {
+    "total_interactions": 19,
+    "annotated": 13,
+    "pending_excluded": 6,
+    "class_balance": {
+      "true": 10,
+      "false": 3
+    },
+    "contested_dropped": 0,
+    "empty_labels_dropped": 0,
+    "unrenderable": null,
+    "reviewer_reasoning_texts": 0,
+    "minority_class_below_floor": true,
+    "floor_note": "Minority class has 3 rows against a floor of 8. Wilson CI is wide enough to swallow most improvements. User was told and chose to proceed.",
+    "in_sample": true,
+    "in_sample_note": "13 usable rows <= 40, so no holdout. Every reported score is in-sample and therefore optimistic."
+  },
+  "published_evaluator": null,
+  "backend_note": "User first chose pup. pup 1.8.0 is installed but authenticated only against prod (datadoghq.com, org 8dee7c38-00cb-11ea-a77b-8b5a08d3b091); the queue is on staging (datad0g.com). Verified: `pup llm-obs annotation-queues list --queue-ids ac4252d8-...` returns an empty data array. Run stopped and asked; user switched the backend to mcp (datadog-staging server) for the whole run."
+}
