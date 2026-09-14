@@ -101,6 +101,20 @@ _TAGS = "service:setup-cli"
 _BREAKER = {"open": False, "critical_fails": 0}
 
 
+def _trip_breaker(critical):
+    """Record one terminal failure (transport OR terminal HTTP) against the breaker.
+
+    Non-critical: a single strike opens it. Critical (resolve-core): opens only after
+    3 consecutive failures, so one blip cannot drop the plan shape — but once that
+    bound is reached the breaker applies to critical events too (see ``emit``)."""
+    if critical:
+        _BREAKER["critical_fails"] += 1
+        if _BREAKER["critical_fails"] >= 3:            # bound the worst-case hang
+            _BREAKER["open"] = True
+    else:
+        _BREAKER["open"] = True                        # non-critical: 1-strike
+
+
 def _truthy(value):
     return str(value).strip().lower() in ("1", "true", "yes", "on")
 
@@ -343,8 +357,9 @@ def emit(event_type, event_action, session_id, fields=None,
     never blocks beyond the bounded timeout / retries.
 
     ``critical`` marks resolve.py's plan-shape core (run:started, plan_resolved, planned×N):
-    it BYPASSES an open breaker so one transient blip cannot drop the whole core, and trips
-    the breaker only after 3 consecutive critical failures.
+    it BYPASSES an open breaker — but only until 3 consecutive critical failures trip it —
+    so one transient blip cannot drop the whole core, yet a persistently down intake still
+    stops after the bound instead of adding a timeout per plan node.
     """
     try:
         if disabled is None:
@@ -370,9 +385,11 @@ def emit(event_type, event_action, session_id, fields=None,
             event["event_seq"] = seq                           # gap-detection ordinal
         body = _log_body(event)
 
-        # Softened breaker: a critical (resolve-core) emit is never suppressed by an open
-        # breaker, so a single earlier blip cannot drop the plan shape.
-        if _BREAKER["open"] and not critical:
+        # Softened breaker: a critical (resolve-core) emit bypasses an open breaker so a
+        # single earlier blip cannot drop the plan shape — but only until the critical
+        # failure bound is reached; past that the breaker applies to critical events too,
+        # so a down intake cannot keep adding a timeout per plan node.
+        if _BREAKER["open"] and (not critical or _BREAKER["critical_fails"] >= 3):
             _record_ndjson(event, "suppressed")
             return False
 
@@ -391,15 +408,11 @@ def emit(event_type, event_action, session_id, fields=None,
         _record_ndjson(event, status if status is not None else "transport_failed")
 
         if status is None:                                     # transport failure
-            if critical:
-                _BREAKER["critical_fails"] += 1
-                if _BREAKER["critical_fails"] >= 3:            # bound the worst-case hang
-                    _BREAKER["open"] = True
-            else:
-                _BREAKER["open"] = True                        # non-critical: 1-strike
+            _trip_breaker(critical)
             _debug(f"transport-failed {event_type}:{event_action}")
             return False
-        if status >= 400:
+        if status >= 400:                                      # terminal HTTP failure (4xx/5xx/429)
+            _trip_breaker(critical)                            # count it toward the same bound
             _debug(f"dropped {event_type}:{event_action} status {status}")
             return False
         _BREAKER["critical_fails"] = 0                          # a success clears the streak

@@ -1,7 +1,7 @@
 ---
 id: dd-orchestrator
 name: dd-orchestrator
-description: Entry point for Datadog onboarding. Takes a developer's plain-language goal, ensures a valid Datadog account with dd-account-setup, asks dd-product-recommender which products fit, detects the project's platform and cloud, then composes an ordered plan across the existing skills (agent install, cloud connect, product enable, verify) and dispatches to each by source URL — honestly flagging products with no skill yet. Use when the user says "set up Datadog", "onboard my app / this repo to Datadog", "instrument my project", or states a monitoring goal without naming a specific product or skill.
+description: Entry point for Datadog onboarding. Takes a developer's plain-language goal, ensures a valid Datadog account with dd-account-setup, asks dd-product-recommender which products fit, detects the project's platform and cloud, then composes an ordered plan across the existing skills (agent install, product enable, verify, and optional cloud integration) and dispatches to each by source URL — honestly flagging products with no skill yet. Use when the user says "set up Datadog", "onboard my app / this repo to Datadog", "instrument my project", or states a monitoring goal without naming a specific product or skill.
 cloud_provider: ""
 version: 2
 tags: [orchestrator, routing, onboarding, entry-point, composition]
@@ -21,14 +21,17 @@ plain-language goal, decide which existing skills are needed and in what order, 
 them across all sources. You do not write instrumentation yourself; each skill owns its steps.
 
 Routing is **compositional**, not a lookup. A product like "APM" is not one skill — it expands into
-*ensure account → install the Agent for the detected platform → connect a cloud if one is involved →
-enable the product → verify*. That composition is computed from the capability graph in
+*ensure account → install the Agent for the detected platform → enable the product → verify*, and
+surfaces any relevant cloud integration as an optional suggestion (never a required step). That
+composition is computed from the capability graph in
 **`catalog.json`**; there is no intent-to-skill table anywhere (intents live only in the recommender).
 
 ## Ground rules (read once)
 
 - **Confirm before you run.** Show the composed plan (skills, in order) and the skipped dead-ends, and
-  get a yes before dispatching anything.
+  get a yes before dispatching anything — with one exception: `dd-account-setup` runs first as a
+  preflight (Step 2), because there is no plan to show until an account exists. Nothing else dispatches
+  before approval.
 - **The catalog is the source of truth.** `catalog.json` holds every skill as a node with facets
   (`kind`, `product`, `platform`, `cloud`), a category-level `requires` graph, and a `source.url`.
   `resolve.py` composes the plan from it. Do not hand-maintain a routing table.
@@ -177,12 +180,12 @@ developer goal
    compose a plan without it (the products must trace to the shortcut or the recommender, never to your
    own inference) — but it never changes the plan itself.
    The `--trace` flag prints one stable, machine-readable block — `SESSION_ID`, `STOP_REASON`, `PLAN`,
-   `DEAD_ENDS`, `CHOICE_POINTS`, `CONFIRMED`, `DISPATCHED` — and `tee` saves it verbatim to
+   `DEAD_ENDS`, `CHOICE_POINTS`, `SUGGESTED`, `CONFIRMED`, `DISPATCHED` — and `tee` saves it verbatim to
    `$TRACE`. **That deterministic block IS your dispatch trace; never re-narrate the plan by
-   hand.** Read the same output for the ordered plan, the dead-ends, and any choice points. In **debug
+   hand.** Read the same output for the ordered plan, the dead-ends, and any choice points. **Capture the
+   `SESSION_ID:` value from that block** — every telemetry call in this run reuses it. In **debug
    mode** (only when the context explicitly asks for it), add `--debug` to also render the ASCII DAG
-   (indent = dependency depth, `<-` = direct prerequisites). Its first line is `SESSION ID: <uuid>` —
-   **capture it**; every telemetry call in this run reuses it. `resolve.py` also emits the reliable
+   (indent = dependency depth, `<-` = direct prerequisites). `resolve.py` also emits the reliable
    telemetry core here (see **Telemetry** below).
 6. **Resolve choices** — for each choice point (e.g. "pick a platform: kubernetes, linux"), ask the
    developer and re-run, or proceed with the confirmed value.
@@ -250,7 +253,7 @@ Dependencies: {{root}} → {{chain / branches, one line}}
 - ⚠ {{step}} {{mutating / outward-facing effect}}
 - {{step}} {{non-mutating effect}}
 
-Approve?  [Proceed — all {{k}}]  ·  [Subset: …]  ·  [Cancel]
+Approve?  [Proceed — all {{k}}]  ·  [Cancel]
 ```
 
 ### SUMMARY block — Step 8 (terminal output)

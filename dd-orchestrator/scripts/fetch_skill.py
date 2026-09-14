@@ -92,7 +92,10 @@ def _node(catalog_path, skill_id):
 def fetch(skill_id, dest=None, catalog_path=CATALOG):
     node = _node(catalog_path, skill_id)
     kind, *rest = resolve_target(node)
-    dest = dest or os.path.join(tempfile.gettempdir(), "dd-orch-skills", skill_id)
+    # Run-scoped destination: a fresh dir per fetch so a partial/older fetch can never leave
+    # stale files (e.g. an upstream-deleted script or a leftover SKILL.md) to be executed, and
+    # concurrent fetches cannot interleave. Caller reads the returned path, so a unique dir is fine.
+    dest = dest or tempfile.mkdtemp(prefix=f"dd-orch-{skill_id}-")
     os.makedirs(dest, exist_ok=True)
     if kind == "github":
         org_repo, skill_dir = rest

@@ -716,16 +716,17 @@ def _print_trace(session_id, args, res):
     placeholders the agent fills after the confirm gate and after each dispatch.
 
     STOP_REASON tells the reader whether the plan may proceed:
-      none                  — plan is non-empty; go to the confirm gate.
-      awaiting_choice       — no plan yet; resolve a CHOICE_POINT first (e.g. missing platform).
+      none                  — plan is non-empty and no choices remain; go to the confirm gate.
+      awaiting_choice       — a CHOICE_POINT is unresolved (e.g. missing platform); resolve it
+                              and re-run first, even if a partial plan already exists.
       no_enabled_capability — no plan and no choice; only dead-ends (nothing to automate).
       no_plan               — nothing to do (empty product list / all filtered out).
     """
     plan = res["plan"]
-    if plan:
-        stop = "none"
-    elif res["choices"]:
+    if res["choices"]:          # an unresolved choice blocks dispatch, even with a partial plan
         stop = "awaiting_choice"
+    elif plan:
+        stop = "none"
     elif res["dead_ends"]:
         stop = "no_enabled_capability"
     else:
@@ -754,6 +755,12 @@ def _print_trace(session_id, args, res):
             print(f"  - {c['need']}: {', '.join(c['options'])}")
     else:
         print("CHOICE_POINTS: (none)")
+    if res.get("suggested"):
+        print("SUGGESTED:")                                     # optional enrichment, e.g. a cloud connector
+        for s in res["suggested"]:
+            print(f"  + {s['id']} {s['kind']} (by {s['suggested_by']}) {s['url']}")
+    else:
+        print("SUGGESTED: (none)")
     print("CONFIRMED: pending")
     print("DISPATCHED: (fill one skill_id per line after each dispatch)")
     print("=== END DD-ORCH TRACE ===")
@@ -943,7 +950,10 @@ def main():
     # (or taken from the environment if an outer wrapper already set it) and printed so the
     # SKILL.md runbook can reuse it on each dispatch-boundary emit.py call.
     session_id = os.environ.get("DD_ORCH_SESSION_ID") or str(uuid.uuid4())
-    print(f"SESSION ID: {session_id}")
+    if not a.trace:
+        # In --trace mode the framed block already carries SESSION_ID; keep this human-oriented
+        # line for plain runs only, so the trace stays a single machine-readable block.
+        print(f"SESSION ID: {session_id}")
     products = [p for p in a.products.split(",") if p.strip()]
     router = Router(catalog, enabled_only=not a.include_disabled)
     res = router.resolve(
