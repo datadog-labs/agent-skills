@@ -11,7 +11,7 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 | **dd-logs** | Search logs |
 | **dd-apm** | Traces, services, performance, Single-Step Instrumentation |
 | **dd-docs** | Search Datadog documentation |
-| **agent-observability** | Agent Observability: experiments, eval RCA, evaluator generation, session classification |
+| **agent-observability** | Agent Observability: experiments, local experiment builder, eval RCA, evaluator generation, session classification |
 | **dd-browser-sdk** | Browser SDK: RUM, Logs, Session Replay, profiling, product analytics, error tracking, version migration |
 | **dd-audit** | Audit Trail investigations: who changed what, key compromise, cost spike root cause, compliance evidence (SOC 2/PCI), AI activity auditing |
 | **dd-software-delivery** | CI/CD workflow skills — unblock PR pipelines, triage flaky tests (MCP + pup) |
@@ -75,6 +75,8 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-audit-compliance-report \
   --skill dd-audit-ai-activity \
   --skill agent-observability-experiment-analyzer \
+  --skill agent-observability-local-experiment \
+  --skill agent-observability-experiment-py-bootstrap \
   --skill agent-observability-experiment-bootstrap \
   --skill agent-observability-trace-rca \
   --skill agent-observability-eval-bootstrap \
@@ -100,6 +102,8 @@ The `agent-observability` directory contains eight skills for working with Agent
 | `agent-observability-session-classify` | Classify whether user intent was satisfied in a session (trace + RUM signals) |
 | `agent-observability-auto-experiment` | Local hill-climb: baseline-eval a prompt/file against LLM-Obs data, make one focused change, re-score with the same harness, keep it only if it beats the best, repeat |
 | `agent-observability-replay-trace` | Iterate on one trace: re-run it against local code, diff old vs new output, loop until satisfied (CLI, no server; edit → replay → diff) |
+
+The local experiment skill keeps `SKILL.md` focused on purpose-to-profile selection. It loads `references/common.md` and only the selected profile reference before delegating artifact construction to the experiment bootstrap skill.
 
 **Eval pipeline flow:**
 
@@ -131,6 +135,8 @@ loaded separately when needed.
 ```bash
 # Claude Code — copy any or all skills
 cp -r agent-observability/agent-observability-experiment-analyzer ~/.claude/skills
+cp -r agent-observability/agent-observability-local-experiment ~/.claude/skills
+cp -r agent-observability/agent-observability-experiment-py-bootstrap ~/.claude/skills
 cp -r agent-observability/agent-observability-experiment-bootstrap ~/.claude/skills
 cp -r agent-observability/agent-observability-trace-rca ~/.claude/skills
 cp -r agent-observability/agent-observability-eval-bootstrap ~/.claude/skills
@@ -140,7 +146,7 @@ cp -r agent-observability/agent-observability-session-classify ~/.claude/skills
 
 #### MCP Requirements
 
-All six skills require the LLMO toolset:
+Trace-driven evaluation and published-experiment workflows require the LLMO toolset. The local experiment skill can plan and run local-only experiments without MCP; enable LLMO when selecting Datadog traces, annotations, datasets, or publication:
 
 ```bash
 claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'
@@ -161,6 +167,10 @@ experiment-analyzer <experiment_id>                         # single experiment
 experiment-analyzer <baseline_id> <candidate_id>            # compare two experiments
 experiment-analyzer <id(s)> <question>                      # ask a specific question
 experiment-analyzer <id(s)> [question] --output notebook    # export to Datadog notebook
+
+# Build a goal-oriented local experiment
+/agent-observability-local-experiment                       # choose a profile and build a plan
+Build a regression gate for the current change with agent-observability-local-experiment
 
 # Root-cause why an app is failing
 What's wrong with <ml_app> based on its evals over the last 24h
