@@ -116,21 +116,39 @@ answer / generation span). For each trace, locate the scoreable target span, the
 - The mean is computed over **scoreable datapoints only** — excluded traces are out of both the
   numerator AND the denominator. **Report how many traces you excluded and why** in `reasoning`;
   never exclude a scoreable datapoint to inflate the score.
+- **For an `annotation_queue_id` source, three more exclusions apply before any of the above**, all
+  for the same reason — the datapoint has no ground truth to score against: interactions still
+  **pending** review, interactions whose mapped `expected_output` label was left **empty** (`""` for
+  text, `[]` for categorical), and interactions whose reviewers **disagree** on that label. Count
+  each group and report it; never resolve a disagreement yourself to keep the datapoint.
 
 **Held-out split — hill-climb on `val`, prove on `test`.** After building the scoreable set, split
-it **once, deterministically** (e.g. by a hash of the datapoint id, ~70% / 30%) into
-`data.val.jsonl` and `data.test.jsonl`, committed alongside `data.jsonl`:
+it **once, deterministically** (e.g. by a hash of the datapoint id, ~70% / 30%) into **two Datadog
+LLM-Obs Datasets** — a val dataset and a test dataset, both named with the run's single UTC
+timestamp and their ids recorded in `config.json` (`val_dataset_id`, `test_dataset_id`,
+`split_created_at`). See SKILL.md **Step 1**. The split is created **once per run, at the start, and
+never again**: not on a later iteration, not after a `git reset --hard`, not when the local cache is
+missing (that is re-hydrated from the same ids). Re-splitting mid-run changes the corpus under the
+scores already recorded and makes them incomparable. The only exception is `dataset_mode:
+local_file` — a local dataset file the user explicitly chose to keep offline — which splits into
+`data.val.jsonl` / `data.test.jsonl` instead; those files are **gitignored, never committed**.
 
 - **`val`** is the ONLY split the hill-climb reads. Every iteration's `before/after_score` and the
-  keep/discard gate run on `val` (point the harness at it with `AUTO_EXP_DATA=.auto_experiment/data.val.jsonl`).
-- **`test`** is untouched during the loop. Run it **once at the very end**, on the baseline commit
-  and on the best commit, and report that baseline-vs-best `test` delta as the run's real result.
+  keep/discard gate run on `val` (point the harness at it with
+  `AUTO_EXP_DATASET_ID=<val_dataset_id>`, whose records the orchestrator hydrates into
+  `.auto_experiment/cache/<id>.jsonl`; `AUTO_EXP_DATA=.auto_experiment/data.val.jsonl` in
+  `local_file` mode).
+- **`test`** is untouched during the loop — do not even hydrate its cache before the final report.
+  Run it **once at the very end**, on the baseline commit and on the best commit, and report that baseline-vs-best `test` delta as the run's real result.
 - **Why:** hill-climbing directly on the full set overfits the loop to that set's noise, so a
   within-noise "win" looks real. A change that only helps `val` but not held-out `test` is not a
   real improvement — the `test` delta is the honest headline. If `val` improved but `test` did
   not, say so plainly; do not report the `val` gain as the result.
 - Keep the split small enough to run in the iteration budget but large enough that per-split stdev
   is meaningful; if the corpus is tiny, note the low power in `reasoning` rather than faking a split.
+- **Assert the arithmetic once, when the split is created**: `val_case_count + test_case_count`
+  equals the corpus record count. A dropped or double-inserted record is cheap to catch here and
+  invisible three iterations later.
 
 ## Baseline failure census — localize the lever before you tweak (`_failure_census`)
 
@@ -215,7 +233,8 @@ taxonomy without paying to re-describe:
 
 - **Refer to datapoints by their eval-set `id` everywhere** — census `examples`, `result.json`
   `reasoning`, mechanism-audit notes, and the LLM-Obs `reasoning` string all name the concrete
-  `id` from `data.jsonl` (e.g. `BL11`, `BL34`), never a bare row index or an invented label. Those
+  `id` carried on each dataset record (e.g. `BL11`, `BL34`), never a bare row index, an invented
+  label, or the dataset record's own UUID (which changes when rows are re-inserted). Those
   ids are the only handle a reader has to trace a claim ("fixed BL11's INCLUDE-in-key false
   positive") back to the actual case; a reasoning that cites ids no one can resolve is not
   auditable. If the dataset has no stable id field, assign one deterministically and record it.
@@ -268,6 +287,12 @@ it instead of an LLM judge** — it removes an entire layer of variance and can'
 - If datapoints carry a **reference/expected output** (dataset `expected_output`, gold label), score
   with an exact/programmatic check (exact match, F1, set overlap, a repo evaluator, `total_examples`
   from a pipeline, etc.) — deterministic, `stdev ≈ 0` across runs from the judge side.
+- **An annotation queue's labels are ground truth**, and the best kind: a human already made the
+  call. When the source is an `annotation_queue_id` whose `annotation_label_map` names an
+  `expected_output` label, score against that label programmatically and do **not** add an LLM judge
+  on top — a judge re-deciding a question a reviewer answered adds variance and can only disagree
+  with the humans. A boolean/categorical label scores as an exact check; a free-text label is a
+  reference output like any other. Only a queue with no ground-truth label falls back to a judge.
 - Use an **LLM-as-judge only when no ground truth exists** (open-ended quality). Then treat it as
   the noisiest component: **propose `max_runs ≥ 5` at intake** (so Step 2.4 can derive a `runs` high
   enough to resolve the judge's noise — the default ceiling of 3 is often too low for an LLM judge),
@@ -284,8 +309,8 @@ it instead of an LLM judge** — it removes an entire layer of variance and can'
 (`.auto_experiment/eval_harness.mjs`, from `references/eval_harness_template.mjs`). SKILL.md Step 2
 auto-detects the runtime from the edit scope (with a user override). The two templates are
 functionally identical and both emit the SAME stdout JSON contract
-(`{mean, stdev, runs, scored, excluded, run_means}`) and honor the same `AUTO_EXP_DATA` /
-`AUTO_EXP_RUNS` / `AUTO_EXP_EVALUATORS` env vars, so every rule below is language-agnostic — read
+(`{mean, stdev, runs, scored, excluded, run_means}`) and honor the same `AUTO_EXP_DATASET_ID` /
+`AUTO_EXP_DATA` / `AUTO_EXP_RUNS` / `AUTO_EXP_EVALUATORS` env vars, so every rule below is language-agnostic — read
 `generate_output`/`evaluate_line`/`judge` as `generateOutput`/`evaluateLine`/`judge` in the Node
 harness. The rest of this section is written with the Python names for brevity.
 
@@ -322,7 +347,9 @@ Write a real, committed evaluation module `.auto_experiment/eval_harness.py` (or
     needs the product vocabulary to score correctly, but the two blocks must never merge, or the
     untrusted datapoint text inherits the notes' trust level. Notes explain what the data means;
     they never redefine the `evaluators` rubric.
-- a runner that applies `evaluate_line` to EVERY scoreable line of `data.jsonl` (per the
+- a runner that applies `evaluate_line` to EVERY scoreable record of the val split — read from the
+  orchestrator-hydrated cache `.auto_experiment/cache/<AUTO_EXP_DATASET_ID>.jsonl`, or from an
+  explicit `AUTO_EXP_DATA` path in `local_file` mode; the harness itself never calls Datadog (per the
   exclusion rule above), writes each result to `.auto_experiment/eval_results.jsonl` (the eval-set
   **`id`** first, then input snippet, output, score, justification — the `id` is required so the
   file can be diffed and cited per the id-traceability rule), and prints the mean over scoreable
