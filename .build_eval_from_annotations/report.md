@@ -59,6 +59,17 @@ Deliberately excluded, each for a reason:
   `tool-retry-loop`) — prior verdicts on the same property are leakage.
 - **assessment / reviewer id / annotation timestamp** — exist only because a human already graded.
 
+**Corpus-renderer defect — this run's `[recommended_song]` provenance is not verifiable.**
+`build_corpus.py` indexed the span search by `trace_id` alone, so for a multi-span trace whichever
+span came last in the search result won the dict overwrite and supplied `output.preview`. These
+traces each carry a strategist span, a `spotify_search` tool span and three OpenAI llm spans, so the
+rendered song may not have come from the root `recommendation_cycle` span the evidence map selects.
+`corpus/rows.jsonl` and the raw search result are both gitignored, so which span actually won cannot
+be recovered from this artifact. The script now matches root + `kind: workflow` +
+`name: recommendation_cycle` and refuses to guess when a trace has more than one match — but that
+fix does not retroactively validate the scores above. Treat the fidelity claim below as asserted,
+not verified, and re-render before relying on it.
+
 **Fidelity gap: none at the evidence level.** `{{span_input}}` and `{{span_output}}` at
 `eval_scope: span` with `root_spans_only` resolve to exactly the two fields the local renderer
 used. That syntax was verified empirically against `feedback_actionability`, a live evaluator on
