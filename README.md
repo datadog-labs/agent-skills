@@ -81,6 +81,7 @@ npx skills add datadog-labs/agent-skills \
   --skill agent-observability-eval-pipeline \
   --skill agent-observability-session-classify \
   --skill agent-observability-auto-experiment \
+  --skill agent-observability-build-eval-from-annotations \
   --skill agent-observability-replay-trace \
   --skill k9-ownership-byod-setup \
   --full-depth -y
@@ -88,7 +89,7 @@ npx skills add datadog-labs/agent-skills \
 
 ### Agent Observability (LLMO)
 
-The `agent-observability` directory contains eight skills for working with Agent Observability data:
+The `agent-observability` directory contains nine skills for working with Agent Observability data:
 
 | Skill | Purpose |
 |-------|---------|
@@ -99,6 +100,7 @@ The `agent-observability` directory contains eight skills for working with Agent
 | `agent-observability-eval-pipeline` | Eight-phase pipeline: classify → RCA → bootstrap evaluators → create dataset → publish → generate experiment → run → analyze. Stop early with `--stop-after`. |
 | `agent-observability-session-classify` | Classify whether user intent was satisfied in a session (trace + RUM signals) |
 | `agent-observability-auto-experiment` | Local hill-climb: baseline-eval a prompt/file against LLM-Obs data, make one focused change, re-score with the same harness, keep it only if it beats the best, repeat |
+| `agent-observability-build-eval-from-annotations` | Build an evaluator from an annotation queue's human labels: find where the labelled property lives, draft an LLM judge, hand the hill-climb to `agent-observability-auto-experiment`, publish the winner as a disabled evaluator. **Requires `agent-observability-auto-experiment`.** |
 | `agent-observability-replay-trace` | Iterate on one trace: re-run it against local code, diff old vs new output, loop until satisfied (CLI, no server; edit → replay → diff) |
 
 **Eval pipeline flow:**
@@ -117,6 +119,12 @@ Use `agent-observability-eval-pipeline` to run all three steps in sequence with 
 
 Use `agent-observability-session-classify` independently to evaluate whether individual assistant sessions
 satisfied user intent, combining Agent Observability trace data with RUM behavioral signals.
+
+Use `agent-observability-build-eval-from-annotations` when an annotation queue already holds human labels: it fits an
+LLM judge to those labels and publishes the winner as a disabled evaluator. It does not contain its own
+improvement loop — it prepares the judge and hands the hill-climb to `agent-observability-auto-experiment`,
+so **install both**. `agent-observability-eval-bootstrap` is the no-labels counterpart — it proposes
+evaluators from trace inspection alone, with nothing to measure them against.
 
 Use `agent-observability-experiment-bootstrap` to bootstrap a reproducible experiment through the
 Python `ddtrace.llmobs` SDK or the Node `dd-trace` SDK. Python remains the default adapter;
@@ -140,7 +148,7 @@ cp -r agent-observability/agent-observability-session-classify ~/.claude/skills
 
 #### MCP Requirements
 
-All six skills require the LLMO toolset:
+All of these skills require the LLMO toolset:
 
 ```bash
 claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'

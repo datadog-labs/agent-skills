@@ -304,6 +304,25 @@ it instead of an LLM judge** — it removes an entire layer of variance and can'
 
 ## Eval-harness spec (`_eval_harness_skill`)
 
+**`mean` is the run's score under the configured metric — a row average is the default, not the
+definition.** The templates below compute `mean` as the mean of per-datapoint scores, which is right
+whenever the metric decomposes per datapoint. Corpus-level metrics do not: F1 on a class, macro-F1,
+Cohen's κ and balanced accuracy are computed over the whole run's confusion matrix and cannot be
+recovered from a row average. A harness for those emits the corpus metric as `mean` and still writes
+per-row scores to `eval_results.jsonl` for the audit. Nothing else changes — `stdev` is still the
+spread of `run_means` across full re-runs, and the loop still reads only the stdout contract.
+
+This distinction is load-bearing on skewed corpora. A judge that answers with the majority class on
+every row scores well on a row-averaged accuracy while catching none of the minority cases, so a
+loop gated on that number will happily hill-climb toward a rubber stamp. When the metric is a row
+average, report the constant-class baseline next to it (see **Metric selection**).
+
+**A caller-supplied harness (`harness_provided_by`) is exempt from the construction rules below**
+— it is written by another skill for an object this template cannot express — but **not** from the
+contract: same stdout JSON, same `eval_results.jsonl`, same no-score-literals rule, same
+untrusted-content handling. SKILL.md Step 2 validates it before the baseline and STOPs if it does
+not conform.
+
 **Language.** The harness must run in whatever runtime can import/run `files_to_optimize` — Python
 (`.auto_experiment/eval_harness.py`, from `references/eval_harness_template.py`) or Node/ESM
 (`.auto_experiment/eval_harness.mjs`, from `references/eval_harness_template.mjs`). SKILL.md Step 2

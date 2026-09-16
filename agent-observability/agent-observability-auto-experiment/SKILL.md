@@ -73,6 +73,7 @@ run starts** (see the Mandatory intake gate below).
 | `max_iterations` | how many changes to try (clamp **1–50**) | _default_ **2** |
 | `max_runs` | ceiling on the derived `runs` — how many times the harness may repeat the eval per candidate to beat variance (clamp **3–20**; the pilot already runs 3×, so 3 is the floor) | _default_ **3** |
 | `runtime` | which harness language to use (`python` \| `node`) — the harness must run in whatever can import/run `files_to_optimize` | _default_: **auto-detected** from `files_to_optimize` (see Step 2); the user may override |
+| `harness_provided_by` | name of the skill that wrote the eval harness, when this loop is being driven by another skill over a non-code object (a judge prompt, a config). Set it and Step 2 validates that harness instead of generating one. | _default_ **unset** — normal runs generate their own harness |
 | `model` | judge model id | _default_: the Claude model selected in this session (see rubric) |
 | `base_branch` | branch the baseline is measured on | _default_: current branch / `main` |
 | `domain_notes` | **a list of strings** — product/domain facts the agents cannot infer from the code (what a term of art means, which behaviours are intended, what a reference row represents), one note per entry. Carried verbatim into every sub-agent briefing, every census describer, and the judge prompt. | _default_ **`[]`** |
@@ -977,6 +978,25 @@ hydrate a cache through the selected backend, and the harness reads that:
   reads `data.val.jsonl` / `data.test.jsonl` via `AUTO_EXP_DATA`.
 
 ### Step 2 — Build the harness and compute BEFORE (baseline)
+
+**A caller may supply the harness instead (`harness_provided_by`).** Another skill can drive this
+loop over an object that is not application code — a judge prompt, a retrieval config — where
+"generate the output and score it" means something the generic template cannot express.
+When `config.json` carries `harness_provided_by: <skill-name>` and names the harness path, **do not
+generate one**. Instead:
+
+1. Confirm the file exists. Missing → **STOP** and name the skill that was supposed to write it;
+   silently generating a template harness would measure something other than what the caller asked
+   for, and the caller would never know.
+2. Run it once, before the baseline, and validate the stdout JSON contract: `mean`, `stdev`, `runs`,
+   `scored`, `excluded`, `run_means` all present, `run_means` of length `runs`, `mean` finite. A
+   harness that fails this check is a **STOP**, not a fallback to the template.
+3. Record in `config.json` that the harness was caller-supplied and which skill supplied it, so the
+   final report does not imply this loop wrote it.
+
+Everything downstream is unchanged: the harness is still built once and reused verbatim, the loop
+still only reads its stdout, and `runs`/`min_delta` are still derived from its measured noise. Skip
+the rest of this step's language detection and template copying when a harness is provided.
 
 **Pick the harness language to match the code under test (auto-detect, with override).** The loop is
 language-agnostic — it only reads the harness's stdout JSON contract — so the harness must be written
