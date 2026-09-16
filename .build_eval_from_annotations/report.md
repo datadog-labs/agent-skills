@@ -6,7 +6,7 @@ project `457c54a8-f2d9-4f5e-84d3-451af1ff8cde`.
 ## Headline — the deployable score
 
 **F1 on the false class = 0.9333** over the **7 rows the published evaluator will actually see**
-(`filter has_feedback:true`), across three full re-runs: `[0.8, 1.0, 1.0]`, stdev 0.094.
+(`filter has_feedback:true`), across three full re-runs: `[1.0, 0.8, 1.0]`, stdev 0.094.
 Constant-class floor on that scope: **0.6**. Accuracy on the measured pass-set 7/7, Wilson 95% CI
 on accuracy `[0.646, 1.0]`.
 
@@ -69,7 +69,7 @@ the same ml_app — not assumed.
 | iteration | F1(false), 13 rows | Δ vs best | decision | basis | sha |
 |---|---|---|---|---|---|
 | 0 baseline | 0.8000 | — | baseline | — | `f21ed69` |
-| 1 | 0.9333 | +0.1333 | kept | significant (t=2.45) | `a84e1bb` |
+| 1 | 0.9333 | +0.1333 | kept | loop heuristic (t=2.45; **McNemar p=1.0**) | `a84e1bb` |
 
 Stopped after one iteration at the **ceiling**: the judge then agreed with every labelled row
 (10 TN / 3 TP, zero errors), so the failure census was empty and there was no bucket left to
@@ -89,18 +89,27 @@ explicitly declared insufficient. The no-veto fallback was preserved verbatim, s
 user stated no constraint are untouched. Mechanism audit passed — same 13-row denominator, **1 row
 gained, 0 lost**, and the gained row is exactly the one the change targeted.
 
-**Read the significance carefully.** t=2.45 clears the bar arithmetically but rests on a single row
-of a 3-row class. And `min_delta` = 0.02 was derived from a baseline stdev of **0.0** — a fluke of a
+**This keep was not statistically significant — read the basis carefully.** The `significant: true`
+and `basis: significant` recorded in `result.json` are the *loop heuristic's* verdict, computed by
+a t-test over three re-run means. That t-test measures re-run noise on a fixed in-sample corpus,
+not a label-level effect. The row-paired test — the right instrument here — is in the same
+artifact and says nothing happened: `iter1_diagnostics.vs_baseline.mcnemar_p = **1.0**`. Read the
+keep as "the loop's rule fired", not "a statistical bar was cleared". t=2.45 clears that rule
+arithmetically but rests on a single row of a 3-row class. And `min_delta` = 0.02 was derived from a baseline stdev of **0.0** — a fluke of a
 perfectly stable baseline — while iteration 1's own stdev was 0.094, five times that floor. The bar
 every keep was judged against is more permissive than the metric's real noise at this size.
 
-**Stability.** The corpus-wide flip rate across the measured pass-set is 0.0, but the row the fix
-won is not settled: it answered `false` in 2 of 3 independent full re-runs, at confidence 55. It
+**Stability.** The `flip_rate: 0.0` in `baseline_diagnostics` and `iter1_diagnostics` is computed
+over a *single* saved diagnostic pass-set, so it cannot express cross-run instability and should
+not be read as a three-run stability metric. The row the fix won is in fact not settled: it answered `false` in 2 of 3 independent full re-runs, at confidence 55. It
 sits on the judge's decision boundary.
 
-**Confidence calibration** (baseline, where there was an error to calibrate against): mean 83.2 when
-right vs 71.3 when wrong, and the only wrong row fell in the 60-79% band while every row at 80%+ was
-correct. The field carries real signal rather than being decorative. It is reported, never used to
+**Confidence calibration** (baseline, where there was an error to calibrate against): on the saved
+baseline pass, mean **84.3** over the 12 rows it got right (`eval_results.baseline.jsonl`) against
+**70** on the one it got wrong; across all three passes that wrong row averaged **71.3**
+(`census.json`: 70/72/72). The two sides come from different pass-counts — the per-run right-row
+confidences were not retained — so treat this as directional, not a measured calibration curve.
+The wrong row fell in the 60-79% band while every row at 80%+ was correct. The field carries real signal rather than being decorative. It is reported, never used to
 decide.
 
 `runs` = 3 and `min_delta` = 0.02 were **computed** from the measured baseline noise, not chosen:
