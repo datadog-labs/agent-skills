@@ -14,6 +14,12 @@ What differs from auto-experiment's own template, and why:
   hide the failure this whole skill exists to catch: on a skewed corpus a judge that answers with
   the majority class every time scores well and catches nothing. Per-row correctness is still
   written to `eval_results.jsonl` for the audit.
+* **two output files, different contracts.** `eval_results.jsonl` is the AUDIT: one record per row
+  of the LAST pass, keyed `output`, carrying `score`. It is NOT a `scoring.py --pred` input — that
+  loader wants one record PER PASS keyed `label`, and feeding it the audit file silently reports
+  every row unusable and a headline of 0.0. The scorer's input is `predictions.jsonl`, written
+  here alongside it: every pass of every run, `label` carrying the whole verdict so
+  `--label-field` still works downstream, and unparseable passes recorded rather than dropped.
 * **ground truth is the human label** carried on each corpus row, never a model's opinion.
 
 Contract with the loop (unchanged): stdout is exactly
@@ -60,7 +66,8 @@ MATCH = os.environ.get("AUTO_EXP_MATCH", "exact")
 SPLIT = os.environ.get("AUTO_EXP_SPLIT", "train")
 MODEL = os.environ.get("AUTO_EXP_MODEL", "claude-opus-5")
 CONCURRENCY = int(os.environ.get("AUTO_EXP_CONCURRENCY", "8"))
-RESULTS = Path(".auto_experiment/eval_results.jsonl")
+RESULTS = Path(".auto_experiment/eval_results.jsonl")       # audit: last pass, keyed `output`
+PREDICTIONS = Path(".auto_experiment/predictions.jsonl")    # scoring.py --pred: every pass, keyed `label`
 
 
 def _credit():
@@ -82,22 +89,32 @@ def _one_pass(rows: list, system: str, call) -> "tuple[list[dict], int]":
     judge for a parsing bug and handing it a free correct answer are both inventions.
     """
     def judge_one(row):
+        """-> (audit_record | None, prediction_record). The prediction is always produced, even for
+        an unparseable pass: `scoring.py` counts those rows as excluded, and it can only do that if
+        the pass is recorded rather than dropped."""
         out = judge_runner.judge_row(call, system, row, 0, MODEL)
+        pred = {"id": row["id"], "confidence": out.get("confidence"),
+                "reasoning": (out.get("reasoning") or "")[:400]}
         if out.get("unparseable") or "label" not in out:
-            return None
+            return None, {**pred, "unparseable": True}
         predicted = scoring.pick(out["label"], LABEL_FIELD)
         if predicted is scoring._MISSING:
-            return None
-        return {"id": row["id"], "output": predicted,
-                "score": float(scoring.key(predicted) == scoring.key(
-                    scoring.pick(row["label"], LABEL_FIELD))),
-                "confidence": out.get("confidence"),
-                "justification": (out.get("reasoning") or "")[:400]}
+            return None, {**pred, "unparseable": True}
+        # `label` carries the WHOLE verdict, not the picked value: scoring.py applies
+        # --label-field itself, so picking here would break joint-verdict scoring downstream.
+        pred["label"] = out["label"]
+        audit = {"id": row["id"], "output": predicted,
+                 "score": float(scoring.key(predicted) == scoring.key(
+                     scoring.pick(row["label"], LABEL_FIELD))),
+                 "confidence": out.get("confidence"),
+                 "justification": (out.get("reasoning") or "")[:400]}
+        return audit, pred
 
     with ThreadPoolExecutor(max_workers=CONCURRENCY) as pool:
         scored = list(pool.map(judge_one, rows))
-    results = [r for r in scored if r is not None]
-    return results, len(scored) - len(results)
+    results = [audit for audit, _ in scored if audit is not None]
+    predictions = [pred for _, pred in scored]
+    return results, len(scored) - len(results), predictions
 
 
 def main() -> None:
@@ -116,12 +133,14 @@ def main() -> None:
     call = judge_runner.pick_backend()
     run_means: list[float] = []
     last_results: list[dict] = []
+    all_predictions: list[dict] = []
     excluded = 0
 
     for _ in range(RUNS):
         # Re-read the prompt every pass: the iteration's edit is the thing being measured.
         system = PROMPT.read_text()
-        results, excluded = _one_pass(rows, system, call)
+        results, excluded, predictions = _one_pass(rows, system, call)
+        all_predictions.extend(predictions)
         if not results:
             raise SystemExit("no scoreable rows — cannot compute a mean (do NOT fabricate one)")
         truth = {r["id"]: scoring.pick(r["label"], LABEL_FIELD) for r in rows}
@@ -133,6 +152,9 @@ def main() -> None:
     RESULTS.parent.mkdir(parents=True, exist_ok=True)
     with open(RESULTS, "w") as fh:
         for r in last_results:
+            fh.write(json.dumps(r) + "\n")
+    with open(PREDICTIONS, "w") as fh:
+        for r in all_predictions:
             fh.write(json.dumps(r) + "\n")
 
     print(json.dumps({

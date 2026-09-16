@@ -141,10 +141,14 @@ check against new labels.
 4. **`pup` could not be used.** It is installed (1.8.0) but authenticated only against prod
    (`datadoghq.com`); the queue is on staging. The backend was switched to `mcp` on the user's
    instruction rather than silently falling back.
-5. **Skill bug** — `judge_harness_template.py` writes `eval_results.jsonl` rows keyed `output`,
-   but `scoring.py --pred` expects one record per pass keyed `label`. Feeding the harness's own
-   output to the scorer silently reports every row as unusable and a headline of 0.0. The
-   diagnostics in this report came from running `judge_runner.py` separately.
+5. **Skill bug — now fixed.** `judge_harness_template.py` wrote only `eval_results.jsonl`, an
+   audit file with one record per row keyed `output`, while `scoring.py --pred` wants one record
+   per *pass* keyed `label`. Feeding the harness's own output to the scorer silently reported
+   every row unusable and a headline of 0.0, so the diagnostics in this report came from running
+   `judge_runner.py` separately. Both the template and this run's copy of the harness now also
+   write `predictions.jsonl` in the scorer's contract — every pass of every run, the whole verdict
+   under `label`, unparseable passes recorded rather than dropped. That is what makes the
+   cross-run flip rate measurable at all; the `flip_rate: 0.0` above predates it.
 
 ## Published
 
