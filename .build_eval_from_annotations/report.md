@@ -59,16 +59,21 @@ Deliberately excluded, each for a reason:
   `tool-retry-loop`) — prior verdicts on the same property are leakage.
 - **assessment / reviewer id / annotation timestamp** — exist only because a human already graded.
 
-**Corpus-renderer defect — this run's `[recommended_song]` provenance is not verifiable.**
-`build_corpus.py` indexed the span search by `trace_id` alone, so for a multi-span trace whichever
-span came last in the search result won the dict overwrite and supplied `output.preview`. These
-traces each carry a strategist span, a `spotify_search` tool span and three OpenAI llm spans, so the
-rendered song may not have come from the root `recommendation_cycle` span the evidence map selects.
-`corpus/rows.jsonl` and the raw search result are both gitignored, so which span actually won cannot
-be recovered from this artifact. The script now matches root + `kind: workflow` +
-`name: recommendation_cycle` and refuses to guess when a trace has more than one match — but that
-fix does not retroactively validate the scores above. Treat the fidelity claim below as asserted,
-not verified, and re-render before relying on it.
+**Corpus-renderer defect — real, but it did not bite this run.** `build_corpus.py` indexed the span
+search by `trace_id` alone, so for a multi-span trace whichever span came last in the search result
+won the dict overwrite and supplied `output.preview`. These traces each carry a strategist span, a
+`spotify_search` tool span and three OpenAI llm spans, so a non-root span could have been rendered.
+It was not: re-reading all 13 root `recommendation_cycle` spans from Datadog on 2026-09-16 and
+diffing them against `corpus/rows.jsonl`, **every rendered `[recommended_song]` equals the root
+span's `output.value` and every corpus `span_id` equals the root `span_id` — 13 of 13.** The scores
+above therefore stand on the intended evidence. The script now matches root + `kind: workflow` +
+`name: recommendation_cycle` and refuses to guess when a trace has more than one match, so the
+result no longer depends on search-result ordering.
+
+**Deployed scope, verified independently.** The 7-row `has_feedback:true` subset and its 4 true /
+3 false balance — asserted in `config.json` and unverifiable from the committed files alone — were
+re-derived from the live root-span tags on 2026-09-16 and match exactly. The 0.6 constant-class
+floor follows from that balance.
 
 **Fidelity gap: none at the evidence level.** `{{span_input}}` and `{{span_output}}` at
 `eval_scope: span` with `root_spans_only` resolve to exactly the two fields the local renderer
