@@ -69,7 +69,7 @@ must-ask and defaulted alike, is shown back to the user for validation before th
 | `datadog_backend` | `mcp` or `pup` — the client for **every** Datadog call this run makes. Same switch, same asymmetric failure policy, as `agent-observability-auto-experiment`. | **must ask** — no default |
 | `judge_model` | model the local judge runs on | _default_: the Claude model of this session |
 | `max_iterations` | improvement iterations after the baseline (clamp 1–20) | _default_ **10** |
-| `runs` | judge passes per row per iteration; majority vote is the prediction, disagreement is measured (clamp 1–7, odd numbers only) | _default_ **3** |
+| `runs` | judge passes per row per iteration; majority vote of the *usable* passes is the prediction, disagreement is measured (clamp 1–7, odd numbers only). The vote is the **fitting** signal — the deployable score is the mean single-pass score, because the published evaluator makes one call | _default_ **3** |
 | `eval_scope` | `span` \| `trace` \| `session` — what the published evaluator will grade. **Decided in Phase 2, not guessed**: it constrains what evidence the judge may use. | derived in Phase 2, confirmed |
 | `domain_notes` | list of product facts an agent cannot infer from the trace (what a term of art means, what "good" looks like here). Carried verbatim into every judge prompt and every sub-agent briefing. | _default_ `[]`, **but ask explicitly** |
 | `eval_name` | the name the winning judge is created under in Datadog. **Whether to create it is not a question — every run ends with an evaluator** (see Phase 8); the name, and the target it is confirmed against, are. | **must ask**, at the end, after the score is known |
@@ -130,7 +130,7 @@ Wherever a step below names an MCP tool, read it as *"this purpose, via the sele
 .build_eval_from_annotations/
   config.json          # the run: inputs, framing, evidence map, metric, iteration_results, best_*
   evidence_map.json    # WHERE in the trace the signal lives (Phase 2)
-  corpus/              # gitignored — cached rendered payloads + human labels
+  corpus/              # gitignored — cached rendered payloads + human labels, each with its split
   prompts/v0.md …      # every judge version tried, one file per iteration
   predictions/v0.jsonl # per-row, per-run judge output ({label, reasoning, confidence}) per version
   scores.json          # per-version metric, confusion matrix, CIs, flip rate
@@ -187,18 +187,49 @@ else is the audit trail and may be committed if the run happens inside a repo. W
    - **boolean / categorical**: at least **1 row in each of ≥2 classes**, otherwise there is nothing
      to discriminate and any judge scores 100% by answering constantly. Below **8 rows in the
      smaller class**, continue only after telling the user plainly that the score will have a
-     confidence interval wide enough to swamp most improvements (report Wilson CIs throughout, per
-     the rubric) — and offer the alternative of labelling a few more rows first.
+     confidence interval wide enough to swamp most improvements (report the CI beside every score,
+     per the rubric — Wilson for proportions, bootstrap for everything else) — and offer the
+     alternative of labelling a few more rows first.
    - **many-class categorical**: the ≥2-classes gate passes trivially at 8 classes and means
      nothing there. Apply the floor **per class**: name which classes clear ~6 rows and are
-     therefore measurable, and say plainly that the rest are anecdotes whose recall will swing on a
-     single row. `scoring.py` reports this as `classes_below_floor` — carry it into the recap and
-     the report, do not let a macro-average hide it.
+     therefore **reportable — not settled**. Six rows at 100% recall has a Wilson lower bound near
+     0.61, so the floor buys a number worth printing, not a measurement worth trusting; quote the
+     interval with it (`per_class_recall_ci`) and set the real bar from an acceptable CI width for
+     this decision, not from the number 6. Say plainly that the classes below it are anecdotes
+     whose recall will swing on a single row. `scoring.py` reports those as `classes_below_floor` —
+     carry it into the recap and the report, do not let a macro-average hide it.
    - **multi-select labels**: a categorical value is always a *list*, and some rows legitimately
      carry several classes. Decide `match_mode` with the user here (Phase 4c), and note that a
      combination like `["a","b"]` is its own class for support purposes — usually a class of one.
    - **numeric**: at least **10** rows with ≥3 distinct values.
    State the class balance in the recap (e.g. *"13 labelled, 10 true / 3 false, 6 pending"*).
+
+## Phase 1b — Seal the split, before anything reads the rows
+
+**Assign train/holdout here, on the surviving row ids, and do not look at the holdout again until
+Phase 7.** This happens *before* the evidence-map probing of Phase 2 and before a word of the judge
+prompt is drafted, for one reason: those steps read reviewer rationales and tune an evidence map
+against whatever rows they were shown. A holdout chosen afterwards has already leaked — not through
+the prompt file, through the agent that wrote it.
+
+- **Split only when the holdout can carry a measurement.** >40 usable rows is necessary, not
+  sufficient. Compute what each class's holdout share would be; a class that cannot clear the
+  small-class floor there stays **whole in train** and is reported as *not measured on the holdout*.
+  If that leaves the holdout with only the easy majority class, say so and choose `all_rows`
+  instead — a 12-row holdout of exactly the rows the judge finds easy is a reassuring number about
+  nothing.
+- Deterministic by hash of the row `id`, so the split survives a re-run, stratified over the
+  classes that are being split.
+- **≤ 40 usable rows, or no class that can be split → `split_mode: all_rows`**: fit and report on
+  every row, and state in the report that the score is in-sample and therefore optimistic.
+- Record `split_mode` (`train_holdout` | `all_rows`), the per-class train/holdout counts, and the
+  classes excluded from the holdout headline, in `config.json`. This threshold is the user's
+  decision, already made — do not silently re-tune it.
+- Write the assignment into the row records in Phase 3 as `split`, so `judge_runner.py --split` and
+  `scoring.py --split` cannot disagree about which rows are which.
+
+**Everything from here to Phase 7 is train-only**: probe rows, describer sub-agents, the `v0` draft,
+every error census, every keep decision.
 
 ## Phase 2 — Locate the signal in the trace (the evidence map)
 
@@ -208,7 +239,7 @@ need different work:
 | `type` | what a `content_id` is | how the evidence map is built |
 |---|---|---|
 | `trace` / `span` / `session` | a span trace id | walk the span tree — the rest of this phase |
-| `experiment_trace` | an **experiment** trace id | **skip the tree walk.** Resolve the row's content (below), then select fields out of `input` / `output` / `expected_output`. There is no span hierarchy to map and no `filter` to write. |
+| `experiment_trace` | an **experiment** trace id | **skip the tree walk.** Resolve the row's content (below), then select fields out of `input` / `output` — **never `expected_output`**, which sits in the same object and is the answer (rubric §2). There is no span hierarchy to map and no `filter` to write. |
 
 ### Resolving `experiment_trace` content
 
@@ -262,8 +293,9 @@ tool …`) — and the labelled property usually lives in **one or two** of them
 whole tree buries the signal in noise and costs a fortune; feeding it the root span's thin
 `input.value` often omits the evidence entirely.
 
-1. **Pick a probe sample**: up to 6 labelled rows, deliberately spanning both/all classes (at least
-   2 of the minority class). Do not probe only passes.
+1. **Pick a probe sample**: up to 6 labelled **train** rows (the split was sealed in Phase 1b),
+   deliberately spanning both/all classes (at least 2 of the minority class). Do not probe only
+   passes, and never probe a holdout row — reading one here spends it.
 2. **Map the tree** for each probe row: `get_llmobs_trace` gives `span_kinds`, `tree_depth`,
    `total_spans` and the root; then `get_llmobs_span_details` / `expand_llmobs_spans` for the
    candidate spans, and `get_llmobs_span_content` for `messages`.
@@ -314,16 +346,11 @@ write one line to `.build_eval_from_annotations/corpus/rows.jsonl`:
 ```
 
 - A row the map cannot render (missing span, retention gap) is **excluded and counted**, never
-  scored as a judge error. Record the count.
-- **Split**: **> 40 usable rows → 70/30 train/holdout**, deterministic by hash of the row `id` (so
-  the split survives a re-run), stratified so both classes appear on both sides.
-  **Small classes are not split**: any class with fewer than ~6 rows stays whole in **train** and is
-  excluded from the holdout headline, reported as *not measured* rather than quietly contributing a
-  one-row recall of 0.0 or 1.0. Stratifying a class of one is arithmetic theatre — it puts the only
-  example of a class on one side and then scores the model on the other. **≤ 40 rows → no
-  split**: fit and report on all rows, and state in the report that the score is in-sample and
-  therefore optimistic. Record `split_mode` (`train_holdout` | `all_rows`) and the counts in
-  `config.json`. This threshold is the user's decision, already made — do not silently re-tune it.
+  scored as a judge error. Record the count. A holdout row that fails to render is *not* swapped
+  for a train row — that would re-draw the sealed split.
+- Carry the `split` assigned in **Phase 1b** onto every row as a `split` field. Stratifying a class
+  of one is arithmetic theatre — it puts the only example of a class on one side and then scores
+  the model on the other — which is why small classes stayed whole in train there.
 - Every iteration scores on **train** (or all rows when unsplit). The holdout is opened exactly
   once, in Phase 7.
 
@@ -356,9 +383,12 @@ Record `framing` in `config.json`; it decides the evidence map, the metric and t
 When the queue's schema carries **more than one label**, ask — do not default:
 
 - **one joint judge** — a single prompt predicts every label at once, and one evaluator is
-  published. Its verdict is an object keyed by label name; score one label at a time with
-  `scoring.py --label-field <name>`, and also report the **joint exact-match** rate (all labels
-  right on the same row), which is what a user of the app actually experiences.
+  published. Its verdict is an object keyed by **`label_schema_id`** — not by label name, for the
+  same reason Phase 1 addresses labels by id: `name_when_saved` drifts when the schema is edited
+  and two labels can collide on one name. Score one label at a time with
+  `scoring.py --label-field <label_schema_id>` (names are accepted but ids are what the run uses),
+  map ids back to names only in the report, and also report the **joint exact-match** rate (all
+  labels right on the same row), which is what a user of the app actually experiences.
 - **one judge per label** — one run each, one evaluator each. Independent hill-climbs, no
   cross-label interference, N times the work.
 
@@ -374,23 +404,42 @@ Never assume accuracy. Propose, with the class balance in hand, and use what the
 - Skewed boolean (like 10/3) → **balanced accuracy** or **F1 on the minority class**; plain accuracy
   rewards a judge that answers "true" every time. Say that out loud when proposing.
 - Roughly balanced boolean → accuracy is fine; still report the confusion matrix.
-- Categorical → macro-F1 or Cohen's κ (κ reads as "agreement with the human beyond chance", which is
-  what is really being asked). **Never `f1_minority` above two classes** — the "minority class" is
-  then just whichever class happens to be rarest, and `scoring.py` refuses it outright.
+- Categorical → `macro_f1`, `weighted_f1` or Cohen's κ (κ reads as "agreement with the human beyond
+  chance", which is what is really being asked). **Never `f1_minority` above two classes** — the
+  "minority class" is then just whichever class happens to be rarest, and `scoring.py` refuses it
+  outright.
 - Multi-select, or a taxonomy with genuine near-misses → `mean_credit` with `--match jaccard` or
   `--match similarity_group`. The similarity groups come from **the user's** taxonomy, supplied as a
   file; never invent them, and never let the judge grade its own near-miss.
-- Numeric → MAE or Spearman ρ, with the direction stated.
+- Numeric → `mae` (lower is better — `scoring.py` carries each metric's direction, and the
+  constant-class baseline respects it) or `spearman`.
 - Ask whether **false positives and false negatives cost the same**. If they do not, the metric must
-  reflect it (weighted F1, or a precision floor on the expensive side). This is a product question
-  only the user can answer.
+  reflect it: `fbeta_minority --beta 2` weights recall, `--beta 0.5` weights precision, and
+  `--precision-floor` puts a hard bar under the expensive class (a breach is a discard, whatever
+  the headline did). This is a product question only the user can answer.
+- **Only propose a metric the scorer implements** — `accuracy`, `balanced_accuracy`, `f1_minority`,
+  `fbeta_minority`, `macro_f1`, `weighted_f1`, `cohens_kappa`, `mean_credit`, `spearman`, `mae`.
+  Inventing a metric name here produces a run that cannot be scored at iteration 0.
 
 **Always report alongside the headline metric, whatever it is**: the confusion matrix (per label,
-when a joint judge predicts several), a Wilson 95% CI on the headline, the **flip rate** (share of rows whose `runs` passes did not all agree — the
+when a joint judge predicts several), a **95% CI on the headline itself**, the **deployable
+single-pass score**, the **flip rate** (share of rows whose `runs` passes did not all agree — the
 judge's own instability), the **class-balance baseline** (what a constant "always true" judge
 scores), and the **confidence calibration** — mean confidence when right vs when wrong, and accuracy
 per confidence band. A judge as confident on its errors as on its hits has a decorative confidence
 field, and the user needs to know that before they route anything on it. A judge that cannot beat the constant baseline has learned nothing, whatever its accuracy.
+
+**Two things about that CI, because getting them wrong invents a number:**
+
+- **Wilson is only valid for a proportion.** `scoring.py` reports it as `wilson_95_on_raw_accuracy`
+  and as the interval on each per-class recall, and nowhere else. Balanced accuracy, macro-F1,
+  weighted-F1, kappa, mean credit, Spearman and MAE get `headline_ci_95`, a percentile bootstrap
+  over rows. Name the instrument in the report; do not quote one interval for the other quantity.
+- **The headline is not the deployable score.** The headline is the majority vote of `runs` passes
+  — the fitting signal the loop optimises. A published Datadog evaluator makes **one** call per span
+  and does not vote, so the number the user will experience is `deployable.mean`, the mean of the
+  passes scored individually. It is lower than the vote score by roughly what the flip rate buys.
+  Both are reported at every iteration; the *report's* headline is the deployable one.
 
 Record the metric definition verbatim in `config.json` as `metric`.
 
@@ -398,7 +447,8 @@ Record the metric definition verbatim in `config.json` as `metric`.
 
 1. **Draft `prompts/v0.md`** from: the label's name and type, the queue/label description, the
    user's own words about what the label means, `domain_notes`, and — crucially — the pattern in the
-   human `reasoning` texts across both classes. **A queue can have `has_reasoning: true` and not one
+   human `reasoning` texts across both classes, **on train rows only** (Phase 1b). Reading a
+   holdout row's rationale here leaks it into the prompt just as surely as pasting it in. **A queue can have `has_reasoning: true` and not one
    reasoning text in it** (verified: 0 of 89 rows on a live queue). When that happens, say so, and
    draft from the label's value list, the user's own words and `domain_notes` instead — then record
    in the report that `v0` had no reviewer rationale to learn from, because it caps how good the
@@ -421,10 +471,14 @@ Record the metric definition verbatim in `config.json` as `metric`.
 
 2. **Run the judge** over the train rows, `runs` times each, temperature 0 — see **The judge
    runner**. Write every pass to `predictions/v0.jsonl` (`{id, run, raw, label, reasoning}`). The
-   row's prediction is the **majority vote**; a row where the passes disagree is also counted in the
-   flip rate.
-3. **Score** with the agreed metric → `scores.json` entry for `v0`: headline, CI, confusion matrix,
-   flip rate, constant-baseline comparison, per-row correctness.
+   row's prediction is the **majority vote of the usable passes**; a row where the passes disagree
+   is also counted in the flip rate. Pass `--runs` to `scoring.py` so it knows the usable-pass
+   floor: an odd `runs` does not make the *usable* count odd once unparseable passes are dropped,
+   and a 1-of-3 "unanimous" vote is one opinion, not a majority. Rows below the floor, and ties,
+   are excluded and counted under their own reasons — never scored as wrong.
+3. **Score** with the agreed metric → `scores.json` entry for `v0`: headline + `headline_ci_95`,
+   the **deployable single-pass score and its spread**, confusion matrix, flip rate,
+   constant-baseline comparison, per-class recall with intervals, per-row correctness.
 4. **Degenerate-judge check** (rubric): if `v0` predicts a single class for every row, or its
    headline is at or below the constant baseline, do **not** proceed to hill-climbing on it — the
    prompt is not asking a discriminating question. Rewrite the draft once, with the failure named,
@@ -447,20 +501,32 @@ Each iteration, in order:
    (same rows, same split — never re-split) and say so.
 3. **Run and score** exactly as in Phase 5, at the same `runs`, on the same rows → `v<n>`.
 4. **Keep or discard** (rubric — *Noise & keep policy*):
-   - Keep as best if the headline metric moves in the goal's direction **and** the change passes the
-     **mechanism audit**: the gained rows outnumber the lost ones, the gain lands in the bucket that
-     was targeted, and no class's recall collapsed (a "gain" that is really the judge sliding toward
-     the majority class is a discard, not a keep).
-   - Label the confidence with **McNemar** on the paired rows (candidate vs best, same rows):
-     discordant pairs `b` and `c`, exact binomial p. `p < 0.05` **and** `|Δ| ≥ min_delta` →
-     `significant`; a directionally better change that is only within noise is **still kept** but
-     flagged `within_noise`, and its reasoning must say the gain could be noise.
-   - `min_delta = max(0.02, 0.5 · run_stdev)`, where `run_stdev` is the headline's standard deviation
-     across the baseline's `runs` passes. Derive it once, at `v0`, and record it.
+   - Keep as best if the headline metric moves in the goal's direction (**the direction the metric
+     actually runs** — lower is better for MAE) **and** the change passes the **mechanism audit**:
+     the gained rows outnumber the lost ones, the gain lands in the bucket that was targeted, no
+     class's recall collapsed (a "gain" that is really the judge sliding toward the majority class
+     is a discard, not a keep), and any agreed `--precision-floor` still holds.
+   - Label the confidence with the instrument that matches the quantity, and report both:
+     - **`vs_baseline.headline_delta`** — a paired bootstrap of the *configured metric* on the rows
+       both versions scored. This is the one that governs.
+     - **`vs_baseline.mcnemar_p`** — the exact test on discordant pairs, which measures
+       **exact-match correctness per row**, not the headline. When the headline is accuracy they
+       agree; when it is balanced accuracy, macro-F1, kappa or MAE, a change can move the headline
+       while `b == c`, and McNemar will say nothing happened. Quote it as what it is.
+     - `significant` needs the headline delta's 95% CI to exclude 0 **and** `|Δ| ≥ min_delta`. A
+       directionally better change that is only within noise is **still kept** but flagged
+       `within_noise`, and its reasoning must say the gain could be noise.
+   - `min_delta = max(metric_resolution, 0.5 · run_stdev)`, where `run_stdev` is the single-pass
+     spread (`deployable.stdev`) at `v0` and `metric_resolution ≈ 1 / rows_scored` is what one row
+     is worth. Derive it once, at `v0`, record it, and **record which term won** — a perfectly
+     stable baseline gives `run_stdev = 0.0`, and a floor derived from that is arithmetic, not
+     evidence. On 13 rows one row moves accuracy by 7.7 points; `min_delta` is a heuristic floor
+     under the noise, never a substitute for the CI.
    - Anything that does not improve the point estimate is `discarded`; the best is unchanged and the
      next iteration starts again from the best prompt + best map.
 5. **Append the row** to `config.json` `iteration_results`: `{iteration, changed (prompt|evidence),
-   bucket_targeted, headline, delta, mcnemar_p, decision, basis, flip_rate, time_start, time_end}`.
+   bucket_targeted, headline, headline_ci, deployable_mean, delta, delta_ci, mcnemar_p, decision,
+   basis, flip_rate, time_start, time_end}`.
 
 **Fresh sub-agent per iteration.** Hand it a compact briefing — the label definition, the metric, the
 current best prompt + evidence map, the ranked error buckets with the target bucket named,
@@ -499,15 +565,22 @@ the loop from anchoring on dead ideas and keeps your context from bloating.
 1. **Score the best judge once on the holdout** (`split_mode: train_holdout` only). This is the
    headline number in the report; the train score is the fitting curve, not the result. Report both,
    with CIs, and say plainly if the holdout is materially worse — that is overfitting to a small
-   label set and the user needs to know before they publish.
+   label set and the user needs to know before they publish. Name the classes that were kept whole
+   in train and are therefore **not measured on the holdout** (Phase 1b) — a holdout headline that
+   silently omits the hard class is not a holdout result.
    Under `split_mode: all_rows`, there is no holdout: report the in-sample score and state that it is
    optimistic and unvalidated.
-2. **Write `report.md`**: the queue and label, the class balance and exclusion counts, the evidence
-   map and why, the metric and why, a per-iteration table (iteration, what changed, bucket, headline,
-   Δ, McNemar p, decision), the winning prompt, the final confusion matrix + CI + flip rate, the
-   constant-class baseline, the confidence calibration (mean confidence when right vs wrong),
-   **per-class recall with the classes below the measurable floor named as not measured**,
-   **the joint exact-match rate when one judge predicts several labels**, and the honest limits (label count, reviewer disagreement, in-sample vs
+2. **Write `report.md`**, with the **deployable single-pass score as the headline** and the
+   majority-vote score named beside it as the fitting signal: the queue and label, the class balance
+   and exclusion counts (unparseable, tie, insufficient-usable-passes, unrenderable — each under its
+   own reason), the evidence map and why, the metric and why, a per-iteration table (iteration, what
+   changed, bucket, headline, Δ with its CI, McNemar p *labelled as exact-match only*, decision),
+   the winning prompt, the final confusion matrix + headline CI (naming the instrument) + flip rate,
+   the constant-class baseline, the confidence calibration (mean confidence when right vs wrong),
+   **per-class recall with its Wilson interval, and the classes below the floor named as too
+   uncertain to read as a measurement** — 6 rows at 100% has a lower bound near 0.61, so "clears the
+   floor" means *reportable*, not *settled* — **the joint exact-match rate when one judge predicts
+   several labels**, and the honest limits (label count, reviewer disagreement, in-sample vs
    holdout, any evidence the deployed scope cannot reach).
 3. **State what the judge still gets wrong**, in the humans' terms. A user deciding whether to trust
    an evaluator needs its failure modes more than its headline.
@@ -598,8 +671,10 @@ the UI, on their own — whether to switch it on.
    what backs the Evaluations page. Never verify by the write call's exit status. Then give the user
    the URL and the name — see **Finishing the run** below.
 5. **Record it in `config.json`** (`published_evaluator`: name, ml_app, eval_scope, enabled, the
-   verified-listing result, and the deployable score it was measured at) and name it in `report.md`.
-   The report's headline must be the **deployable** score, not the fitted one.
+   verified-listing result, and `measured_at: deployable.mean`) and name it in `report.md`.
+   The report's headline must be the **deployable single-pass** score — the evaluator makes one call
+   and does not vote, so quoting the majority-vote number here overstates what shipped by exactly
+   what the flip rate bought.
 6. **Recommend the fidelity check**: after they enable it on a small sample, compare its verdicts on
    the *already labelled* rows against the human labels one more time. The local score was measured
    on a renderer you controlled; the deployed score is the one that matters.
@@ -646,20 +721,29 @@ destroys the ground truth any future run of this skill would need.
 The judge is a plain local process, not an MCP tool. Use `references/judge_runner.py`: it reads
 `corpus/rows.jsonl` + a prompt file, calls the LLM `runs` times per row at temperature 0, and writes
 `predictions/v<n>.jsonl`. `references/scoring.py` turns those predictions into the `scores.json`
-entry (metric, confusion matrix, Wilson CI, flip rate, McNemar vs a previous version).
+entry (metric with its direction, headline CI, deployable single-pass score, confusion matrix,
+per-class recall intervals, flip rate, and both paired tests against a previous version).
+`references/test_scoring.py` is its regression suite — `python3 -m unittest test_scoring` — and
+every test in it is a wrong number that shipped once. Run it after touching either script.
 
 - **Use whichever LLM client is already configured** — the Anthropic SDK if `ANTHROPIC_API_KEY` is
   in the environment, otherwise `claude -p` on `PATH`. Do not go looking for keys; if neither works,
   STOP and report.
-- **Rows are independent** — run them concurrently, but size the pool to the backend. On the
-  Anthropic SDK path a pass is an HTTP request and 8–12 is fine; on the `claude -p` fallback every
-  pass is a **separate Node process**, and the same 12 exhausted 62 GB of RAM mid-run on a real
-  corpus — the OS killed the job and the iteration produced nothing. Cap the CLI path at ~4–6, and
-  check which backend you are on (`pick_backend`) before choosing. Keep the runs of one row on the
-  same prompt version.
+- **Rows are independent** — run them concurrently, and the runner sizes the pool to the backend
+  *itself*: `pick_backend()` returns which one it chose and `--concurrency` defaults to 8 on the
+  HTTP paths, **4 on the `claude -p` path**. That cap is enforced rather than documented, because
+  on the CLI path every pass is a separate Node process and 12 of them exhausted 62 GB of RAM
+  mid-run on a real corpus — the OS killed the job and the iteration produced nothing. Passing
+  `--concurrency` above the CLI cap is allowed and warns. Keep the runs of one row on the same
+  prompt version.
 - **Unparseable judge output is a row-level failure, not a class.** Retry that pass once; if it
   fails again, mark the pass `unparseable`. A row whose passes are all unparseable is excluded from
   the metric **and counted** — never silently scored wrong, never coerced to a default class.
+- **An odd `--runs` bounds ties; it does not remove them.** Unparseable passes are dropped before
+  the vote, so 3 runs can leave 2 usable passes that disagree, or 1 that "wins unanimously". Pass
+  `--runs` to `scoring.py` as well: it requires `runs // 2 + 1` usable passes before a vote stands
+  and reports `tie` and `insufficient_usable_passes` as separate exclusion reasons from the fully
+  unparseable rows. Different failures, different denominators, all counted.
 - **A missing or malformed `confidence` does not void a pass.** The label is what gets scored, so a
   pass with a usable label and a confidence that is absent, non-numeric or outside 0–100 keeps its
   label, records `confidence: null` with the reason, and is counted in the run summary. The runner
