@@ -28,6 +28,7 @@ Essential Datadog skills for AI agents.
 | **dd-product-recommender** | Recommend the right Datadog products for a codebase and/or goal (recommendation only) |
 | **dd-pup** | Primary CLI - all pup commands, auth, PATH setup |
 | **dd-software-delivery** | CI/CD workflow skills — unblock PR, triage flaky tests |
+| **dd-instrument-llmo** | Instrument Python & Node.js/Next.js AI backends with Datadog LLM Observability — SDK init, agent/workflow spans, RUM↔LLMO session linking |
 | **dd-instrument-rum** | Instrument browser apps with Datadog Browser RUM — React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla |
 
 ## Install
