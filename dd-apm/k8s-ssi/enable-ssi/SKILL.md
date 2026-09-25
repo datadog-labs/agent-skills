@@ -43,7 +43,8 @@ Invoke this skill when the user expresses intent to:
 Do NOT invoke this skill if:
 - The Datadog Agent is not yet installed — run `agent-install` first
 - The user wants to verify SSI after setup — use `verify-ssi`
-- The user wants to enable Profiler, AppSec, or Data Streams — use `dd-apm-k8s-sdk-features`
+- The user wants to enable Data Streams Monitoring: use `enable-dsm`
+- The user wants to enable Profiler or AppSec: use `dd-apm-k8s-sdk-features`
 
 ---
 
@@ -218,6 +219,18 @@ tags.datadoghq.com/version: "<VERSION>"
 ```
 
 If the user wants you to apply these, get their confirmation first. UST labels are not required for APM traces to flow — SSI works without them.
+
+---
+
+## Step 2b: Check for Event-Driven Services
+
+Read the `## Is DSM a fit?` section of `.claude/skills/dd-apm/enable-dsm/SKILL.md` and run its detection command.
+
+- **Skip this step** in an eval cluster (kind cluster name contains "evalya") or when running non-interactively. Do not ask; continue to the next step.
+- Fit found (messaging client, broker, queue-triggered Lambda, or the user describes services handing work to each other asynchronously) → follow `enable-dsm`. It asks the user once, states the plan rule, and makes the config change without restarting.
+- No fit → skip. Do not mention DSM.
+
+If the user agrees, `enable-dsm` applies its `DatadogAgent` change and waits until the new Cluster Agent is the only one serving, so the restart in Step 3 picks up both SSI and DSM.
 
 ---
 
