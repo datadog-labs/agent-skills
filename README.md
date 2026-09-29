@@ -69,6 +69,7 @@ npx skills add datadog-labs/agent-skills \
   --skill troubleshoot-ssi \
   --skill onboarding-summary \
   --skill upgrade-browser-sdk-v7 \
+  --skill setup-browser-sdk-sourcemaps \
   --skill dd-audit-security-investigation \
   --skill dd-audit-key-compromise \
   --skill dd-audit-cost-spike-investigation \
