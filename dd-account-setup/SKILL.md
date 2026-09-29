@@ -195,11 +195,14 @@ for f in .env.local .env; do [ -f "$f" ] || continue; for k in DD_SITE DD_API_KE
 vcode=$(curl -sg -o "$DDLOG" -w '%{http_code}' -H "DD-API-KEY: $DD_API_KEY" "https://api.${DD_SITE}/api/v1/validate")
 # re-derive org/email for the card (fresh shell — Step 4 vars don't persist); only if a token is still around
 who=""; [ -s "$tf" ] && who=$(curl -sg -H "Authorization: Bearer $(cat "$tf")" "https://api.${DD_SITE}/api/v2/current_user" 2>>"$DDLOG" | grep -oE '"email"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | cut -d'"' -f4)
+cmk="${TMPDIR:-/tmp}/dd-signup-$(id -u).created"; spw=""   # marker exists only if THIS run created the account (Path C, C3) — no stale password from an earlier run
+[ -f "$cmk" ] && spw=$(grep -E '^DD_SIGNUP_PASSWORD=' .env 2>/dev/null | tail -1 | cut -d= -f2-)   # newest .env entry = the password this run generated (C2 appends to .env)
 # consistent 🔑 credential card — the one place credential state is summarized; secret shown only as last4
 echo "🔑 Datadog credential"
 [ -n "$who" ] && echo "   org:     $who"
 echo "   region:  ${DD_SITE}"
 echo "   api key: …${DD_API_KEY: -4}  (in .env — never printed in full)"
+[ -n "$spw" ] && echo "   password: in .env as DD_SIGNUP_PASSWORD (ends …${spw: -4}) — you need it to sign in to Datadog"
 echo "   status:  $([ "$vcode" = 200 ] && echo '✓ validated (HTTP 200)' || echo "✗ validate HTTP $vcode — see: tail -n 30 \"$DDLOG\"")"
 ```
 
