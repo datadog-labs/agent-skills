@@ -137,7 +137,7 @@ kubectl get mutatingwebhookconfigurations | grep datadog
 
 The last command confirms the Admission Controller webhook is registered cluster-wide — this is the precondition for SSI injection working at all and must be checked even when most other services are being instrumented (any deviation in one webhook config can silently skip a subset of pods).
 
-`pup apm troubleshooting list` surfaces injection errors that Datadog's backend received from the cluster — these point to cluster-side mutation failures that may not be visible from `kubectl describe` alone. `pup apm service-library-config get` shows the runtime SDK config the tracer is operating under; an empty result with `ddTraceConfigs` configured, or unexpected values, points to UST/config-propagation issues.
+`pup apm troubleshooting list` surfaces injection errors that Datadog's backend received from the cluster. These point to cluster-side mutation failures that may not be visible from `kubectl describe` alone. `pup apm service-library-config get` shows the runtime SDK config the tracer is operating under; unexpected values point to UST/config-propagation issues. This view does not list every setting for every SDK, so for a missing value check the pod env with the command in `verify-ssi` Step 3 before concluding the config did not propagate.
 
 ---
 
