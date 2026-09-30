@@ -218,7 +218,7 @@ tags.datadoghq.com/service: "<SERVICE_NAME>"
 tags.datadoghq.com/version: "<VERSION>"
 ```
 
-If the user wants you to apply these, get their confirmation first. UST labels are not required for APM traces to flow — SSI works without them.
+If the user wants you to apply these, get their confirmation first. Applying label changes rolls the pods immediately; if DSM will be enabled in Step 2b, apply the labels after it. UST labels are not required for APM traces to flow; SSI works without them.
 
 ---
 
@@ -230,7 +230,7 @@ Read the `## Is DSM a fit?` section of `.claude/skills/dd-apm/enable-dsm/SKILL.m
 - Fit found (messaging client, broker, queue-triggered Lambda, or the user describes services handing work to each other asynchronously) → follow `enable-dsm`. It asks the user once, states the plan rule, and makes the config change without restarting.
 - No fit → skip. Do not mention DSM.
 
-If the user agrees, `enable-dsm` applies its `DatadogAgent` change and waits until the new Cluster Agent is the only one serving, so the restart in Step 3 picks up both SSI and DSM.
+If the user agrees, `enable-dsm` applies its `DatadogAgent` change and waits until the Cluster Agent is on the new config, so the restart in Step 3 picks up both SSI and DSM. In Step 3, restart one DSM Deployment first and run the `DD_DATA_STREAMS_ENABLED` check from `enable-dsm` Step 2a on it before restarting the rest. If it came up without init containers, wait 30 seconds and restart it once more.
 
 ---
 

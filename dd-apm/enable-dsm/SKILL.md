@@ -127,7 +127,7 @@ Tell the user, in one short message:
 
 Wait for an explicit yes. If the user says no, stop and continue with the calling skill's next step.
 
-> **Called from `enable-ssi` before its restart step?** Make the Step 2a/2b config change, skip the application restart below, and return to `enable-ssi`. Its restart applies SSI and DSM together, and `onboarding-summary` verifies DSM data.
+> **Called from `enable-ssi` before its restart step?** Make the Step 2a/2b config change and run the Cluster Agent wait, then skip the confirm-and-restart block and return to `enable-ssi`. In its restart step, restart one DSM Deployment first and run the `DD_DATA_STREAMS_ENABLED` check that follows the restart command in Step 2a, before restarting the rest. `onboarding-summary` verifies DSM data.
 
 ---
 
@@ -182,36 +182,78 @@ Helm: the same `targets` block goes under `datadog.apm.instrumentation.targets` 
 
 ```bash
 kubectl apply -f datadog-agent.yaml
-sleep 15   # the Operator takes a few seconds to start rolling the Cluster Agent
-kubectl rollout status deployment/datadog-cluster-agent -n <AGENT_NAMESPACE> --timeout=180s
-kubectl get pods -n <AGENT_NAMESPACE> -l agent.datadoghq.com/component=cluster-agent --no-headers
 ```
 
-Wait until only one Cluster Agent pod is listed and it is `Running`, then wait another 30 seconds before restarting applications. The injection webhook uses `failurePolicy: Ignore`, so while the old Cluster Agent pod is still answering, a restarted pod is admitted with the old config or with no injection at all, and nothing reports an error.
+Then wait for the Cluster Agent. Run this as its own command with a 10-minute timeout; it takes one to three minutes.
+
+### Claude runs
+
+```bash
+DSM_LABELS="<DSM_APP_LABELS space-separated>"   # e.g. "order-producer billing-consumer"; empty if the DSM target has no podSelector
+OK=0
+END=$(( $(date +%s) + 480 ))
+while [ "$(date +%s)" -lt "$END" ]; do
+  STATE=$(kubectl get pods -n <AGENT_NAMESPACE> -l agent.datadoghq.com/component=cluster-agent \
+    -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.metadata.deletionTimestamp}{"|"}{.status.conditions[?(@.type=="Ready")].status}{"|"}{.spec.containers[0].env[?(@.name=="DD_APM_INSTRUMENTATION_TARGETS")].value}{"\n"}{end}')
+  SEL=$(kubectl get mutatingwebhookconfigurations \
+    -o jsonpath='{range .items[*].webhooks[?(@.name=="datadog.webhook.lib.injection")]}{.objectSelector}{end}')
+  TOTAL=$(printf '%s\n' "$STATE" | grep -c .)
+  GOOD=$(printf '%s\n' "$STATE" | grep -c '^[^|]*||True|.*DD_DATA_STREAMS_ENABLED')
+  for L in $(printf '%s' "$DSM_LABELS"); do
+    [ "$(printf '%s\n' "$STATE" | grep -c "\"$L\"")" -eq "$TOTAL" ] || GOOD=-1
+  done
+  if [ "$TOTAL" -gt 0 ] && [ "$GOOD" -eq "$TOTAL" ] && printf '%s' "$SEL" | grep -q NotIn; then
+    OK=1; break
+  fi
+  sleep 10
+done
+if [ "$OK" = 1 ]; then
+  sleep 30   # lets the old pod leave the webhook Service and the webhook config propagate
+  echo "Cluster Agent is on the new config and the SSI webhook is active"
+else
+  echo "TIMED OUT waiting for the Cluster Agent: do not restart applications"
+fi
+```
+
+Replace the `DSM_LABELS` placeholder before running it. The loop passes when every Cluster Agent pod is Ready, none is terminating, each carries the DSM setting and every service in `DSM_APP_LABELS`, and the injection webhook has its SSI selector. Until then, pods are admitted by a Cluster Agent with the old config, or by a webhook that still has the pre-SSI opt-in selector: only the Cluster Agent holding the leader lock updates the webhook configuration, and leadership can take a minute or more to move after a rollout. The webhook uses `failurePolicy: Ignore`, so those pods start without the change and nothing reports an error.
+
+The first injection after a Cluster Agent restart also looks up the SDK image digests from the Datadog registry and caches them for an hour. On a slow network that lookup can exceed the webhook's 10-second timeout, so that first pod starts uninjected even after the loop passes. The first-restart check below catches this.
+
+If it prints `TIMED OUT`, do not restart applications. Check `kubectl describe pod` and the logs of the newest Cluster Agent pod, then go to `troubleshoot-ssi`.
+
+Applying label changes to a Deployment (for example Unified Service Tags from `enable-ssi`) also rolls its pods immediately. Apply those only after this wait.
 
 > **Confirm with the user before restarting.** Tell the user: "I need to restart `<DSM_SERVICES>` in `<APP_NAMESPACE>` for the DSM setting to reach the pods. This will cause a brief outage. Ready to proceed?" Wait for confirmation.
 
-For each Deployment in `DSM_SERVICES`:
+Restart one Deployment in `DSM_SERVICES` first and run the checks below on it. Only restart the rest once it shows the SSI init containers and the DSM variable. For each Deployment in `DSM_SERVICES`:
 
 ### Claude runs
 
 ```bash
 kubectl rollout restart deployment/<DEPLOYMENT_NAME> -n <APP_NAMESPACE>
 kubectl rollout status deployment/<DEPLOYMENT_NAME> -n <APP_NAMESPACE> --timeout=180s
-kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> \
-  -o jsonpath='{range .items[0].spec.containers[*]}{.name}{"="}{.env[?(@.name=="DD_DATA_STREAMS_ENABLED")].value}{"\n"}{end}'
+kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --sort-by=.metadata.creationTimestamp \
+  -o jsonpath='{range .items[-1:].spec.containers[*]}{.name}{"="}{.env[?(@.name=="DD_DATA_STREAMS_ENABLED")].value}{"\n"}{end}'
 ```
 
 If the application container shows `=true`, DSM is configured for that service.
 
-ERROR: Empty. Check the pod's init containers (`kubectl get pod <POD> -n <APP_NAMESPACE> -o jsonpath='{.spec.initContainers[*].name}'`):
-- No `datadog-lib-*-init` at all → the pod was created during the Cluster Agent rollout. Wait 30 seconds and restart that Deployment again.
-- Init containers present but no DSM variable → the pod doesn't match the DSM target. Compare the target's `namespaceSelector` / `podSelector` with the pod's namespace and labels.
+ERROR: Empty. Check the newest pod's init containers and the target it matched:
+
+```bash
+kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --sort-by=.metadata.creationTimestamp \
+  -o jsonpath='{.items[-1:].spec.initContainers[*].name}{"\n"}{.items[-1:].metadata.annotations.internal\.apm\.datadoghq\.com/applied-target}{"\n"}'
+```
+
+- No `datadog-lib-*-init` at all → most often the first injection timed out on the registry digest lookup. Wait 30 seconds and restart that Deployment once more; the digest is now cached. If it is still uninjected, re-run the wait above.
+- The applied target is `default` but the pod's labels match the DSM selectors → the pod was admitted by a Cluster Agent with the old config. Re-run the wait and restart.
+- Otherwise the pod doesn't match the DSM target. Compare the target's `namespaceSelector` / `podSelector` with the pod's namespace and labels.
 
 Then confirm a workload **outside** `DSM_SERVICES` is still instrumented after its next restart:
 
 ```bash
-kubectl get pod <OTHER_POD> -n <OTHER_NAMESPACE> -o jsonpath='{.spec.initContainers[*].name}'
+kubectl get pod -l app=<OTHER_APP_LABEL> -n <OTHER_NAMESPACE> --sort-by=.metadata.creationTimestamp \
+  -o jsonpath='{.items[-1:].spec.initContainers[*].name}'
 ```
 
 ERROR: No `datadog-lib-*-init`. First restart that workload once more, in case it raced the Cluster Agent rollout. If it is still missing, the `default` target is missing or listed before the DSM target. Fix the order and re-apply.
