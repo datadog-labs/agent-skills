@@ -215,7 +215,7 @@ else
 fi
 ```
 
-Replace the `DSM_LABELS` placeholder before running it. The loop passes when every Cluster Agent pod is Ready, none is terminating, each carries the DSM setting and every service in `DSM_APP_LABELS`, and the injection webhook has its SSI selector. Until then, pods are admitted by a Cluster Agent with the old config, or by a webhook that still has the pre-SSI opt-in selector: only the Cluster Agent holding the leader lock updates the webhook configuration, and leadership can take a minute or more to move after a rollout. The webhook uses `failurePolicy: Ignore`, so those pods start without the change and nothing reports an error.
+Replace the `DSM_LABELS` placeholder before running it. The loop passes when every Cluster Agent pod is Ready, none is terminating, each carries the DSM setting and every service in `DSM_APP_LABELS`, and the injection webhook has its SSI selector. Until then, pods are admitted by a Cluster Agent with the old config, or by a webhook that still has the pre-SSI opt-in selector: only the Cluster Agent holding the leader lock updates the webhook configuration, and leadership can take a minute or more to move after a rollout. That matters most when SSI is first switched on, so expect the wait to take up to about two minutes then and under a minute otherwise. The webhook uses `failurePolicy: Ignore`, so those pods start without the change and nothing reports an error.
 
 The first injection after a Cluster Agent restart also looks up the SDK image digests from the Datadog registry and caches them for an hour. On a slow network that lookup can exceed the webhook's 10-second timeout, so that first pod starts uninjected even after the loop passes. The first-restart check below catches this.
 
