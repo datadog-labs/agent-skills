@@ -55,7 +55,7 @@ This is the canonical detection command. `enable-ssi` runs it from here.
 ### Claude runs
 
 ```bash
-grep -rliE "kafka|confluent|sarama|karafka|waterdrop|amqp|rabbitmq|kombu|rhea|sqs|sns|kinesis|pubsub|ibm\.mq|ibmmq|servicebus|bullmq|boto3|botocore|@aws-sdk/client-" \
+grep -rliE "kafka|confluent|sarama|karafka|waterdrop|amqp|rabbitmq|kombu|rhea|sqs|sns|kinesis|pubsub|ibm\.mq|ibmmq|servicebus|bullmq" \
   --exclude-dir=node_modules --exclude-dir=vendor --exclude-dir=.git \
   --include=requirements.txt --include=pyproject.toml --include=Pipfile \
   --include=package.json --include=pom.xml --include=build.gradle --include=build.gradle.kts \

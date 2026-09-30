@@ -147,7 +147,7 @@ Construct each URL by substituting real values. Do not print placeholder URLs.
 
 ## Next step: Data Streams Monitoring
 
-If `enable-ssi` found event-driven services but DSM was not enabled (skipped in an eval cluster or non-interactive run, or the user wasn't asked), add one line after the report: "These services produce or consume messages. Data Streams Monitoring can show end-to-end latency and consumer lag across them; it is included with APM Pro and Enterprise. Ask me to enable it." Do not add this line if the user declined DSM or no event-driven services were found.
+If `enable-ssi` found event-driven services but the user was not asked about DSM (for example a non-interactive run), add one line after the report: "These services produce or consume messages. Data Streams Monitoring can show end-to-end latency and consumer lag across them; it is included with APM Pro and Enterprise. Ask me to enable it." Do not add this line in an eval cluster (kind cluster name contains "evalya"), if the user declined DSM, or if no event-driven services were found.
 
 ---
 

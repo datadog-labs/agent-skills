@@ -224,9 +224,10 @@ If the user wants you to apply these, get their confirmation first. Applying lab
 
 ## Step 2b: Check for Event-Driven Services
 
-Read the `## Is DSM a fit?` section of `.claude/skills/dd-apm/enable-dsm/SKILL.md` and run its detection command.
+**Skip this step entirely** in an eval cluster (kind cluster name contains "evalya") or when running non-interactively: run nothing, ask nothing, and continue to the next step.
 
-- **Skip this step** in an eval cluster (kind cluster name contains "evalya") or when running non-interactively. Do not ask; continue to the next step.
+Otherwise, read the `## Is DSM a fit?` section of `.claude/skills/dd-apm/enable-dsm/SKILL.md` and run its detection command.
+
 - Fit found (messaging client, broker, queue-triggered Lambda, or the user describes services handing work to each other asynchronously) → follow `enable-dsm`. It asks the user once, states the plan rule, and makes the config change without restarting.
 - No fit → skip. Do not mention DSM.
 
