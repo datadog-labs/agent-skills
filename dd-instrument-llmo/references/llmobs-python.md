@@ -62,11 +62,11 @@ Enabling the SDK produces auto-instrumented `llm` spans for supported providers,
 | # | Goal | Always achievable? | What it requires |
 |---|------|-------------------|-------------------|
 | 1 | Well-formed LLMObs trace | Yes | SDK initialized; a root span with the right kind; nested child spans; `input_data`/`output_data` annotated |
-| 2 | Agent Session ID | Yes | A stable `session_id` on the root span — it propagates to children automatically |
-| 3 | RUM session linking | Only with RUM SDK | RUM session ID (`datadogRum.getInternalContext().session_id`) passed to the backend as the LLMObs `session_id`. Without RUM, fall back to a UUID — linking can be added later without restructuring |
+| 2 | Agent Session ID | Yes | A stable `session_id` on the root span, scoped to one conversation/operation — it propagates to children automatically |
+| 3 | RUM session linking | Opt-in, needs RUM SDK | Correlating a RUM session with LLMObs works by forwarding the RUM session ID (`datadogRum.getInternalContext().session_id`) to the backend and using it *as* the `session_id`. That is the only documented link, so it makes the LLMObs session span the whole browser session — several conversations in one browse collapse into one. Prefer the conversation-scoped `session_id` from goal 2 by default; opt in only when that whole-browser grouping is acceptable |
 | 4 | APM trace linking | Partial — always | `apm_trace_id` is set on every span automatically. Full navigable linking in the UI needs a dd-agent; without one the tag is present but the APM trace won't exist |
 
-Detect what's achievable before instrumenting: check for `@datadog/browser-rum` on the frontend (goal 3), and for `DD_AGENT_HOST`/`DD_TRACE_AGENT_URL`/`ddtrace-run`/an agent sidecar (goal 4). Never promise RUM or navigable APM linking that the detected environment doesn't support — state the gap and the upgrade path instead.
+Detect what's achievable before instrumenting: check for `@datadog/browser-rum` on the frontend (goal 3, opt-in), and for `DD_AGENT_HOST`/`DD_TRACE_AGENT_URL`/`ddtrace-run`/an agent sidecar (goal 4). Never promise RUM or navigable APM linking that the detected environment doesn't support — state the gap and the upgrade path instead.
 
 **Goal 4 config knob:** the init snippet above hardcodes `agentless_enabled=True`. Flip it to `False` whenever a dd-agent is detected — leave it `True` otherwise (the `apm_trace_id` tag is still set either way, but only becomes a navigable APM trace with an agent present).
 
@@ -118,26 +118,39 @@ Only set it once, on the root span — same rule as `session_id`. Skip this if t
 
 ## Session ID intake by environment
 
-**RUM present** — default the LLMO session ID to the RUM session ID. The frontend forwards it to the backend alongside the rest of the request payload, under whatever key name fits this project's existing request-body naming convention; read that value on the backend using the same request-parsing accessor the project already uses for the rest of that request's fields — do not assume one framework's access pattern (FastAPI's Pydantic model gives attribute access like `request.session_id`; Flask needs `request.get_json()["session_id"]` or a schema's `.load()`; see Framework-specific notes below):
+Scope the `session_id` to **one conversation/operation** — that is the unit the LLM Obs UI groups on. Don't default it to the browser/RUM session (see the opt-in below for why).
+
+**Default — web app (conversation-scoped)** — the frontend owns a conversation ID: mint one when a conversation starts (a chat thread, a task), reuse it across that conversation's turns, and start a fresh one when the user begins a new conversation. Send it with each request under whatever key fits this project's existing request-body naming; read it on the backend with the same request-parsing accessor the project already uses for its other fields — do not assume one framework's access pattern (FastAPI's Pydantic body model gives attribute access like `body.session_id`, with headers read off a separate `Request` param; Flask needs `request.get_json()["session_id"]` or a schema's `.load()`; see Framework-specific notes below):
 ```python
-# Shown with a FastAPI Pydantic request model — substitute the accessor your framework/route actually uses.
-session_id = request.session_id
-with LLMObs.agent(name="my_agent", session_id=session_id) as span:
-    LLMObs.annotate(span=span, input_data=request.message)
-    result = do_work(request.message)
-    LLMObs.annotate(span=span, output_data=result)
+import uuid
+from fastapi import Request
+
+# FastAPI: body fields (session_id, message) come off the Pydantic model; the
+# x-session-id header comes off the Request object — a body model has no `.headers`,
+# so take both. Substitute the accessors your framework/route actually uses.
+@app.post("/chat")
+async def chat(body: ChatRequest, request: Request):
+    session_id = body.session_id or request.headers.get("x-session-id") or str(uuid.uuid4())
+    with LLMObs.agent(name="my_agent", session_id=session_id) as span:
+        LLMObs.annotate(span=span, input_data=body.message)
+        result = do_work(body.message)
+        LLMObs.annotate(span=span, output_data=result)
 ```
-Frontend side (show as instructions, never edit frontend files yourself in this reference — setting up the RUM SDK itself is out of scope for this LLM Observability skill):
+Frontend side (show as instructions, never edit frontend files yourself in this reference):
+```javascript
+body: JSON.stringify({
+  message: userMessage,
+  // one ID per conversation, regenerated when the user starts a new one — NOT the RUM/browser session ID
+  session_id: conversationId,
+})
+```
+
+**Opt-in — reuse the RUM session ID (enables the RUM↔LLMObs pivot)** — the only documented way to pivot between a RUM session and its LLMObs traces is to forward the RUM session ID and use it *as* the `session_id`. The trade-off: the LLMObs session then spans the whole browser session, so multiple conversations in one browse collapse into a single LLMObs session. Choose this only when that grouping is acceptable (setting up the RUM SDK itself is out of scope for this skill):
 ```javascript
 body: JSON.stringify({
   message: userMessage,
   session_id: datadogRum.getInternalContext()?.session_id ?? crypto.randomUUID(),
 })
-```
-
-**Web framework, no RUM** — accept from caller, UUID fallback (same caveat: use the project's actual request accessor, not necessarily attribute access):
-```python
-session_id = request.session_id or request.headers.get("x-session-id") or str(uuid.uuid4())
 ```
 
 **No web frontend (CLI / background job)** — reuse an existing per-operation identifier if the code already generates one before the pipeline runs (`job_id`, `request_id`, `task_id`, etc.) instead of minting a second ID; otherwise one UUID per invocation:
@@ -195,7 +208,7 @@ Use `workflow` here, not `agent` — `run_pipeline` doesn't call an LLM directly
 Alongside the standard report shape in `common-verify-report.md`, summarize goal status in the human-readable message, e.g.:
 ```
 ✓ Well-formed LLMObs trace
-✓ Agent Session ID (UUID fallback — RUM upgrade path noted)
-~ RUM session linking: not available (no RUM SDK detected)
+✓ Agent Session ID (conversation-scoped; UUID fallback)
+~ RUM session linking: not applicable (no RUM SDK detected)
 ~ APM trace linking: apm_trace_id set, but not navigable (no dd-agent detected)
 ```

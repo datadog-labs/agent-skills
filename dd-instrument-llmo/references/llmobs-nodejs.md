@@ -87,11 +87,11 @@ Enabling the SDK produces auto-instrumented `llm` spans for supported providers,
 | # | Goal | Always achievable? | What it requires |
 |---|------|-------------------|-------------------|
 | 1 | Well-formed LLMObs trace | Yes | SDK initialized; a root span with the right kind; nested child spans; `inputData`/`outputData` annotated |
-| 2 | Agent Session ID | Yes | A stable `sessionId` on the root span — it propagates to children automatically |
-| 3 | RUM session linking | Only with RUM SDK | RUM session ID (`datadogRum.getInternalContext().session_id`) passed to the backend as the LLMObs `sessionId`. Without RUM, fall back to a UUID — linking can be added later without restructuring |
+| 2 | Agent Session ID | Yes | A stable `sessionId` on the root span, scoped to one conversation/operation — it propagates to children automatically |
+| 3 | RUM session linking | Opt-in, needs RUM SDK | Correlating a RUM session with LLMObs works by forwarding the RUM session ID (`datadogRum.getInternalContext().session_id`) to the backend and using it *as* the `sessionId`. That is the only documented link, so it makes the LLMObs session span the whole browser session — several conversations in one browse collapse into one. Prefer the conversation-scoped `sessionId` from goal 2 by default; opt in only when that whole-browser grouping is acceptable |
 | 4 | APM trace linking | Partial — always | `apm_trace_id` is set on every span automatically. Full navigable linking in the UI needs a dd-agent; without one the tag is present but the APM trace won't exist |
 
-Detect what's achievable before instrumenting: check for `@datadog/browser-rum` on the frontend (goal 3), and for `DD_AGENT_HOST`/`DD_TRACE_AGENT_URL`/`NODE_OPTIONS=--require dd-trace/init`/an agent sidecar (goal 4). Never promise RUM or navigable APM linking that the detected environment doesn't support — state the gap and the upgrade path instead.
+Detect what's achievable before instrumenting: check for `@datadog/browser-rum` on the frontend (goal 3, opt-in), and for `DD_AGENT_HOST`/`DD_TRACE_AGENT_URL`/`NODE_OPTIONS=--require dd-trace/init`/an agent sidecar (goal 4). Never promise RUM or navigable APM linking that the detected environment doesn't support — state the gap and the upgrade path instead.
 
 **Goal 4 config knob:** the init snippets above hardcode `agentlessEnabled: true`. Flip it to `false` whenever a dd-agent is detected — leave it `true` otherwise (the `apm_trace_id` tag is still set either way, but only becomes a navigable APM trace with an agent present).
 
@@ -151,10 +151,12 @@ Only set it once, on the root span — same rule as `sessionId`. Skip this if th
 
 ## Session ID intake by environment
 
-**RUM present** — default the LLMO session ID to the RUM session ID. The frontend forwards it to the backend alongside the rest of the request payload, under whatever key name fits this project's existing request-body naming convention; read that value on the backend using the same request-parsing accessor the project already uses for the rest of that request's fields — do not assume Express's `req.body` (Fastify uses `request.body`, Next.js Route Handlers / Hono use `await req.json()`, etc.; see Framework-specific notes below for the accessor per framework):
+Scope the `sessionId` to **one conversation/operation** — that is the unit the LLM Obs UI groups on. Don't default it to the browser/RUM session (see the opt-in below for why).
+
+**Default — web app (conversation-scoped)** — the frontend owns a conversation ID: mint one when a conversation starts (a chat thread, a task), reuse it across that conversation's turns, and start a fresh one when the user begins a new conversation. Send it with each request under whatever key fits this project's existing request-body naming; read it on the backend with the same request-parsing accessor the project already uses for its other fields — do not assume Express's `req.body` (Fastify uses `request.body`, Next.js Route Handlers / Hono use `await req.json()`, etc.; see Framework-specific notes below for the accessor per framework):
 ```typescript
 // Shown with Express's req.body — substitute the accessor your framework/route actually uses.
-const sessionId = req.body.sessionId;
+const sessionId = req.body.sessionId ?? req.headers['x-session-id'] ?? crypto.randomUUID();
 const result = await llmobs.trace({ kind: 'agent', name: 'my_agent', sessionId }, async (span) => {
   llmobs.annotate(span, { inputData: req.body.message });
   const res = await doWork(req.body.message);
@@ -162,17 +164,21 @@ const result = await llmobs.trace({ kind: 'agent', name: 'my_agent', sessionId }
   return res;
 });
 ```
-Frontend side (show as instructions, never edit frontend files yourself in this reference — setting up the RUM SDK itself is out of scope for this LLM Observability skill):
+Frontend side (show as instructions, never edit frontend files yourself in this reference):
+```javascript
+body: JSON.stringify({
+  message: userMessage,
+  // one ID per conversation, regenerated when the user starts a new one — NOT the RUM/browser session ID
+  sessionId: conversationId,
+})
+```
+
+**Opt-in — reuse the RUM session ID (enables the RUM↔LLMObs pivot)** — the only documented way to pivot between a RUM session and its LLMObs traces is to forward the RUM session ID and use it *as* the `sessionId`. The trade-off: the LLMObs session then spans the whole browser session, so multiple conversations in one browse collapse into a single LLMObs session. Choose this only when that grouping is acceptable (setting up the RUM SDK itself is out of scope for this skill):
 ```javascript
 body: JSON.stringify({
   message: userMessage,
   sessionId: datadogRum.getInternalContext()?.session_id ?? crypto.randomUUID(),
 })
-```
-
-**Web framework, no RUM** — accept from caller, UUID fallback (same caveat: use the project's actual request accessor, not necessarily `req.body`):
-```typescript
-const sessionId = req.body.sessionId ?? req.headers['x-session-id'] ?? crypto.randomUUID();
 ```
 
 **No web frontend (CLI / background job)** — reuse an existing per-operation identifier if the code already generates one before the pipeline runs (`jobId`, `requestId`, `taskId`, etc.) instead of minting a second ID; otherwise one UUID per invocation:
@@ -233,7 +239,7 @@ Use `kind: 'workflow'` here, not `'agent'` — `runPipeline` doesn't call an LLM
 Alongside the standard report shape in `common-verify-report.md`, summarize goal status in the human-readable message, e.g.:
 ```
 ✓ Well-formed LLMObs trace
-✓ Agent Session ID (UUID fallback — RUM upgrade path noted)
-~ RUM session linking: not available (no RUM SDK detected)
+✓ Agent Session ID (conversation-scoped; UUID fallback)
+~ RUM session linking: not applicable (no RUM SDK detected)
 ~ APM trace linking: apm_trace_id set, but not navigable (no dd-agent detected)
 ```

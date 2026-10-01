@@ -1,6 +1,6 @@
 ---
 name: dd-instrument-llmo
-description: Instrument the current project with Datadog LLM Observability for Python or Node.js/Next.js backends that call LLMs or run AI agents. Detects the runtime and LLM framework, provisions credentials, adds SDK init (ddtrace/dd-trace) with the correct kwargs, persists the dependency into the deploy manifest, and audits RUM↔LLMObs session-ID plumbing for gaps — fixing them when found. Use when the user says "instrument this project with LLM Observability", "add LLM Observability", "monitor my AI app in Datadog", "add LLM spans", "add agent session tracking", or "verify/repair my LLM Observability setup".
+description: Instrument the current project with Datadog LLM Observability for Python or Node.js/Next.js backends that call LLMs or run AI agents. Detects the runtime and LLM framework, provisions credentials, adds SDK init (ddtrace/dd-trace) with the correct kwargs, persists the dependency into the deploy manifest, and audits session-ID plumbing for gaps — fixing them when found. Use when the user says "instrument this project with LLM Observability", "add LLM Observability", "monitor my AI app in Datadog", "add LLM spans", "add agent session tracking", or "verify/repair my LLM Observability setup".
 metadata:
   version: "0.1.0"
   author: datadog-labs
@@ -22,7 +22,7 @@ Stay within LLM Observability scope. Do not add RUM, APM application instrumenta
 ## Ground rules while instrumenting
 
 - **Verify before you assert.** If you're not sure about file content or codebase structure, read the files — do not guess.
-- **Check for existing instrumentation first.** Before touching the backend, check whether `ddtrace`/`dd-trace` is already initialized with LLM Observability enabled. If it is, do not add a second, competing `init`/`enable` call. **This only means skip re-init — it does not mean skip the work.** SDK presence is not the same as a well-formed trace or a working RUM↔LLMO link; run the linkage audit in Phase 1d and close any gap it finds, even when the SDK is already present.
+- **Check for existing instrumentation first.** Before touching the backend, check whether `ddtrace`/`dd-trace` is already initialized with LLM Observability enabled. If it is, do not add a second, competing `init`/`enable` call. **This only means skip re-init — it does not mean skip the work.** SDK presence is not the same as a well-formed trace or a session ID that actually flows; run the session-ID plumbing audit in Phase 1d and close any gap it finds, even when the SDK is already present.
 - **Only use packages/features you've explicitly been told to add.** Don't decide on your own to enable an additional Datadog product or SDK feature beyond what this skill specifies.
 - **Persist added dependencies into the deploy's manifest.** Any Datadog package you add (`ddtrace`, `dd-trace`) must be written into the dependency manifest the build/deploy installs from — the one identified in Phase 1e — not just installed into the local environment. A clean deploy install reads only the manifest and will crash with a missing-module error (e.g. `ModuleNotFoundError: No module named 'ddtrace'`) if the package isn't declared there.
 - **Don't make stylistic changes** to code you're not otherwise touching.
@@ -56,13 +56,13 @@ Check dependency files for signals of: `openai`, `@anthropic-ai/sdk` / `anthropi
 - Python: `fastapi`, `flask`, or `django` dependency
 - Node.js: `express` dependency, or `next` (Next.js API routes / server actions)
 
-### 1d. Detecting existing instrumentation, and auditing the link
+### 1d. Detecting existing instrumentation, and auditing session-ID plumbing
 
 - Grep for `ddtrace` init (`LLMObs.enable(`, `ddtrace-run`) in Python, or `dd-trace` init (`require('dd-trace').init(`, `dd-trace/initialize`) in Node.js.
-- Also grep for a frontend RUM SDK (`datadogRum.init(`, `@datadog/browser-rum`) — not to set it up, but because its presence determines whether RUM↔LLMO session linking is achievable.
+- Also grep for a frontend RUM SDK (`datadogRum.init(`, `@datadog/browser-rum`) — not to set it up, but because its presence determines whether the opt-in RUM↔LLMObs pivot is available (that pivot reuses the RUM session ID as the LLMObs session ID).
 - If LLMObs init is already present, do not add a second `enable`/`init` call — but **do not stop there.** SDK presence only means "don't re-init"; it says nothing about whether a session ID actually flows. Run this audit whenever its prerequisite surfaces are present:
-  - **RUM↔LLMO session plumbing** — applicable only when a RUM SDK is present on the frontend *and* Phase 1a found an LLM/agent backend. Check whether a session ID actually flows: frontend sends `datadogRum.getInternalContext()?.session_id`, the backend request model/route reads it, and a root `agent`/`workflow` span sets it as `session_id`/`sessionId` (see "Beyond SDK init" and "Session ID intake by environment" in `references/llmobs-python.md` / `references/llmobs-nodejs.md`). `LLMObs.enable()`/`dd-trace().init()` alone does not establish this. Skip this check if there's no RUM SDK — there's nothing to link.
-  - If the check finds a gap, tell the user what's missing and fix it (same reference files, same ground rules) even though the SDK itself doesn't need re-initializing. If it passes, say so explicitly. Note it as not applicable rather than a pass/fail when there's no RUM SDK.
+  - **Session-ID plumbing** — applicable whenever Phase 1a found an LLM/agent backend. Check whether a stable, conversation/operation-scoped session ID flows from the appropriate source: for web apps, the frontend sends a per-conversation ID and the backend request model/route reads it; for CLI/background jobs, the backend reuses an existing job/request/task ID or mints one UUID per invocation. A root `agent`/`workflow` span must then set it as `session_id`/`sessionId` (see "Beyond SDK init" and "Session ID intake by environment" in `references/llmobs-python.md` / `references/llmobs-nodejs.md`). `LLMObs.enable()`/`dd-trace().init()` alone does not establish this. If a RUM SDK is also present, the RUM↔LLMObs pivot is available as an opt-in — reusing the RUM session ID as the `session_id` — but that is a deliberate trade-off (the LLMObs session then spans the whole browser session), not the default; don't flag its absence as a gap.
+  - If the check finds a gap, tell the user what's missing and fix it (same reference files, same ground rules) even though the SDK itself doesn't need re-initializing. If it passes, say so explicitly. Note the RUM pivot as not applicable rather than a gap when there's no RUM SDK.
 
 ### 1e. Detecting the dependency manifest to persist into
 
@@ -85,7 +85,7 @@ Provision `DD_API_KEY` via `references/common-credentials.md`, then follow the r
 | LLM Observability — Python (SDK init, spans, session ID, RUM/APM linking) | `references/llmobs-python.md` |
 | LLM Observability — Node.js / Next.js (SDK init, spans, session ID, RUM/APM linking) | `references/llmobs-nodejs.md` |
 
-If Phase 1d found existing LLMObs instrumentation on a runtime, skip only that runtime's `init`/`enable` call and credential provisioning — still act on any gap the Phase 1d linkage audit found, using the same reference files.
+If Phase 1d found existing LLMObs instrumentation on a runtime, skip only that runtime's `init`/`enable` call and credential provisioning — still act on any gap the Phase 1d session-ID plumbing audit found, using the same reference files.
 
 ---
 ## Phase 3: Verification and Reporting
