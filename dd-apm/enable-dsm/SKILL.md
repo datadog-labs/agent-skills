@@ -26,7 +26,7 @@ Invoke this skill when:
 - The user's system is event-driven: microservices that hand work to each other asynchronously, services that turn a synchronous request into async background work, or Lambda functions triggered by queues or streams
 
 Do NOT invoke this skill if:
-- APM is not yet set up on the target services. Run the `dd-apm` install flow first; DSM needs the Datadog SDK running in the process
+- APM is not yet set up on the target services, unless `enable-ssi` is calling this skill after applying its SSI config. Otherwise run the `dd-apm` install flow first; DSM needs the Datadog SDK running in the process
 - The user only wants Kafka broker or cluster health (brokers, topics, partitions, configs). That is [Kafka Console](https://docs.datadoghq.com/data_streams/kafka/setup/), an Agent check, and out of scope for this skill
 - The user already declined DSM in this session. Do not ask again
 
@@ -109,9 +109,10 @@ Minimum tracer versions per library are in the [DSM setup docs](https://docs.dat
 | `PLATFORM` | `kubernetes`, `linux`, or `lambda`. Reuse what the APM install used |
 | `DSM_SERVICES` | Services whose code produces or consumes messages, from the detection step above. Exclude services with no messaging client |
 | `LANGUAGES` | From the manifests found in detection |
-| `AGENT_MANAGER` | Kubernetes only. `kubectl get datadogagent -A` returns a resource → `operator`. Otherwise `helm list -A \| grep datadog` → `helm` |
-| `DSM_APP_LABELS` | Kubernetes only. The `app` label of each Deployment in `DSM_SERVICES` |
-| `APP_NAMESPACE`, `AGENT_NAMESPACE` | Kubernetes only. Reuse the values from `enable-ssi` |
+| `AGENT_MANAGER` | Kubernetes only. `kubectl get datadogagent -A` returns a resource → `operator`. Otherwise `helm list -A \| grep datadog` → `helm`, and note the release name, namespace, and chart version from that output |
+| `DSM_LABEL_KEY`, `DSM_APP_LABELS` | Kubernetes only. A selector key the DSM Deployments share in `spec.selector.matchLabels` (often `app` or `app.kubernetes.io/name`), and each Deployment's value for it. If they don't share a key, add one DSM target per key |
+| `DSM_NAMESPACES` | Kubernetes only. The namespace of each Deployment in `DSM_SERVICES` |
+| `AGENT_NAMESPACE` | Kubernetes only. Reuse the value from `enable-ssi` |
 | `SYSTEMD_SERVICE_NAME`, `SSH_*` | Linux only. Reuse the values from `enable-ssi` |
 | `ENV`, `DD_SITE` | Reuse from the APM install |
 
@@ -136,9 +137,20 @@ Wait for an explicit yes. If the user says no, stop and continue with the callin
 Configure DSM in the SSI config (`DatadogAgent` or Helm values) with `ddTraceConfigs`. Do not add environment variables to application Deployments; `enable-ssi` keeps all SDK config in the SSI config.
 
 > **How targets work. Get this wrong and APM silently disappears from other workloads.**
-> - `ddTraceConfigs` is only valid inside a `targets[]` entry. `targets` requires Cluster Agent 7.64+.
+> - `ddTraceConfigs` is only valid inside a `targets[]` entry.
 > - As soon as `targets` exists, SSI instruments **only** pods that match a target. The first matching target wins.
 > - A target with `ddTraceVersions` injects only the listed languages and turns off language detection for its pods.
+
+Check the Cluster Agent version before changing anything:
+
+### Claude runs
+
+```bash
+kubectl get pods -n <AGENT_NAMESPACE> -l agent.datadoghq.com/component=cluster-agent \
+  -o jsonpath='{.items[0].spec.containers[0].image}{"\n"}'
+```
+
+If the image tag is below 7.73, stop and change nothing. Tell the user DSM through SSI targets needs Cluster Agent 7.73 or later, and to upgrade first. Older versions ignore `targets` (below 7.64), or turn off language detection and ignore the `admission.datadoghq.com/enabled` opt-out for every pod once any target exists (7.64 to 7.72).
 
 Adjust the existing instrumentation config based on how `enable-ssi` set it up:
 
@@ -160,10 +172,10 @@ features:
         - name: data-streams
           namespaceSelector:
             matchNames:
-              - <APP_NAMESPACE>
+              - <each namespace in DSM_NAMESPACES>
           podSelector:                # omit to cover the whole namespace
             matchExpressions:
-              - key: app
+              - key: <DSM_LABEL_KEY>
                 operator: In
                 values: [<DSM_APP_LABELS>]
           ddTraceConfigs:
@@ -176,12 +188,22 @@ Do not add `ddTraceVersions` to the DSM target unless the pods' previous target 
 
 The DSM docs also set `DD_TRACE_REMOVE_INTEGRATION_SERVICE_NAMES_ENABLED=true`. It renames integration spans in APM and is not required for DSM data. Do not set it unless the user asks; to consolidate service names, use `service-remapping`.
 
-Helm: the same `targets` block goes under `datadog.apm.instrumentation.targets` in the values file, applied with `helm upgrade`.
+Helm: the same `targets` block goes under `datadog.apm.instrumentation.targets` in the values file.
 
 ### Claude runs
 
+Operator:
+
 ```bash
 kubectl apply -f datadog-agent.yaml
+```
+
+Helm (start from the current values so nothing else changes):
+
+```bash
+helm get values <RELEASE> -n <AGENT_NAMESPACE> -o yaml > datadog-values.yaml
+# add the targets block under datadog.apm.instrumentation in datadog-values.yaml, then:
+helm upgrade <RELEASE> datadog/datadog -n <AGENT_NAMESPACE> -f datadog-values.yaml --version <CURRENT_CHART_VERSION>
 ```
 
 Then wait for the Cluster Agent. Run this as its own command with a 10-minute timeout; it takes one to three minutes.
@@ -223,16 +245,16 @@ If it prints `TIMED OUT`, do not restart applications. Check `kubectl describe p
 
 Applying label changes to a Deployment (for example Unified Service Tags from `enable-ssi`) also rolls its pods immediately. Apply those only after this wait.
 
-> **Confirm with the user before restarting.** Tell the user: "I need to restart `<DSM_SERVICES>` in `<APP_NAMESPACE>` for the DSM setting to reach the pods. This will cause a brief outage. Ready to proceed?" Wait for confirmation.
+> **Confirm with the user before restarting.** Tell the user: "I need to restart `<DSM_SERVICES>` for the DSM setting to reach the pods. This will cause a brief outage. Ready to proceed?" Wait for confirmation.
 
-Restart one Deployment in `DSM_SERVICES` first and run the checks below on it. Only restart the rest once it shows the SSI init containers and the DSM variable. For each Deployment in `DSM_SERVICES`:
+Restart one Deployment in `DSM_SERVICES` first and run the checks below on it. Only restart the rest once it shows the SSI init containers and the DSM variable. For each Deployment in `DSM_SERVICES`, in its own namespace:
 
 ### Claude runs
 
 ```bash
-kubectl rollout restart deployment/<DEPLOYMENT_NAME> -n <APP_NAMESPACE>
-kubectl rollout status deployment/<DEPLOYMENT_NAME> -n <APP_NAMESPACE> --timeout=180s
-kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --sort-by=.metadata.creationTimestamp \
+kubectl rollout restart deployment/<DEPLOYMENT_NAME> -n <NAMESPACE>
+kubectl rollout status deployment/<DEPLOYMENT_NAME> -n <NAMESPACE> --timeout=180s
+kubectl get pod -l <DSM_LABEL_KEY>=<APP_LABEL> -n <NAMESPACE> --sort-by=.metadata.creationTimestamp \
   -o jsonpath='{range .items[-1:].spec.containers[*]}{.name}{"="}{.env[?(@.name=="DD_DATA_STREAMS_ENABLED")].value}{"\n"}{end}'
 ```
 
@@ -241,7 +263,7 @@ If the application container shows `=true`, DSM is configured for that service.
 ERROR: Empty. Check the newest pod's init containers and the target it matched:
 
 ```bash
-kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --sort-by=.metadata.creationTimestamp \
+kubectl get pod -l <DSM_LABEL_KEY>=<APP_LABEL> -n <NAMESPACE> --sort-by=.metadata.creationTimestamp \
   -o jsonpath='{.items[-1:].spec.initContainers[*].name}{"\n"}{.items[-1:].metadata.annotations.internal\.apm\.datadoghq\.com/applied-target}{"\n"}'
 ```
 
@@ -249,14 +271,18 @@ kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --sort-by=.metadata.creati
 - The applied target is `default` but the pod's labels match the DSM selectors → the pod was admitted by a Cluster Agent with the old config. Re-run the wait and restart.
 - Otherwise the pod doesn't match the DSM target. Compare the target's `namespaceSelector` / `podSelector` with the pod's namespace and labels.
 
-Then confirm a workload **outside** `DSM_SERVICES` is still instrumented after its next restart:
+Then confirm that workloads **outside** `DSM_SERVICES` are still instrumented. A server-side dry run sends a test pod through the injection webhook without creating or restarting anything:
+
+### Claude runs
 
 ```bash
-kubectl get pod -l app=<OTHER_APP_LABEL> -n <OTHER_NAMESPACE> --sort-by=.metadata.creationTimestamp \
-  -o jsonpath='{.items[-1:].spec.initContainers[*].name}'
+kubectl run dsm-admission-check -n <A_NAMESPACE_IN_SSI_SCOPE> --image=busybox --restart=Never \
+  --dry-run=server -o jsonpath='{.metadata.annotations.internal\.apm\.datadoghq\.com/applied-target}{"\n"}{.spec.initContainers[*].name}{"\n"}'
 ```
 
-ERROR: No `datadog-lib-*-init`. First restart that workload once more, in case it raced the Cluster Agent rollout. If it is still missing, the `default` target is missing or listed before the DSM target. Fix the order and re-apply.
+Expect the `default` target and a `datadog-lib-*-init` container.
+
+ERROR: No init container, or a target other than `default`. The `default` target is missing or listed before the DSM target. Fix the order and re-apply.
 
 **Java alternative without a restart:** on the APM Service Page, **Enable DSM** turns it on through Remote Configuration.
 
@@ -279,7 +305,7 @@ Add below the existing `DD_SERVICE` / `DD_ENV` / `DD_VERSION` lines:
 Environment="DD_DATA_STREAMS_ENABLED=true"
 ```
 
-For supervisord or pm2, add `DD_DATA_STREAMS_ENABLED="true"` to the same `environment` / `env` block that holds the UST vars, then reload it again.
+For supervisord or pm2, add `DD_DATA_STREAMS_ENABLED="true"` to the same `environment` / `env` block that holds the UST vars. Do not reload yet.
 
 > **Confirm with the user before restarting.** Tell the user: "I need to restart `<SYSTEMD_SERVICE_NAME>` for DSM to take effect. This will cause a brief outage. Ready to proceed?" Wait for confirmation.
 
@@ -290,6 +316,8 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo systemctl daemon-reload && sudo systemctl restart <SYSTEMD_SERVICE_NAME> && sleep 3 && \
    sudo cat /proc/\$(systemctl show -p MainPID <SYSTEMD_SERVICE_NAME> | cut -d= -f2)/environ | tr '\0' '\n' | grep DD_DATA_STREAMS"
 ```
+
+For supervisord, restart only this program: `sudo supervisorctl reread && sudo supervisorctl update <PROGRAM>`. For pm2: `pm2 restart <APP> --update-env` (a plain reload keeps the old environment). Then check the process environment with `sudo cat /proc/<PID>/environ | tr '\0' '\n' | grep DD_DATA_STREAMS`.
 
 If `DD_DATA_STREAMS_ENABLED=true` is printed, continue to Step 3.
 
@@ -330,7 +358,7 @@ ERROR: No series after traffic has flowed for 5+ minutes:
 Exit when ALL of the following are true:
 - [ ] The user explicitly agreed to enable DSM, after hearing the plan rule
 - [ ] `DD_DATA_STREAMS_ENABLED=true` is set on the scope the user agreed to, and nowhere else
-- [ ] Kubernetes: a workload outside `DSM_SERVICES` still has its SSI init container
+- [ ] Kubernetes: the Cluster Agent is 7.73 or later, and the dry-run admission check matched the `default` target with an SSI init container
 - [ ] Data verified in Step 3 (or in `onboarding-summary` when called from `enable-ssi`), or the user was told DSM will appear after the first message flows
 - [ ] Any service that could not be enabled (PHP, Go without Orchestrion, unsupported client, Redis-backed queue) was named to the user, with the reason
 

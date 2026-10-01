@@ -126,19 +126,19 @@ ERROR: Still missing after traffic — check the agent's trace receiver: `kubect
 
 The pod spec is the source of truth for whether `ddTraceConfigs` reached the workload. SSI adds each entry as an env var on the pod's containers.
 
-Run this for a pod in each target that has `ddTraceConfigs`. For Data Streams, run it once per Deployment in `DSM_SERVICES`, using that Deployment's `app` label (from `DSM_APP_LABELS` in `enable-dsm`) as `<APP_LABEL>`. A pod matched only by a target without `ddTraceConfigs` (such as the catch-all `default` target) should not carry these variables. That is expected, not a failure.
+Run this for a pod in each target that has `ddTraceConfigs`. For Data Streams, run it once per Deployment in `DSM_SERVICES`, in that Deployment's namespace, with `<LABEL_KEY>` set to `DSM_LABEL_KEY` and `<APP_LABEL>` to that Deployment's value (both from `enable-dsm`). Otherwise `<LABEL_KEY>` is `app`. A pod matched only by a target without `ddTraceConfigs` (such as the catch-all `default` target) should not carry these variables. That is expected, not a failure.
 
 ### Claude runs
 
 ```bash
-kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --sort-by=.metadata.creationTimestamp \
+kubectl get pod -l <LABEL_KEY>=<APP_LABEL> -n <APP_NAMESPACE> --sort-by=.metadata.creationTimestamp \
   -o jsonpath='{range .items[-1:].spec.containers[*]}{.name}{":"}{"\n"}{range .env[*]}{"  "}{.name}={.value}{.valueFrom}{"\n"}{end}{end}' | grep -E '^[^ ].*:$|^  DD_'
 ```
 
 To see which target the pod matched:
 
 ```bash
-kubectl get pod -l app=<APP_LABEL> -n <APP_NAMESPACE> --sort-by=.metadata.creationTimestamp \
+kubectl get pod -l <LABEL_KEY>=<APP_LABEL> -n <APP_NAMESPACE> --sort-by=.metadata.creationTimestamp \
   -o jsonpath='{.items[-1:].metadata.annotations.internal\.apm\.datadoghq\.com/applied-target}'
 ```
 
