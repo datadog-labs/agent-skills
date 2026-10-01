@@ -178,6 +178,8 @@ Use `workflow` here, not `agent` — `run_pipeline` doesn't call an LLM directly
 
 **Detecting this while verifying:** if a single logical operation (one job, one request, one pipeline run) produces more than one root span/trace in the LLM Obs UI, the fix is to add one enclosing `workflow`/`agent` span around the whole orchestrating function — not to sprinkle the same `session_id` across each stage's own root span. Matching `session_id`s across separate traces groups them into one *session*, but a single trace with nested children is the stronger, simpler, and intended fix; prefer it whenever the stages share one caller.
 
+**A deliberate split is fine — the anti-pattern is the *accidental* one.** The failure above is unintentional fragmentation: no enclosing span *and* no shared `session_id`, so the trace splits and the pieces never regroup. When the agents are genuinely independent or long-lived — not tight sequential stages of one operation — a separate trace per agent is a legitimate call; put the *same* `session_id` on each root span and they still read as one session in the UI. One combined trace stays the default — it's simpler, and it's usually what a single operation *is* — so reach for per-agent traces when you actually want them, not because the enclosing span got dropped.
+
 ## Span kind decision table
 
 | Code pattern | Span kind |
