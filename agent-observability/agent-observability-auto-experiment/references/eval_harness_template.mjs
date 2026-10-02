@@ -35,8 +35,14 @@
  * CONFIDENCE label — a higher-in-direction move only within noise is kept but flagged tentative,
  * not discarded — NOT a keep gate, and NOT a raw-stdev band (raw stdev doesn't shrink with runs).
  * Only the mean/stdev are computed here; the gate itself lives in the loop. See
- * references/rubrics.md "Noise & keep/discard policy". Point at a specific data split with
- * `AUTO_EXP_DATA` (default data.jsonl).
+ * references/rubrics.md "Noise & keep/discard policy".
+ *
+ * Data: the corpus lives in Datadog LLM-Obs Datasets, and this harness NEVER calls Datadog (it has
+ * no MCP tools, and re-downloading per pass would cost `runs`x). The orchestrator hydrates the
+ * split it wants scored into `.auto_experiment/cache/<dataset_id>.jsonl` (SKILL.md "Step 1.5") and
+ * points this file at it with `AUTO_EXP_DATASET_ID`. `AUTO_EXP_DATA` overrides with an explicit
+ * path — used by `dataset_mode: local_file` runs and manual invocations. A missing cache is a hard
+ * error, never an empty eval set.
  */
 
 import fs from "node:fs";
@@ -44,7 +50,12 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const DATA = process.env.AUTO_EXP_DATA || path.join(HERE, "data.jsonl");
+// Resolution order: explicit path override > hydrated cache for the dataset being scored. No
+// silent default: without one of the two there is no defensible eval set to score.
+const DATASET_ID = process.env.AUTO_EXP_DATASET_ID || "";
+const DATA =
+  process.env.AUTO_EXP_DATA ||
+  (DATASET_ID ? path.join(HERE, "cache", `${DATASET_ID}.jsonl`) : "");
 const RESULTS = path.join(HERE, "eval_results.jsonl");
 
 // How many times to re-run the full eval to estimate the noise floor. Floor of 3 (the pilot value)
@@ -127,8 +138,9 @@ async function evaluateLine(line) {
   return {
     // Stable eval-set id FIRST — required so eval_results.jsonl can be diffed and cited by id
     // in the census / result reasoning / mechanism audit / LLM-Obs reasoning (see rubrics.md
-    // "Refer to datapoints by their eval-set id everywhere"). If the dataset has no id field,
-    // assign one deterministically when building data.jsonl and it flows through here.
+    // "Refer to datapoints by their eval-set id everywhere"). If the source records have no id
+    // field, one is assigned deterministically when the dataset records are created (SKILL.md
+    // "Step 1") and flows through here.
     id: line.id,
     input: (inputText || "").slice(0, 500),
     output: String(output).slice(0, 500),
@@ -168,6 +180,19 @@ function pstdev(xs) {
 }
 
 async function main() {
+  if (!DATA) {
+    throw new Error(
+      "no eval data: set AUTO_EXP_DATASET_ID (the val/test dataset id, whose records the " +
+        "orchestrator hydrates into .auto_experiment/cache/<id>.jsonl via mcp/pup) or " +
+        "AUTO_EXP_DATA (explicit path, local_file mode)",
+    );
+  }
+  if (!fs.existsSync(DATA)) {
+    throw new Error(
+      `eval data cache missing: ${DATA} — hydrate it from the dataset via the selected ` +
+        "datadog_backend (SKILL.md 'Step 1.5'); do NOT re-split or score a partial corpus",
+    );
+  }
   const lines = fs
     .readFileSync(DATA, "utf8")
     .split("\n")
