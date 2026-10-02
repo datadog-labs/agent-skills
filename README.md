@@ -63,6 +63,7 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-browser-sdk \
   --skill dd-audit \
   --skill service-remapping \
+  --skill enable-dsm \
   --skill agent-install \
   --skill enable-ssi \
   --skill verify-ssi \

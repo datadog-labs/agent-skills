@@ -1,12 +1,12 @@
 ---
 name: dd-apm
-description: APM - install, onboard, instrument, enable, set up, configure, traces, services, dependencies, performance analysis. Use for any request involving Datadog APM setup, instrumentation (SSI, ddtrace, agent install), or analysis.
+description: APM - install, onboard, instrument, enable, set up, configure, traces, services, dependencies, performance analysis, Data Streams Monitoring (DSM), queue lag, pipeline latency. Use for any request involving Datadog APM setup, instrumentation (SSI, ddtrace, agent install), or analysis.
 alwaysApply: true
 metadata:
-  version: "1.1.0"
+  version: "1.2.0"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
-  tags: datadog,apm,tracing,performance,distributed-tracing,dd-apm,install,onboarding,instrumentation,ssi,agent
+  tags: datadog,apm,tracing,dsm,data-streams,performance,distributed-tracing,dd-apm,install,onboarding,instrumentation,ssi,agent
   globs: "**/ddtrace*,**/datadog*.yaml,**/*trace*"
 ---
 
@@ -47,6 +47,14 @@ Match the user's request to one of the entries below. Each entry has the same sh
 
 ---
 
+**Data Streams Monitoring (DSM) / queue and pipeline monitoring**: trigger when the user mentions data streams, DSM, consumer or queue lag, pipeline latency, end-to-end latency across queues, or monitoring Kafka / RabbitMQ / SQS / SNS / Kinesis / Pub/Sub flows between services.
+
+**Immediately read** `.claude/skills/dd-apm/enable-dsm/SKILL.md` now. Do not proceed from memory.
+
+> **Do NOT** install a separate DSM agent, package, or library. DSM runs in the Datadog SDK that APM already injected and is enabled with one setting per service. **Do NOT** enable it without first telling the user it is included with APM Pro and Enterprise and billed separately on base APM.
+
+---
+
 ### Overlap disambiguation
 
 When a request could plausibly fit more than one entry above, use these tiebreakers:
@@ -57,6 +65,7 @@ When a request could plausibly fit more than one entry above, use these tiebreak
 | Single host, VM, or EC2 with no orchestrator | linux-ssi |
 | "Several services that should be one" | service-remapping — the sub-skill picks the rule type based on whether the duplicates are real instrumented services or inferred entities (DBs, queues, external APIs) |
 | "My service shows under the wrong name" | First check `DD_SERVICE` on the deploy. If correct and the name is still wrong → service-remapping. |
+| "Monitor Kafka" / "monitor my queues" | Ask whether they mean broker/cluster health (Kafka Console, an Agent check: https://docs.datadoghq.com/data_streams/kafka/setup/) or message flow between their services (enable-dsm) |
 | "Reduce APM volume / cost / noise" | No sub-skill yet. Ask whether the user means sampling (fewer ingested traces) or retention filters (less indexed data) before suggesting commands. |
 
 ---

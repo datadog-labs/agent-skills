@@ -12,6 +12,7 @@ pub const DD_APM_SKILL: &str = skill!("dd-apm/SKILL.md");
 
 pub static DD_APM_SUB_SKILLS: &[(&str, &str)] = &[
     ("service-remapping/SKILL.md",            skill!("dd-apm/service-remapping/SKILL.md")),
+    ("enable-dsm/SKILL.md",                   skill!("dd-apm/enable-dsm/SKILL.md")),
     ("k8s-ssi/agent-install/SKILL.md",        skill!("dd-apm/k8s-ssi/agent-install/SKILL.md")),
     ("k8s-ssi/enable-ssi/SKILL.md",           skill!("dd-apm/k8s-ssi/enable-ssi/SKILL.md")),
     ("k8s-ssi/verify-ssi/SKILL.md",           skill!("dd-apm/k8s-ssi/verify-ssi/SKILL.md")),
