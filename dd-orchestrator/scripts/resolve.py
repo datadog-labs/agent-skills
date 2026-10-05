@@ -137,17 +137,24 @@ def display_name(token):
     return next((k for k, v in PRODUCT_TOKENS.items() if v == token), token)
 
 
+# Product detection emits canonical tokens even when no catalog skill implements them.
+# Accept those tokens on the next resolve call so a known coverage gap stays recognizable.
+_KNOWN_PRODUCT_TOKENS = frozenset(PRODUCT_TOKENS.values())
+
+
 def normalize_product(name, catalog_tokens=None):
     """Map a product name/alias to its catalog token, or None if unrecognized.
 
-    Accepts the recommender names/aliases in PRODUCT_TOKENS and, when a set of
-    catalog product tokens is supplied, every such token as an alias for itself
+    Accepts the recommender names/aliases and canonical tokens in PRODUCT_TOKENS
+    and, when catalog product tokens are supplied, every such token as an alias for itself
     (so an operator can pass the exact token printed in catalog.json). Case- and
     whitespace-insensitive.
     """
     key = str(name).strip().lower()
     if key in PRODUCT_TOKENS:
         return PRODUCT_TOKENS[key]
+    if key in _KNOWN_PRODUCT_TOKENS:
+        return key
     if catalog_tokens and key in catalog_tokens:
         return key
     return None
@@ -949,11 +956,16 @@ def main():
     # One session id per invocation, shared by every event in this DAG run. Minted here
     # (or taken from the environment if an outer wrapper already set it) and printed so the
     # SKILL.md runbook can reuse it on each dispatch-boundary emit.py call.
+    minted_session = not os.environ.get("DD_ORCH_SESSION_ID")
     session_id = os.environ.get("DD_ORCH_SESSION_ID") or str(uuid.uuid4())
     if not a.trace:
         # In --trace mode the framed block already carries SESSION_ID; keep this human-oriented
         # line for plain runs only, so the trace stays a single machine-readable block.
         print(f"SESSION ID: {session_id}")
+    elif minted_session:
+        # Keep the export reminder off stdout so the trace remains machine-readable.
+        print(f"# pin this run's session id so re-runs and emit.py share it:\n"
+              f"# export DD_ORCH_SESSION_ID={session_id}", file=sys.stderr)
     products = [p for p in a.products.split(",") if p.strip()]
     router = Router(catalog, enabled_only=not a.include_disabled)
     res = router.resolve(
