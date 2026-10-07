@@ -191,16 +191,18 @@ developer goal
    `DEAD_ENDS`, `CHOICE_POINTS`, `SUGGESTED`, `CONFIRMED`, `DISPATCHED` — and `tee` saves it verbatim to
    `$TRACE`. **That deterministic block IS your dispatch trace; never re-narrate the plan by
    hand.** Read the same output for the ordered plan, the dead-ends, and any choice points. **Capture the
-   `SESSION_ID:` value from that block and pin it for the whole run:**
-   `export DD_ORCH_SESSION_ID=<SESSION_ID>`. Every later `resolve.py` re-run and `emit.py` call must
-   reuse this id. A new id would split one run's telemetry and restart its `event_seq`. In **debug
+   `SESSION_ID:` value from that block** in a run-local variable: `SID=<SESSION_ID>`.
+   Pass `--session-id "$SID"` to every later `resolve.py` re-run and `emit.py` call. Capture a fresh
+   value from the first trace of each new run; do not export `DD_ORCH_SESSION_ID`. If an outer wrapper
+   supplies that environment variable, the resolver honors it; leave its value unchanged.
+   A new id during a replan would split one run's telemetry and restart its `event_seq`. In **debug
    mode** (only when the context explicitly asks for it), add `--debug` to also render the ASCII DAG
    (indent = dependency depth, `<-` = direct prerequisites). `resolve.py` also emits the reliable
    telemetry core here (see **Telemetry** below). After seeding the trace, record the successful
    `dd-account-setup` preflight as the first line under `DISPATCHED`. Restore that entry after any
    choice-driven trace regeneration, including when no further skills can run.
 6. **Resolve choices** — for each choice point (e.g. "pick a platform: kubernetes, linux"), ask the
-   developer and re-run with the confirmed value. Reuse `DD_ORCH_SESSION_ID` from Step 5 so the
+   developer and re-run with the confirmed value and `--session-id "$SID"` from Step 5 so the
    updated plan and subsequent telemetry remain part of the same run.
 7. **Confirm — render the PLAN block, then dispatch.** Before any dispatch, render the **PLAN block**
    (see *Output templates* below) verbatim: fill the slots, add no extra prose, keep the exact section
@@ -324,10 +326,11 @@ session {{session_id}} · {{event_count}} events · result {{result}} ({{s}}✓ 
 All telemetry goes through `emit.py`; **never build your own HTTP request or `curl`.** It is
 best-effort by construction (bounded timeout, local debug log, never throws) and emits to the
 logs-intake route only. Turn it off with `DD_ORCH_TELEMETRY_DISABLED=1`. Reuse the single
-`DD_ORCH_SESSION_ID` pinned in Step 5 on every call so the whole run stitches together.
+`SID` captured in Step 5 via `--session-id "$SID"` on every call so the whole run stitches together.
 
-`resolve.py` already emits the reliable core: `skill_run:started`, `skill_run:plan_resolved`, and
-one `skill_step:planned` per plan node and per dead-end (each `skill_step` also carries `depends_on`
+`resolve.py` already emits the reliable core: one `skill_run:started` per session, then
+`skill_run:plan_resolved` and one `skill_step:planned` per plan node and per dead-end on each resolve
+(each `skill_step` also carries `depends_on`
 — the CSV of prerequisite plan positions — so the DAG edges are reconstructable). `resolve.py`
 persists the run envelope (agent, platform, cloud, entry, intent mode, org id) and `emit.py` re-attaches it plus an
 `emitted_at` (ms) timestamp to **every** event automatically — so you need not re-pass the envelope;
@@ -335,7 +338,7 @@ send only the per-step fields below. During dispatch you add the per-step lifecy
 run event:
 
 ```
-SID="$DD_ORCH_SESSION_ID"   # reuse the id pinned in Step 5
+# SID is the run-local SESSION_ID captured in Step 5.
 
 # before invoking a plan node (source_mode records how it ran: installed vs fetched-from-source)
 python3 dd-orchestrator/scripts/emit.py skill_step --action started --session-id "$SID" \
