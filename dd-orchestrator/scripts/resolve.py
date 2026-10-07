@@ -137,17 +137,24 @@ def display_name(token):
     return next((k for k, v in PRODUCT_TOKENS.items() if v == token), token)
 
 
+# Product detection emits canonical tokens even when no catalog skill implements them.
+# Accept those tokens on the next resolve call so a known coverage gap stays recognizable.
+_KNOWN_PRODUCT_TOKENS = frozenset(PRODUCT_TOKENS.values())
+
+
 def normalize_product(name, catalog_tokens=None):
     """Map a product name/alias to its catalog token, or None if unrecognized.
 
-    Accepts the recommender names/aliases in PRODUCT_TOKENS and, when a set of
-    catalog product tokens is supplied, every such token as an alias for itself
+    Accepts the recommender names/aliases and canonical tokens in PRODUCT_TOKENS
+    and, when catalog product tokens are supplied, every such token as an alias for itself
     (so an operator can pass the exact token printed in catalog.json). Case- and
     whitespace-insensitive.
     """
     key = str(name).strip().lower()
     if key in PRODUCT_TOKENS:
         return PRODUCT_TOKENS[key]
+    if key in _KNOWN_PRODUCT_TOKENS:
+        return key
     if catalog_tokens and key in catalog_tokens:
         return key
     return None
@@ -712,7 +719,7 @@ def _print_trace(session_id, args, res):
     into the run's trace file (T2.1). The judge grades that trace, so having the deterministic
     planner author it — instead of the model re-narrating the plan — removes a whole class
     of transcription error. Deterministic for fixed inputs; SESSION_ID is the only
-    run-seeded field (pin it with DD_ORCH_SESSION_ID). CONFIRMED and DISPATCHED are
+    run-seeded field (reuse it with --session-id). CONFIRMED and DISPATCHED are
     placeholders the agent fills after the confirm gate and after each dispatch.
 
     STOP_REASON tells the reader whether the plan may proceed:
@@ -806,8 +813,8 @@ def _emit_telemetry(session_id, args, products, router, res):
             "target_cloud": normalize_cloud(args.cloud),
             "org_id": os.environ.get("DD_ORG_ID") or None,   # auth'd org public_id; None -> omitted
         }
-        # Persist the run envelope once so the SKILL.md runbook's later emit.py processes
-        # re-attach it to every started/finished/skill_run:finished event (F4).
+        # Refresh the envelope and plan shape on replans; preserve the event sequence
+        # and run-start marker so later emit.py processes stay in the same run.
         emit.write_session_state(session_id, base, shape={
             "dead_end_count": len(res["dead_ends"]),
             "planned_skill_count": len(res["plan"]),
@@ -870,6 +877,11 @@ def main():
     ap.add_argument("--platform", default="none")
     ap.add_argument("--cloud", default="none")
     ap.add_argument(
+        "--session-id",
+        help="reuse a run's session ID when replanning (defaults to DD_ORCH_SESSION_ID "
+             "or a new ID)",
+    )
+    ap.add_argument(
         "--select",
         action="append",
         default=[],
@@ -896,7 +908,7 @@ def main():
     ap.add_argument(
         "--list-products",
         action="store_true",
-        help="print the accepted product vocabulary (recommender names + catalog tokens) and exit",
+        help="print accepted product names, aliases, and canonical/catalog tokens and exit",
     )
     ap.add_argument(
         "--detect-products",
@@ -932,7 +944,8 @@ def main():
         router = Router(catalog, enabled_only=not a.include_disabled)
         print("Accepted --products inputs (case-insensitive, whitespace-tolerant):")
         print("  names/aliases: " + ", ".join(sorted(PRODUCT_TOKENS)))
-        print("  catalog tokens: " + ", ".join(sorted(router.product_tokens)))
+        print("  tokens (including products without setup skills): " +
+              ", ".join(sorted(_KNOWN_PRODUCT_TOKENS | router.product_tokens)))
         return 0
     if a.detect_products is not None:
         # Shortcut: the intent may already name products. If so, skip the recommender and
@@ -946,14 +959,18 @@ def main():
         ap.error("--trace with --products requires --intent-mode explicit|recommended: products must "
                  "come from the --detect-products shortcut or dd-product-recommender, never inferred "
                  "by the orchestrator")
-    # One session id per invocation, shared by every event in this DAG run. Minted here
-    # (or taken from the environment if an outer wrapper already set it) and printed so the
-    # SKILL.md runbook can reuse it on each dispatch-boundary emit.py call.
-    session_id = os.environ.get("DD_ORCH_SESSION_ID") or str(uuid.uuid4())
+    # Explicit IDs keep replans in one run without exporting state into later runs.
+    # Preserve the environment fallback for IDs intentionally supplied by an outer wrapper.
+    supplied_session = a.session_id or os.environ.get("DD_ORCH_SESSION_ID")
+    session_id = supplied_session or str(uuid.uuid4())
     if not a.trace:
         # In --trace mode the framed block already carries SESSION_ID; keep this human-oriented
         # line for plain runs only, so the trace stays a single machine-readable block.
         print(f"SESSION ID: {session_id}")
+    elif not supplied_session:
+        # Keep the reminder off stdout so the trace remains machine-readable.
+        print(f"# reuse this run's session id on later resolve.py and emit.py calls:\n"
+              f"# --session-id {session_id}", file=sys.stderr)
     products = [p for p in a.products.split(",") if p.strip()]
     router = Router(catalog, enabled_only=not a.include_disabled)
     res = router.resolve(

@@ -156,9 +156,8 @@ def _coerce(key, value):
     return value
 
 
-# --- run-scoped envelope: persisted ONCE by resolve.py, re-applied to every event ------
-# Fixes F4 — SKILL.md-runbook emits (separate emit.py processes) dropped the envelope on
-# started/finished/skill_run:finished. Write-once; read-only here; best-effort (never raises).
+# --- run-scoped state: shared by sequential resolve.py and emit.py processes ----------
+# Replans refresh the envelope and shape while preserving lifecycle state and event_seq.
 _ENVELOPE_KEYS = ("entry_skill_id", "invocation_mode", "intent_mode", "agent_name",
                   "target_platform", "target_cloud", "org_id")
 
@@ -199,6 +198,24 @@ def write_session_state(session_id, envelope, shape=None):
 def _read_session_envelope(session_id):
     env = _load_state(session_id).get("envelope", {})
     return {k: v for k, v in env.items() if k in _ENVELOPE_KEYS and v not in (None, "")}
+
+
+def _claim_run_start(session_id):
+    """Reserve one run-start attempt across sequential processes, before transport.
+
+    Keep the marker even if transport fails: the local event log records that attempt.
+    If state cannot be persisted, allow emission so telemetry remains best-effort.
+    """
+    try:
+        state = _load_state(session_id)
+        if state.get("run_started"):
+            return False
+        state["run_started"] = True
+        with open(_session_state_path(session_id), "w") as fh:
+            json.dump(state, fh)
+        return True
+    except Exception:
+        return True
 
 
 def _next_seq(session_id):
@@ -378,6 +395,10 @@ def emit(event_type, event_action, session_id, fields=None,
         if not token:
             _debug(f"drop: no client token for site {site!r}")
             return False
+
+        if event_type == "skill_run" and event_action == "started":
+            if not _claim_run_start(session_id):
+                return False
 
         event = build_event(event_type, event_action, session_id, fields)
         seq = _next_seq(session_id)
