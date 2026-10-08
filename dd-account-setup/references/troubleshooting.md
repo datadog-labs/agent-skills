@@ -10,7 +10,6 @@ return to the step that failed.
 | `403` from `/api/v1/validate` with a key you know is valid | Wrong region. The key belongs to a different `DD_SITE`. Set `DD_SITE` to the key's region (Step 2) and re-validate. |
 | `403` from `current_user` but `/validate` is `200` | The **application key** is wrong or from another region, not the api key. |
 | `DD_SITE` rejected as unrecognized | It must match the allowed list exactly (no `https://`, no trailing slash, no `app.` prefix). Use the `DD_SITE` column in `references/regions.md`. |
-| IP detection times out / returns nothing | Expected on restricted networks. Falls back to US1; just confirm or override the region manually. |
 | Headless run exits immediately | A non-interactive run needs `DD_API_KEY`, `DD_APP_KEY`, and `DD_SITE` all set. Neither OAuth nor signup works without a browser. |
 | Browser shows "localhost … can't connect" after approving | The auto-capture listener isn't running (no `python3`, or it timed out after 180s). A busy port 8080 no longer blocks it — the listener auto-selects a free port and matches the `redirect_uri`. Copy the full address-bar URL and paste it into Path B Step 2's `PASTE_REDIRECT_URL`. |
 | Auto-capture never returns / "no callback in 180s" | `python3` missing, or the browser never redirected. (A busy port 8080 is handled automatically — the listener picks a free port and matches the `redirect_uri`.) Re-run Path B Step 1; if it persists, use the paste fallback. |

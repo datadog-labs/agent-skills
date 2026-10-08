@@ -20,7 +20,7 @@ headless requested?  ──yes──▶  Step H: env keys only (OAuth needs a br
 Step 1  Detect existing credentials (env)
    │
    ▼
-Step 2  Determine region / site  (DD_SITE → validate; else IP-detect → confirm)
+Step 2  Determine region / site  (DD_SITE → validate; else ask → user picks, default US1)
    │
    ▼
 Step 3  Authenticate  — ask first (even if env keys were detected)   → references/authenticate.md
@@ -131,24 +131,18 @@ An app key without an api key is not enough; treat it as "no key." Because the s
 ## Step 2 — Determine region / site
 
 The site drives *every* URL downstream (signup, API host, key pages), so pin it before validating.
-The region table and the country→region IP mapping live in **`references/regions.md`**.
+The region table lives in **`references/regions.md`**.
 
 1. **If `DD_SITE` is set** (env or `.env`): validate it against the allowed-site list in
    `references/regions.md`. If it is **not** in that list, stop and show a clear error:
    > `DD_SITE="<value>"` isn't a recognized Datadog site. Pick one of the regions in `references/regions.md` and set `DD_SITE` accordingly.
 
-2. **If `DD_SITE` is unset:** auto-detect the region from the user's location, then **confirm** — never silently commit a region.
+2. **If `DD_SITE` is unset:** ask the user to pick a region from the table in `references/regions.md` — never silently commit one. **Don't try to detect the user's location** (no IP-geolocation lookups or other third-party calls): the right region is where their *infrastructure* runs, which may not be where they are. Default to **US1** (`datadoghq.com`) if they have no preference. Tell the user, e.g.:
+   > Which Datadog region should this account live in? Pick the one closest to where your infrastructure runs (e.g. your cloud region) — sending data to a far-away region adds latency and egress cost, and the region **can't be changed** after the account is created. Default: **US1 (Virginia), `datadoghq.com`**.
 
-   ```bash
-   country=$(curl -s --max-time 2 https://ipinfo.io/json \
-     | grep -o '"country"[^,]*' | grep -o '"[A-Z][A-Z]"' | tr -d '"')
-   echo "Detected country: ${country:-unknown}"
-   ```
+   Use the host's native selector with **US1 (default)** first. If it caps the number of options, list as many as it allows in this order — US1, EU1, AP1, UK1 — and let the selector's free-text "Other" cover the rest.
 
-   Map the country to a region using the **Country → region mapping** table in `references/regions.md`. On timeout, error, or no match, **default to US1** (`datadoghq.com`) — and say so. Then tell the user, e.g.:
-   > You look like you're in **DE** → suggesting **EU1 (Frankfurt), `datadoghq.eu`**. Use this, or pick another region below?
-
-   Wait for confirmation. Region cannot be changed after an account is created, so this choice matters.
+   Wait for the user's reply before continuing. A plain acceptance ("ok", "default", "sure") means US1.
 
 The API host is uniformly `https://api.${DD_SITE}`.
 
@@ -158,7 +152,7 @@ The API host is uniformly `https://api.${DD_SITE}`.
 
 ## Step 3 — Authenticate
 
-**Ask how to connect first — even when Step 1 detected env credentials** — then run the path the user picks. Present "The choice" before touching any credential: an ambient `DD_API_KEY` may belong to a different org or account than the user intends, and region/IP can't reveal which, so let the user decide rather than inferring it. (Headless/**Step H** is exempt — no TTY to ask, env keys only.)
+**Ask how to connect first — even when Step 1 detected env credentials** — then run the path the user picks. Present "The choice" before touching any credential: an ambient `DD_API_KEY` may belong to a different org or account than the user intends, and the region can't reveal which, so let the user decide rather than inferring it. (Headless/**Step H** is exempt — no TTY to ask, env keys only.)
 
 The full detail — "The choice" native-selector wording plus all three paths — lives in **`references/authenticate.md`**:
 
