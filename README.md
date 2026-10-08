@@ -86,13 +86,14 @@ npx skills add datadog-labs/agent-skills \
   --skill agent-observability-auto-experiment \
   --skill agent-observability-build-eval-from-annotations \
   --skill agent-observability-replay-trace \
+  --skill agent-observability-online-experiment \
   --skill k9-ownership-byod-setup \
   --full-depth -y
 ```
 
 ### Agent Observability (LLMO)
 
-The `agent-observability` directory contains nine skills for working with Agent Observability data:
+The `agent-observability` directory contains ten skills for working with Agent Observability data:
 
 | Skill | Purpose |
 |-------|---------|
@@ -105,6 +106,7 @@ The `agent-observability` directory contains nine skills for working with Agent 
 | `agent-observability-auto-experiment` | Local hill-climb: baseline-eval a prompt/file against LLM-Obs data, make one focused change, re-score with the same harness, keep it only if it beats the best, repeat |
 | `agent-observability-build-eval-from-annotations` | Build an evaluator from an annotation queue's human labels: find where the labelled property lives in the trace, draft an LLM judge, score it against the existing labels, hill-climb its errors, publish the winner as a disabled evaluator |
 | `agent-observability-replay-trace` | Iterate on one trace: re-run it against local code, diff old vs new output, loop until satisfied (CLI, no server; edit → replay → diff) |
+| `agent-observability-online-experiment` | Set up live-traffic Agent Observability experiments with feature flags, score, token, and cost metrics, allocations, and an optional start. |
 
 **Eval pipeline flow:**
 
@@ -146,21 +148,15 @@ cp -r agent-observability/agent-observability-trace-rca ~/.claude/skills
 cp -r agent-observability/agent-observability-eval-bootstrap ~/.claude/skills
 cp -r agent-observability/agent-observability-eval-pipeline ~/.claude/skills
 cp -r agent-observability/agent-observability-session-classify ~/.claude/skills
+cp -r agent-observability/agent-observability-online-experiment ~/.claude/skills
 ```
 
 #### MCP Requirements
 
-All of these skills require the LLMO toolset:
+To use these skills, add the following MCP toolsets to your agent:
 
 ```bash
-claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'
-```
-
-`experiment-analyzer` uses the core toolset for notebook export (optional). `eval-session-classify`
-requires it for RUM behavioral analysis and efficient batched fetches of trace session spans:
-
-```bash
-claude mcp add --scope user --transport http "datadog-mcp-core" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=core'
+claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs,experiments,feature-flags,core'
 ```
 
 #### Usage
@@ -188,6 +184,9 @@ Look at the errors on <ml_app> over the last 24h
 /agent-observability-experiment-bootstrap --dataset-name qa_v3 --project-name customer-qa  # existing Datadog dataset
 /agent-observability-experiment-bootstrap --evaluator-style remote                         # server-side RemoteEvaluator stubs
 /agent-observability-experiment-bootstrap --adapter node --format mjs --task-source app:answer # Node SDK artifact
+
+# Create a live-traffic Agent Observability experiment
+/agent-observability-online-experiment
 
 # Classify a session
 /eval-session-classify <session_id>
