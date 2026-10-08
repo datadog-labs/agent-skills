@@ -153,24 +153,10 @@ cp -r agent-observability/agent-observability-online-experiment ~/.claude/skills
 
 #### MCP Requirements
 
-All of these skills require the LLMO toolset:
+To use these skills, add the following MCP toolsets to your agent:
 
 ```bash
-claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'
-```
-
-`agent-observability-online-experiment` also requires the `experiments` and `feature-flags` toolsets, MCP write access, and the corresponding Datadog product permissions:
-
-```bash
-claude mcp add --scope user --transport http "datadog-online-experiments-mcp" \
-  'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs,experiments,feature-flags'
-```
-
-`experiment-analyzer` uses the core toolset for notebook export (optional). `eval-session-classify`
-requires it for RUM behavioral analysis and efficient batched fetches of trace session spans:
-
-```bash
-claude mcp add --scope user --transport http "datadog-mcp-core" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=core'
+claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs,experiments,feature-flags,core'
 ```
 
 #### Usage
