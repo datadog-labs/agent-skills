@@ -1,6 +1,6 @@
 ---
 name: datadog-app
-description: Guides developers building Datadog Apps with TypeScript, React, the @datadog/apps scaffolder, and @datadog/vite-plugin. Use when a user wants to scaffold, run, debug, upgrade, build, upload, publish, upload without publishing (draft upload), add an upload-no-publish script, set up CI/CD, use OAuth or API/application key auth, trigger/poll Workflow Automation, choose DDSQL or Action Catalog for backend data access, or query app datastores with DDSQL, including backend function troubleshooting.
+description: Guides developers building Datadog Apps with TypeScript, React, the @datadog/apps scaffolder, and @datadog/vite-plugin. Use when a user wants to scaffold, run, debug, upgrade, build, upload, publish, upload without publishing (draft upload), add an upload-no-publish script, set up CI/CD, use OAuth or API/application key auth, trigger/poll Workflow Automation, run a backend function on a schedule or refresh data periodically by publishing it as a scheduled or API-triggered workflow, choose DDSQL or Action Catalog for backend data access, or query app datastores with DDSQL, including backend function troubleshooting.
 ---
 
 # Datadog Apps
@@ -21,6 +21,7 @@ Read only the reference needed for the user's task:
 | Build, upload, publish, upload without publishing, add upload-no-publish script, configure Datadog site, or understand upload output | `references/build-upload-publish.md` |
 | Add or update GitHub Actions deployment | `references/cicd.md` |
 | Trigger or poll Workflow Automation from a backend function | `references/workflow-http-trigger.md` |
+| Run a backend function on a schedule, refresh data periodically, or publish it as a scheduled or API-triggered workflow | `references/scheduled-workflows.md` |
 | Get started querying data from a Datadog App | `references/querying-data/getting-started.md` |
 | Understand or configure Action Catalog connections | `references/querying-data/connections.md` |
 | Query Datadog App datastores with DDSQL | `references/querying-data/ddsql/datastores.md` |
