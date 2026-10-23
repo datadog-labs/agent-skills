@@ -91,6 +91,24 @@ npx skills add datadog-labs/agent-skills \
   --full-depth -y
 ```
 
+### Install as a plugin
+
+The repository ships a plugin manifest (`.claude-plugin/plugin.json`) that bundles all skills, and is its own marketplace (`.claude-plugin/marketplace.json`). GitHub Copilot (CLI and app) and Claude Code can install all skills in one step:
+
+```bash
+# GitHub Copilot CLI
+copilot plugin marketplace add datadog-labs/agent-skills
+copilot plugin install agent-skills@datadog-labs
+
+# Claude Code
+claude plugin marketplace add datadog-labs/agent-skills
+claude plugin install agent-skills@datadog-labs
+```
+
+Other marketplaces can also list the plugin by referencing the `datadog-labs/agent-skills` repository.
+
+When you add a skill directory, also add its path to the `skills` array in `.claude-plugin/plugin.json`. The SSI sub-skills under `dd-apm/k8s-ssi/` and `dd-apm/linux-ssi/` are not registered on their own because their names clash. `dd-apm` loads them by path.
+
 ### Agent Observability (LLMO)
 
 The `agent-observability` directory contains ten skills for working with Agent Observability data:
