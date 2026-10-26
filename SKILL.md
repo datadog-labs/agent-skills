@@ -27,9 +27,11 @@ Essential Datadog skills for AI agents.
 | **dd-llmo** | LLM Observability traces, experiments, evals |
 | **dd-logs** | Search logs, pipelines, archives |
 | **dd-monitors** | Create, manage, mute monitors and alerts |
+| **dd-nebius-integration** | Connect a Nebius Cloud tenant to Datadog for log collection - tenant-admin service account, authorized key, OBSERVABILITY static key |
 | **dd-oci-integration** | Connect an Oracle Cloud tenancy to Datadog with Terraform - Datadog's official OCI module |
 | **dd-product-recommender** | Recommend the right Datadog products for a codebase and/or goal (recommendation only) |
 | **dd-pup** | Primary CLI - all pup commands, auth, PATH setup |
+| **dd-slack-integration** | Connect a Slack workspace to Datadog and wire a channel - OAuth grant, channel setup, @Datadog in Slack |
 | **dd-software-delivery** | CI/CD workflow skills — unblock PR, triage flaky tests |
 
 ## Install

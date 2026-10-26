@@ -233,6 +233,42 @@
       "visibility": "public"
     },
     {
+      "key": "dd-nebius-integration@s2",
+      "id": "dd-nebius-integration",
+      "kind": "cloud-connect",
+      "product": null,
+      "action": "connect",
+      "platform": [],
+      "cloud": [
+        "nebius"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-nebius-integration/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "gcp-integration-setup@s1",
       "id": "gcp-integration-setup",
       "kind": "cloud-connect",
@@ -2130,6 +2166,40 @@
       "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-slack-integration@s2",
+      "id": "dd-slack-integration",
+      "kind": "lifecycle",
+      "product": null,
+      "action": "manage",
+      "platform": [],
+      "cloud": [],
+      "scope": [],
+      "when": "day-2-on-demand",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-slack-integration/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": "beta",
       "enabled": true,
       "visibility": "public"
     }
