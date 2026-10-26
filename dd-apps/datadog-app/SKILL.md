@@ -1,36 +1,35 @@
 ---
 name: datadog-app
-description: Guides developers building Datadog Apps with TypeScript, React, the @datadog/apps scaffolder, and @datadog/vite-plugin. Use when a user wants to scaffold, run, debug, upgrade, build, upload, publish, upload without publishing (draft upload), add an upload-no-publish script, set up CI/CD, use OAuth or API/application key auth, trigger/poll Workflow Automation, choose DDSQL or Action Catalog for backend data access, or query app datastores with DDSQL, including backend function troubleshooting.
+description: Guides developers building Datadog Apps with TypeScript, React, and the @datadog/apps scaffolder and CLI. Use when a user wants to scaffold, run, debug, upgrade, build, upload, or publish a Datadog App, set up CI/CD, use OAuth or API/application key auth, trigger or poll Workflow Automation from a backend function, choose DDSQL or Action Catalog for backend data access, or query app datastores with DDSQL, including backend function troubleshooting.
 ---
 
 # Datadog Apps
 
-Use this skill when a developer is building a Datadog Apps project with TypeScript, React, published packages, and the normal production Datadog site. If the user is modifying Datadog platform packages or testing package source changes, use a platform-engineer-oriented workflow instead.
+This skill is a pointer. The guidance itself is served by Datadog, so it stays current without reinstalling this skill.
 
-## Overview
+## Fetch the guidance first
 
-Datadog Apps are locally developed web apps built with React and TypeScript or JavaScript. Use Apps when a project needs source control, code review, CI/CD, multi-engineer collaboration, AI-assisted local development, custom UI or logic, or backend code that integrates with services beyond low-code App Builder. Apps share App Builder's permissions model and can be embedded in Datadog surfaces such as dashboards and the Internal Developer Portal.
+```
+https://api.<site>/api/unstable/app-builder-code/agents/
+```
 
-## Reference Routing
+Resolve `<site>` in this order, and use the first one that applies:
 
-Read only the reference needed for the user's task:
+1. `datadogSite` in the app project's `datadog-app.config.json`, when working in an existing app.
+2. The `DD_SITE` environment variable.
+3. `datadoghq.com`.
 
-| User task | Read |
-| --- | --- |
-| Create, scaffold, configure prerequisites, or run locally | `references/getting-started.md` |
-| Build, upload, publish, upload without publishing, add upload-no-publish script, configure Datadog site, or understand upload output | `references/build-upload-publish.md` |
-| Add or update GitHub Actions deployment | `references/cicd.md` |
-| Trigger or poll Workflow Automation from a backend function | `references/workflow-http-trigger.md` |
-| Get started querying data from a Datadog App | `references/querying-data/getting-started.md` |
-| Understand or configure Action Catalog connections | `references/querying-data/connections.md` |
-| Query Datadog App datastores with DDSQL | `references/querying-data/ddsql/datastores.md` |
-| Upgrade Datadog Apps dependencies or compare with a freshly scaffolded app | `references/upgrading.md` |
-| Diagnose OAuth, API/application key auth, upload, Node, site, or backend function failures | `references/troubleshooting.md` |
+The response is a short index: a routing table naming each guidance file and when to load it, plus the boundaries to work within. Load only the files the current task needs. Every row carries a complete URL, so fetch the URL in the row rather than guessing a path.
+
+No credentials are required to fetch it.
+
+## If the fetch fails
+
+Tell the user the hosted Datadog Apps guidance is unavailable, and stop.
+
+Do not build a Datadog App from memory and do not substitute guidance from training data. The scaffolder, the CLI, and their commands change, and confidently wrong instructions cost more than no instructions. A user who cannot reach this endpoint also cannot reach the npm registry or the upload API, so there is no offline path worth describing.
 
 ## Boundaries
 
-- After scaffolding or when working inside an existing app, read the app project's `AGENTS.md` before making changes.
-- For backend function implementation details, rely on the generated app project's `AGENTS.md`; this skill only covers local development auth choices and troubleshooting.
-- Preserve the app project's existing package manager, scripts, Datadog site, and repository conventions.
-- Do not cover Datadog package/platform development in this skill.
-- Low-code App Builder to Datadog Apps migration guidance is future work. Do not invent a migration process yet.
+- The app project outranks anything fetched here. Read its `AGENTS.md` and its `docs/agents/` guides, and prefer its `package.json` scripts and `datadog-app.config.json` over any remembered defaults.
+- `npm run upload` publishes the app live to users. Confirm intent before running it.

@@ -401,9 +401,11 @@ Or via npx:
 
 ```bash
 npx skills add datadog-labs/agent-skills \
-  --skill datadog-app \
-  --full-depth -y
+  --skill datadog-app -y
 ```
+
+The skill is a single file. It fetches current guidance from Datadog at run time, so
+it does not need reinstalling when the guidance changes.
 
 #### Usage
 
