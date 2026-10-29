@@ -156,7 +156,7 @@ cp -r agent-observability/agent-observability-online-experiment ~/.claude/skills
 To use these skills, add the following MCP toolsets to your agent:
 
 ```bash
-claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs,experiments,feature-flags,core'
+claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/v1/mcp?toolsets=llmobs,experiments,feature-flags,core'
 ```
 
 #### Usage
@@ -225,7 +225,7 @@ Connect the Datadog MCP server with the `software-delivery` toolset:
 
 ```bash
 claude mcp add --scope user --transport http "datadog-mcp" \
-  'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=core,software-delivery'
+  'https://mcp.datadoghq.com/v1/mcp?toolsets=core,software-delivery'
 ```
 
 #### Prerequisites

@@ -19,7 +19,7 @@ app's org); pup returns everything this skill needs too — `trace_url`, span `o
 `--include-tree`. If neither is available, guide the **pup install** — it's easier to set up than the MCP
 (and the other Agent Observability skills fall back to pup): `brew tap datadog-labs/pack && brew install
 datadog-labs/pack/pup`, then `pup auth login`. MCP alternative:
-`claude mcp add --scope user --transport http "datadog-llmo-mcp" "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs"`
+`claude mcp add --scope user --transport http "datadog-llmo-mcp" "https://mcp.datadoghq.com/v1/mcp?toolsets=llmobs"`
 (see https://docs.datadoghq.com/bits_ai/mcp_server/setup/). Both the MCP and pup return a ready **`trace_url`** — use it verbatim (no construction).
 
 **pup exact usage** (flags are non-obvious, and this copy has drifted from reality before — treat
