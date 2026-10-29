@@ -48,6 +48,7 @@ Resolve these from the repo. Ask the user only for what cannot be found.
 | `DEPLOYMENT` | Dockerfile, `docker-compose*.yml`, Kubernetes manifests or Helm values, systemd units, Procfile, serverless config |
 | Existing Datadog setup | Search for `ddtrace`, `dd-java-agent`, `dd-trace`, `dd-trace-go`, `datadog` gem, `Datadog.Trace`, `datadog-setup.php`, `DD_AGENT_HOST`, `DD_PROFILING_ENABLED` |
 | `AGENT` | Whether a Datadog Agent is reachable (see Step 2) |
+| `APP_URL` | The Datadog web app URL for the user's site. Take `DD_SITE` from the repo or environment (for example `datadoghq.eu`) and map it with the [Datadog sites table](https://docs.datadoghq.com/getting_started/site/) (US1 `https://app.datadoghq.com`, EU1 `https://app.datadoghq.eu`, US3 `https://us3.datadoghq.com`, and so on). If the site is unknown, ask the user. Never assume US1. |
 
 If the repo contains several services, ask which one to profile.
 
@@ -69,7 +70,7 @@ If the repo contains several services, ask which one to profile.
    | PHP | 7.1+ on 64-bit Linux | PHP debug builds unsupported; Alpine needs 3.13+ and `apk add libgcc` |
 
    C, C++, and Rust use the `ddprof` profiler and are out of scope for this skill; point to https://docs.datadoghq.com/profiler/enabling/?prog_lang=c.
-3. **Datadog Agent.** The profiler sends data to a Datadog Agent (v7+ recommended, v6+ supported) with APM enabled, which listens on port 8126 by default. Check how the service reaches the Agent (`DD_AGENT_HOST`, Kubernetes Agent DaemonSet, sidecar, host Agent). If no Agent is configured anywhere, tell the user an Agent is required and link https://app.datadoghq.com/account/settings/agent/latest. Do not install the Agent unless the user asks.
+3. **Datadog Agent.** The profiler sends data to a Datadog Agent (v7+ recommended, v6+ supported) with APM enabled, which listens on port 8126 by default. Check how the service reaches the Agent (`DD_AGENT_HOST`, Kubernetes Agent DaemonSet, sidecar, host Agent). If no Agent is configured anywhere, tell the user an Agent is required and link `<APP_URL>/account/settings/agent/latest`. Do not install the Agent unless the user asks.
 
 ## Step 3: Choose the enablement route
 
@@ -104,7 +105,7 @@ Offer, do not apply without asking:
 ## Step 6: Verify
 
 1. Tell the user to deploy or restart the service. Environment-variable changes only affect new processes.
-2. After a couple of minutes of traffic, profiles appear at https://app.datadoghq.com/profiling filtered by `service:<SERVICE_NAME> env:<ENV>`.
+2. After a couple of minutes of traffic, profiles appear at `<APP_URL>/profiling` filtered by `service:<SERVICE_NAME> env:<ENV>`.
 3. If `pup` or Datadog MCP tools are available, check that profiles exist for the service. Otherwise ask the user to confirm in the UI.
 4. If no profiles appear, check in order:
    - `DD_PROFILING_ENABLED` is present in the running process's environment (not just in the repo).
