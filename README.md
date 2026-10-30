@@ -379,7 +379,7 @@ The `dd-apps` directory contains a skill for building [Datadog Apps](https://doc
 
 | Skill | Purpose |
 |-------|---------|
-| `datadog-app` | Scaffold, run locally, build, upload, publish, set up CI/CD, trigger Workflow Automation, and query data with DDSQL or Action Catalog |
+| `datadog-app` | Scaffold, run locally, build, upload, publish, set up CI/CD, trigger Workflow Automation, query data with DDSQL or Action Catalog, and migrate apps from other tools (Backstage) |
 
 #### Prerequisites
 
