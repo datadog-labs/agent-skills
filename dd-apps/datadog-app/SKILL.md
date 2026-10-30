@@ -1,6 +1,6 @@
 ---
 name: datadog-app
-description: Guides developers building Datadog Apps with TypeScript, React, and the @datadog/apps scaffolder and CLI. Use when a user wants to scaffold, run, debug, upgrade, build, upload, or publish a Datadog App, set up CI/CD, use OAuth or API/application key auth, trigger or poll Workflow Automation from a backend function, choose DDSQL or Action Catalog for backend data access, or query app datastores with DDSQL, including backend function troubleshooting. Also use when the user refers to "my app" or its backend functions in a project with datadog-app.config.json, .backend.ts files, or @datadog/apps-cli scripts, even without saying "Datadog App". Prefer this skill over general Datadog documentation lookup for these tasks.
+description: Guides developers building Datadog Apps with TypeScript, React, and the @datadog/apps scaffolder and CLI. Use when a user wants to scaffold, run, debug, upgrade, build, upload, or publish a Datadog App, set up CI/CD, use OAuth or API/application key auth, trigger or poll Workflow Automation from a backend function, choose DDSQL or Action Catalog for backend data access, or query app datastores with DDSQL, including backend function troubleshooting.
 ---
 
 # Datadog Apps
@@ -13,7 +13,7 @@ Datadog publishes current reference documentation for Datadog Apps at the URL be
 https://api.datadoghq.com/api/unstable/app-builder-code/agents/
 ```
 
-Fetch it with `curl -fsS` and without `-L`, so an error status fails instead of printing an error page. The documentation is mostly exact commands, script names, and config keys, which a summarizing fetch tool can paraphrase. Accept the response only if it is HTTP 200 and contains a routing table and a `version:` line.
+Fetch it with whatever tool your environment provides. Use the response only if the request succeeded and the body is the index, with a routing table and a `version:` line. An error page is not the index. If you have a choice, prefer a tool that returns the text unchanged: the documentation is mostly exact commands, script names, and config keys, which a summarizing fetch can paraphrase.
 
 This URL needs no credentials. Do not send `DD_API_KEY`, `DD_APP_KEY`, an OAuth token, or any auth header with it.
 
