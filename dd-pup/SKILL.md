@@ -78,12 +78,8 @@ If Chrome opens the wrong profile/window, use the one-time OAuth URL printed by 
 
 ### Headless/CI (no browser)
 
-```bash
-# Use env vars or:
-export DD_API_KEY=your-api-key
-export DD_APP_KEY=your-app-key
-export DD_SITE=datadoghq.com    # or datadoghq.eu, etc.
-```
+Pup reads `DD_API_KEY`, `DD_APP_KEY`, and `DD_SITE` from the environment. Configure
+those secrets in the CI secret store or shell environment outside the agent session.
 
 ## Command Reference
 
@@ -351,7 +347,7 @@ pup dashboards get <dashboard-id> --jq '{title, layout_type}'  # Filter output b
 
 # Raw authenticated request when no subcommand covers the endpoint.
 # Relative paths are prefixed with /api/.
-pup api v2/monitors
+pup api v1/monitor
 pup docs api            # Live API docs. No authentication required.
 ```
 
@@ -391,4 +387,6 @@ pup --version
 | AP2 | `ap2.datadoghq.com` |
 | US1-FED | `ddog-gov.com` |
 
-A site not in this table is sent as a literal host. Pass `--trust-site` on that invocation, or add it to `trusted_sites` in the Pup config, before Pup will call it.
+Pup trusts Datadog-owned sites automatically. Before using an unlisted host with
+`--trust-site` or `trusted_sites`, verify the exact hostname with the user and get
+their explicit approval; a typo or lookalike host could receive API-key credentials.
