@@ -20,6 +20,22 @@ The integration uses the official Datadog OCI Terraform module to create the req
 This is a hands-on setup: run the commands yourself as part of the conversation rather than handing the
 user a list, keep them in the loop, and pause for confirmation before `terraform apply`.
 
+## Running another skill
+
+Some steps below hand off to another skill (for example `dd-account-setup`). If that skill is installed, run it. If it is not, download it and read it locally:
+
+```bash
+SKILL='<skill-name>'
+d=$(mktemp -d) || exit 1; base="https://raw.githubusercontent.com/datadog-labs/agent-skills/main/$SKILL"
+curl -fsSL --connect-timeout 10 --max-time 60 "$base/SKILL.md" -o "$d/SKILL.md" || exit 1
+for r in $(grep -oE 'references/[A-Za-z0-9_.-]+\.md' "$d/SKILL.md" | sort -u); do
+  mkdir -p "$d/references" && curl -fsSL --connect-timeout 10 --max-time 60 "$base/$r" -o "$d/$r" || exit 1
+done
+echo "$d"
+```
+
+The block prints the download directory. Read `SKILL.md` there, and any `references/` file it points to, in full with your file-reading tool. Then follow it and return here. Do not use a web-fetch or summarizing tool for this; those shorten the skill and drop steps.
+
 ## Phase 0: Preflight
 
 **Terraform or OpenTofu.** Every command in this skill is written as `terraform`, but OpenTofu is a

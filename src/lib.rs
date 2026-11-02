@@ -65,5 +65,7 @@ pub static DD_SECURITY_SUB_SKILLS: &[(&str, &str)] = &[
 
 pub static DD_SOFTWARE_DELIVERY_SUB_SKILLS: &[(&str, &str)] = &[
     ("triage-flaky-test/SKILL.md", skill!("dd-software-delivery/triage-flaky-test/SKILL.md")),
+    ("triage-flaky-test/references/fix-patterns.md", skill!("dd-software-delivery/triage-flaky-test/references/fix-patterns.md")),
     ("unblock-pr/SKILL.md",        skill!("dd-software-delivery/unblock-pr/SKILL.md")),
+    ("unblock-pr/references/failure-classification.md", skill!("dd-software-delivery/unblock-pr/references/failure-classification.md")),
 ];
