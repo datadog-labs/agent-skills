@@ -90,6 +90,37 @@ npx skills add datadog-labs/agent-skills \
   --skill agent-observability-replay-trace \
   --skill agent-observability-online-experiment \
   --skill k9-ownership-byod-setup \
+  --skill dd-account-setup \
+  --skill dd-agent-install-docker \
+  --skill dd-agent-install-kubernetes \
+  --skill dd-agent-install-linux \
+  --skill dd-agent-install-macos \
+  --skill dd-agent-install-windows \
+  --skill dd-android-sdk \
+  --skill dd-android-sdk-v3-upgrade \
+  --skill datadog-app \
+  --skill dd-aws-ccm \
+  --skill dd-aws-integration \
+  --skill dd-aws-log-forwarding \
+  --skill dd-aws-storage-management \
+  --skill dd-azure-ccm \
+  --skill dd-azure-integration \
+  --skill dd-azure-log-forwarding \
+  --skill upgrade-browser-sdk-v5 \
+  --skill upgrade-browser-sdk-v6 \
+  --skill dd-confluent-cloud-integration \
+  --skill dd-dbm-rds-postgres \
+  --skill dd-gcp-ccm \
+  --skill dd-gcp-integration \
+  --skill dd-gcp-log-forwarding \
+  --skill dd-instrument-llmo \
+  --skill dd-instrument-rum \
+  --skill dd-oci-ccm \
+  --skill dd-oci-integration \
+  --skill dd-orchestrator \
+  --skill dd-product-recommender \
+  --skill triage-flaky-test \
+  --skill unblock-pr \
   --full-depth -y
 ```
 
@@ -109,7 +140,7 @@ claude plugin install agent-skills@datadog-labs
 
 Other marketplaces can also list the plugin by referencing the `datadog-labs/agent-skills` repository.
 
-When you add a skill directory, also add its path to the `skills` array in `.claude-plugin/plugin.json`. The SSI sub-skills under `dd-apm/k8s-ssi/` and `dd-apm/linux-ssi/` are not registered on their own because their names clash. `dd-apm` loads them by path.
+When you add a skill directory, also add its path to the `skills` array in `.claude-plugin/plugin.json` and a `--skill` flag, using that skill's `name`, to the install-all command above. The SSI sub-skills under `dd-apm/k8s-ssi/` and `dd-apm/linux-ssi/` are not registered in the plugin manifest because their names clash. `dd-apm` loads them by path. The install-all command lists each of those shared names once.
 
 ### Agent Observability (LLMO)
 
