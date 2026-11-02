@@ -5,7 +5,7 @@ choice", then runs the path the user picks: **Path A** (use a detected key), **P
 (OAuth sign-in), or **Path C** (create a new account, then Path B). Display/wording
 rules are in `conventions.md`.
 
-**Ask how to connect before using any credential — even when Step 1 detected env keys.** Present **The choice** below, then run the path the user picks: an ambient `DD_API_KEY` may belong to a different org or account than the user intends, and region/IP can't reveal which, so let them decide. (Headless/**Step H** is exempt — no TTY to ask, env keys only.)
+**Ask how to connect before using any credential — even when Step 1 detected env keys.** Present **The choice** below, then run the path the user picks: an ambient `DD_API_KEY` may belong to a different org or account than the user intends, and the region can't reveal which, so let them decide. (Headless/**Step H** is exempt — no TTY to ask, env keys only.)
 
 ## The choice — how to connect
 

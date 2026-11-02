@@ -85,6 +85,15 @@ DD_SITE=<DD_SITE> pup apm services list --env <ENV> --from 1h
 DD_SITE=<DD_SITE> pup traces search --query "service:<SERVICE_NAME>" --from 1h --limit 5
 ```
 
+**Only if DSM was enabled via `enable-dsm`:**
+
+```bash
+# DSM pipeline data for the service
+DD_SITE=<DD_SITE> pup metrics query \
+  --query "avg:data_streams.latency{service:<SERVICE_NAME>,env:<ENV>} by {pathway_type}" \
+  --from 15m --to now
+```
+
 ---
 
 ## Present the report
@@ -103,6 +112,7 @@ Fill in every value from live command output. Do not leave any placeholder unfil
 | Tracer reporting | Service `<SERVICE_NAME>` appears in `pup apm services list` with `isTraced: true` | OK |
 | APM service visible | `<SERVICE_NAME>` in env `<ENV>` | OK |
 | Traces arriving | `<N>` trace(s) found in the last hour | OK |
+| Data Streams (only if enabled) | `data_streams.latency` series for `<SERVICE_NAME>`, or "pending first message" | OK |
 
 ---
 
@@ -116,6 +126,7 @@ Construct each URL by substituting real values. Do not print placeholder URLs.
 | Traces explorer | `https://app.<DD_SITE>/apm/traces?query=service:<SERVICE_NAME>%20env:<ENV>` |
 | Service map | `https://app.<DD_SITE>/apm/map?env=<ENV>&service=<SERVICE_NAME>` |
 | Agent fleet | `https://app.<DD_SITE>/fleet-automation` |
+| Data Streams (only if enabled) | `https://app.<DD_SITE>/data-streams` |
 
 ---
 

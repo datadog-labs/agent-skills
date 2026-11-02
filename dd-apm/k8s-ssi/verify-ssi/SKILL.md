@@ -122,7 +122,33 @@ ERROR: Still missing after traffic — check the agent's trace receiver: `kubect
 
 ## Step 3: Confirm Tracer Configuration
 
-**Only run this step if `ddTraceConfigs` was explicitly configured in `enable-ssi`** (e.g. profiling, AppSec, Data Streams). If basic SSI was set up without `ddTraceConfigs`, skip this step — an empty response here is expected and not a failure.
+**Only run this step if `ddTraceConfigs` was explicitly configured in `enable-ssi`** (e.g. profiling, AppSec, Data Streams). If basic SSI was set up without `ddTraceConfigs`, skip this step. No `ddTraceConfigs` means there is nothing to check.
+
+The pod spec is the source of truth for whether `ddTraceConfigs` reached the workload. SSI adds each entry as an env var on the pod's containers.
+
+Run this for a pod in each target that has `ddTraceConfigs`. For Data Streams, run it once per Deployment in `DSM_SERVICES`, in that Deployment's namespace, with `<LABEL_KEY>` set to `DSM_LABEL_KEY` and `<APP_LABEL>` to that Deployment's value (both from `enable-dsm`). Otherwise `<LABEL_KEY>` is `app`. A pod matched only by a target without `ddTraceConfigs` (such as the catch-all `default` target) should not carry these variables. That is expected, not a failure.
+
+### Claude runs
+
+```bash
+kubectl get pod -l <LABEL_KEY>=<APP_LABEL> -n <APP_NAMESPACE> --sort-by=.metadata.creationTimestamp \
+  -o jsonpath='{range .items[-1:].spec.containers[*]}{.name}{":"}{"\n"}{range .env[*]}{"  "}{.name}={.value}{.valueFrom}{"\n"}{end}{end}' | grep -E '^[^ ].*:$|^  DD_'
+```
+
+To see which target the pod matched:
+
+```bash
+kubectl get pod -l <LABEL_KEY>=<APP_LABEL> -n <APP_NAMESPACE> --sort-by=.metadata.creationTimestamp \
+  -o jsonpath='{.items[-1:].metadata.annotations.internal\.apm\.datadoghq\.com/applied-target}'
+```
+
+If every `ddTraceConfigs` variable for that target appears in the application container with the configured value, the config reached the pod. This confirms delivery, not that the SDK acted on it; `onboarding-summary` checks the product data. Continue.
+
+ERROR: A variable is missing or has a different value.
+- Different value: the Deployment sets that variable itself, and SSI never overwrites an existing variable. Remove it from the Deployment or align it.
+- Missing: check it is present in the `DatadogAgent` manifest under the target that matches this pod, and that the pod was restarted after the Cluster Agent finished rolling out.
+
+Then check what the tracer reports at runtime. This output is informational; do not fail Step 3 on it.
 
 ### Claude runs
 
@@ -132,11 +158,7 @@ pup apm service-library-config get \
   --env <ENV>
 ```
 
-If the output shows expected environment variables matching what was configured in `ddTraceConfigs` — done.
-
-If the output is empty and `ddTraceConfigs` was not configured — expected, not a failure.
-
-ERROR: Config missing but `ddTraceConfigs` was configured — check it is present in the `DatadogAgent` manifest under the correct target, and that pods were restarted after the config change.
+This view does not list every setting for every SDK. For example, `DD_DATA_STREAMS_ENABLED` does not show for Java, Python, Ruby, or Go services even when DSM is on. A setting missing here is not a failure when it is present in the pod env. For Data Streams, `onboarding-summary` confirms data with `data_streams.latency` (or `enable-dsm` Step 3 when it was run standalone).
 
 ---
 
@@ -145,7 +167,7 @@ ERROR: Config missing but `ddTraceConfigs` was configured — check it is presen
 Exit when ALL of the following are true:
 - [ ] Step 1: target pods have SSI init containers injected (`datadog-lib-<language>-init` and `datadog-init-apm-inject`)
 - [ ] Step 2: service appears in `pup apm services list` with `isTraced: true`
-- [ ] Step 3: tracer config matches what was set in `DatadogAgent`
+- [ ] Step 3 (only if `ddTraceConfigs` was set): each `ddTraceConfigs` variable appears in the env of pods in its target with the configured value. A setting missing from `pup apm service-library-config get` is not a failure
 
 If any check fails, go to `troubleshoot-ssi`.
 

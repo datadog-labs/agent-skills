@@ -17,6 +17,8 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 | **dd-software-delivery** | CI/CD workflow skills — unblock PR pipelines, triage flaky tests (MCP + pup) |
 | **dd-apps** | Build Datadog Apps — scaffold, run locally, upload, publish, CI/CD, DDSQL data access |
 | **dd-product-recommender** | Recommend the right Datadog products for a codebase and/or goal (recommendation only) |
+| **dd-profiler-setup** | Set up Datadog Continuous Profiler for a service — Java, Python, Go, Ruby, Node.js, .NET, PHP |
+| **dd-instrument-llmo** | Instrument Python & Node.js/Next.js AI backends with Datadog LLM Observability — SDK init, agent/workflow spans, RUM↔LLMO session linking |
 | **dd-instrument-rum** | Instrument browser apps with Datadog Browser RUM — React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla |
 
 ## Install
@@ -61,14 +63,17 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-apm \
   --skill dd-docs \
   --skill dd-browser-sdk \
+  --skill dd-profiler-setup \
   --skill dd-audit \
   --skill service-remapping \
+  --skill enable-dsm \
   --skill agent-install \
   --skill enable-ssi \
   --skill verify-ssi \
   --skill troubleshoot-ssi \
   --skill onboarding-summary \
   --skill upgrade-browser-sdk-v7 \
+  --skill setup-browser-sdk-sourcemaps \
   --skill dd-audit-security-investigation \
   --skill dd-audit-key-compromise \
   --skill dd-audit-cost-spike-investigation \
@@ -83,13 +88,14 @@ npx skills add datadog-labs/agent-skills \
   --skill agent-observability-auto-experiment \
   --skill agent-observability-build-eval-from-annotations \
   --skill agent-observability-replay-trace \
+  --skill agent-observability-online-experiment \
   --skill k9-ownership-byod-setup \
   --full-depth -y
 ```
 
 ### Agent Observability (LLMO)
 
-The `agent-observability` directory contains nine skills for working with Agent Observability data:
+The `agent-observability` directory contains ten skills for working with Agent Observability data:
 
 | Skill | Purpose |
 |-------|---------|
@@ -102,6 +108,7 @@ The `agent-observability` directory contains nine skills for working with Agent 
 | `agent-observability-auto-experiment` | Local hill-climb: baseline-eval a prompt/file against LLM-Obs data, make one focused change, re-score with the same harness, keep it only if it beats the best, repeat |
 | `agent-observability-build-eval-from-annotations` | Build an evaluator from an annotation queue's human labels: find where the labelled property lives in the trace, draft an LLM judge, score it against the existing labels, hill-climb its errors, publish the winner as a disabled evaluator |
 | `agent-observability-replay-trace` | Iterate on one trace: re-run it against local code, diff old vs new output, loop until satisfied (CLI, no server; edit → replay → diff) |
+| `agent-observability-online-experiment` | Set up live-traffic Agent Observability experiments with feature flags, score, token, and cost metrics, allocations, and an optional start. |
 
 **Eval pipeline flow:**
 
@@ -143,21 +150,15 @@ cp -r agent-observability/agent-observability-trace-rca ~/.claude/skills
 cp -r agent-observability/agent-observability-eval-bootstrap ~/.claude/skills
 cp -r agent-observability/agent-observability-eval-pipeline ~/.claude/skills
 cp -r agent-observability/agent-observability-session-classify ~/.claude/skills
+cp -r agent-observability/agent-observability-online-experiment ~/.claude/skills
 ```
 
 #### MCP Requirements
 
-All of these skills require the LLMO toolset:
+To use these skills, add the following MCP toolsets to your agent:
 
 ```bash
-claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'
-```
-
-`experiment-analyzer` uses the core toolset for notebook export (optional). `eval-session-classify`
-requires it for RUM behavioral analysis and efficient batched fetches of trace session spans:
-
-```bash
-claude mcp add --scope user --transport http "datadog-mcp-core" 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=core'
+claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.datadoghq.com/v1/mcp?toolsets=llmobs,experiments,feature-flags,core'
 ```
 
 #### Usage
@@ -185,6 +186,9 @@ Look at the errors on <ml_app> over the last 24h
 /agent-observability-experiment-bootstrap --dataset-name qa_v3 --project-name customer-qa  # existing Datadog dataset
 /agent-observability-experiment-bootstrap --evaluator-style remote                         # server-side RemoteEvaluator stubs
 /agent-observability-experiment-bootstrap --adapter node --format mjs --task-source app:answer # Node SDK artifact
+
+# Create a live-traffic Agent Observability experiment
+/agent-observability-online-experiment
 
 # Classify a session
 /eval-session-classify <session_id>
@@ -223,7 +227,7 @@ Connect the Datadog MCP server with the `software-delivery` toolset:
 
 ```bash
 claude mcp add --scope user --transport http "datadog-mcp" \
-  'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=core,software-delivery'
+  'https://mcp.datadoghq.com/v1/mcp?toolsets=core,software-delivery'
 ```
 
 #### Prerequisites
@@ -399,9 +403,11 @@ Or via npx:
 
 ```bash
 npx skills add datadog-labs/agent-skills \
-  --skill datadog-app \
-  --full-depth -y
+  --skill datadog-app -y
 ```
+
+The skill is a single file. It fetches current guidance from Datadog at run time, so
+it does not need reinstalling when the guidance changes.
 
 #### Usage
 

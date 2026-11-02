@@ -1,8 +1,8 @@
-# Regions & IP auto-detection (Step 2)
+# Regions (Step 2)
 
-Reference tables for Step 2 in `SKILL.md`: the allowed sites, their app/signup base
-URLs, and the country→region mapping used when `DD_SITE` is unset. The decision logic
-(validate `DD_SITE`, else IP-detect and confirm) lives in Step 2 itself.
+Reference table for Step 2 in `SKILL.md`: the allowed sites and their app/signup base
+URLs. The decision logic (validate `DD_SITE`, else ask the user to pick) lives in Step 2
+itself.
 
 ## Region reference
 
@@ -22,18 +22,9 @@ The full allowed-site list (for validating a supplied `DD_SITE`) is exactly:
 
 `datadoghq.com` · `us3.datadoghq.com` · `us5.datadoghq.com` · `datadoghq.eu` · `ap1.datadoghq.com` · `ap2.datadoghq.com` · `uk1.datadoghq.com`
 
-## Country → region mapping (IP auto-detection)
-
-Given the ISO 3166-1 alpha-2 country code from `https://ipinfo.io/json`, suggest this region. **On no match, timeout, or error → default to US1 (`datadoghq.com`).**
-
-| Suggested region | `DD_SITE` | Country codes |
-|------------------|-----------|---------------|
-| 🇺🇸 US1 — East (Virginia) | `datadoghq.com` | US, CA, MX, PR, VI, BR, AR, CL, CO, PE, VE, EC, BO, PY, UY |
-| 🇪🇺 EU1 — Europe (Frankfurt) | `datadoghq.eu` | DE, FR, IT, ES, NL, BE, AT, CH, PT, SE, NO, DK, FI, PL, CZ, RO, HU, GR, BG, HR, SK, LT, LV, EE, SI, LU, MT, CY, IL, AE, SA, ZA, EG, NG, KE, TR, IN, PK, BD, LK |
-| 🇯🇵 AP1 — Japan (Tokyo) | `ap1.datadoghq.com` | JP, KR, TW, HK, SG, TH, MY, PH, VN, ID, CN |
-| 🇦🇺 AP2 — Australia (Sydney) | `ap2.datadoghq.com` | AU, NZ, FJ, PG |
-| 🇬🇧 UK1 — United Kingdom (London) | `uk1.datadoghq.com` | GB, IE |
-
 Notes:
-- There is no country routing to US3 or US5; those are chosen manually. Only suggest the five regions above from IP, and let the user pick US3/US5 explicitly if they want them.
-- The suggestion is a *default*, not a decision. Always let the user override — region is permanent once an account exists.
+- Default to **US1** when the user has no preference.
+- Steer the user toward the region closest to where their infrastructure runs, not where
+  they are — the two often differ, and a far-away region adds latency and egress cost.
+- Don't infer the region from the user's IP or location (no geolocation lookups). The
+  user picks; region is permanent once an account exists.

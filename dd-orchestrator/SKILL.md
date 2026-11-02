@@ -39,15 +39,17 @@ composition is computed from the capability graph in
   + `dd-source` `status: ga` — plus this repo's own skills; everything else is disabled). `resolve.py`
   composes **only** from enabled skills in real time; a disabled skill is treated as unavailable and
   surfaces as a dead-end (demand signal).
-- **Detect context; never guess it.** Platform (kubernetes/docker/lambda/host…) and cloud (aws/gcp/…)
-  come from the repository, not from the goal. If they cannot be detected, ask (a choice point) — do
-  not install the wrong Agent.
+- **Use repository evidence and the developer's stated context.** Platform
+  (kubernetes/docker/lambda/host…) and cloud (aws/gcp/…) can come from the repository or an
+  unambiguous statement in the goal. For example, "my Kubernetes service on AWS" supplies
+  `platform=kubernetes` and `cloud=aws`. Ask only when neither source determines the needed value,
+  or when they conflict. Do not guess an unstated value or re-ask for one that is already clear.
 - **Conduct, don't perform.** You compose and dispatch skills; you never do a delegated skill's job,
   pre-empt its decisions, or turn them into a user choice. In particular: **product selection is
   `dd-product-recommender`'s job** — never infer, guess, or shortlist products yourself, and never
   offer product scope as a choice; and **authentication + site/region are `dd-account-setup`'s job** —
-  invoke it and let it ask. The only choices you surface are the structural CHOICE POINTS that
-  `resolve.py` emits (an ambiguous platform/cloud).
+  invoke it and let it ask. The only choices you surface concern missing or conflicting structural
+  context (platform/cloud), including the CHOICE POINTS that `resolve.py` emits.
 - **Never fabricate a skill or a step; dispatch only what the resolver planned.** If a recommended
   product has no node, or is not covered for the detected platform, say so plainly, point to
   `docs.datadoghq.com`, and record it as a gap. Two hard gates apply before any dispatch:
@@ -68,7 +70,10 @@ composition is computed from the capability graph in
   onboarding-API render) — nothing is pinned. You may NOT infer, summarize, or hand-author a
   skill's result in its place. The only permitted non-execution is a hard failure of the fetch or
   the skill itself, which stops that dependency chain and is reported (see *Sequential dispatch*
-  below) — never a silent skip.
+  below) — never a silent skip. If `fetch_skill.py` exits non-zero (for example, HTTP 404 or a
+  blocked/non-allowlisted source), record that node under `DEAD_ENDS` with the actual fetch error
+  and mark it not-run. Stop its dependency chain. Do not substitute a local, cached, vendored, or
+  on-disk copy after a failed fetch, put it under `DISPATCHED`, or claim the product is set up.
 - **Sequential dispatch — chains first, stop on failure.** Run the plan strictly in `resolve.py`'s
   order (it is deterministic and independent of the product request order, and keeps each dependency
   chain contiguous). Execute one skill at a time; do not start a skill until every hard prerequisite
@@ -111,7 +116,7 @@ developer goal
       │
       ├─►  dd-account-setup            precondition: valid key, right region
       ├─►  dd-product-recommender      goal + codebase → ranked PRODUCTS  (skipped if the intent names products)
-      ├─►  detect context              platform + cloud from the repo
+      ├─►  detect context              platform + cloud from the repo or an unambiguous goal
       │
       ▼
   scripts/resolve.py --products "<recommended>" --platform <detected> --cloud <detected>
@@ -165,8 +170,11 @@ developer goal
    one of: the `--detect-products` shortcut (→ `--intent-mode explicit`) or `dd-product-recommender`
    (→ `--intent-mode recommended`). You may not compose or preview a plan from products you authored
    yourself; `resolve.py --trace` refuses to run without a declared `--intent-mode`.
-4. **Detect context** — read the repo for platform (k8s manifests, Dockerfile, `serverless.yml`,
-   host) and cloud (Terraform/SDK/provider signals). Leave unknowns unset.
+4. **Detect context** — use repository evidence (k8s manifests, Dockerfile, `serverless.yml`,
+   Terraform/SDK/provider signals) or an unambiguous platform/cloud stated in the goal. Pass known
+   values to `resolve.py` as `--platform` / `--cloud`. Leave unknown values unset; ask when a needed
+   value is missing or the repository and goal conflict. Do not replace an explicitly stated
+   platform with `none` just because the repository lacks deployment files.
 5. **Compose the plan and seed the trace.** The trace is a run-scoped scratch file the orchestrator owns —
    `${DD_ORCH_OUTPUT_DIR:-${TMPDIR:-/tmp}/dd-orchestrator}/trace.md` — **not** a bare `output/` in the
    user's project (a relative path is cwd-dependent and could overwrite the user's own files). The default
@@ -183,12 +191,19 @@ developer goal
    `DEAD_ENDS`, `CHOICE_POINTS`, `SUGGESTED`, `CONFIRMED`, `DISPATCHED` — and `tee` saves it verbatim to
    `$TRACE`. **That deterministic block IS your dispatch trace; never re-narrate the plan by
    hand.** Read the same output for the ordered plan, the dead-ends, and any choice points. **Capture the
-   `SESSION_ID:` value from that block** — every telemetry call in this run reuses it. In **debug
+   `SESSION_ID:` value from that block** in a run-local variable: `SID=<SESSION_ID>`.
+   Pass `--session-id "$SID"` to every later `resolve.py` re-run and `emit.py` call. Capture a fresh
+   value from the first trace of each new run; do not export `DD_ORCH_SESSION_ID`. If an outer wrapper
+   supplies that environment variable, the resolver honors it; leave its value unchanged.
+   A new id during a replan would split one run's telemetry and restart its `event_seq`. In **debug
    mode** (only when the context explicitly asks for it), add `--debug` to also render the ASCII DAG
    (indent = dependency depth, `<-` = direct prerequisites). `resolve.py` also emits the reliable
-   telemetry core here (see **Telemetry** below).
+   telemetry core here (see **Telemetry** below). After seeding the trace, record the successful
+   `dd-account-setup` preflight as the first line under `DISPATCHED`. Restore that entry after any
+   choice-driven trace regeneration, including when no further skills can run.
 6. **Resolve choices** — for each choice point (e.g. "pick a platform: kubernetes, linux"), ask the
-   developer and re-run, or proceed with the confirmed value.
+   developer and re-run with the confirmed value and `--session-id "$SID"` from Step 5 so the
+   updated plan and subsequent telemetry remain part of the same run.
 7. **Confirm — render the PLAN block, then dispatch.** Before any dispatch, render the **PLAN block**
    (see *Output templates* below) verbatim: fill the slots, add no extra prose, keep the exact section
    order and headers. The Plan table's Source column is the skill's source URL, as `resolve.py` prints
@@ -197,14 +212,18 @@ developer goal
    source and run inline, per *Ground rules*) — and ticking the
    checklist. Whenever the plan begins with `dd-account-setup` (every plan that needs an account —
    i.e. any non-empty onboarding plan), Step 2 already ran it: do **not** invoke it a second time;
-   tick that node and emit its `skill_step:started`/`finished` from the preflight result, then continue
-   with the next node. Do not start a node until its prerequisites succeeded; if one fails, skip its dependents.
+   tick that node, retain its first `DISPATCHED` entry, and emit its `skill_step:started`/`finished`
+   from the preflight result, then continue with the next node. Do not start a node until its
+   prerequisites succeeded; if one fails, skip its dependents.
    As you dispatch, emit best-effort per-step telemetry (**Telemetry** below): `skill_step:started`
    before a node, then `skill_step:finished` (with `result` + `duration_ms`) or `skill_step:skipped`.
-   **Keep the trace file (`$TRACE`, Step 5) current** (it is the graded artifact): set `CONFIRMED: yes` on approval —
-   or `CONFIRMED: no` if the user declines — and add each dispatched `skill_id` on its own line under
-   `DISPATCHED`. If the plan is a choice point or a dead-end (`STOP_REASON` ≠ `none`), leave
-   `DISPATCHED` empty — that zero-dispatch state is the correct, recorded outcome.
+   **Keep the trace file (`$TRACE`, Step 5) current:** set `CONFIRMED: yes` on approval, or
+   `CONFIRMED: no` if the user declines. Add each `skill_id` to `DISPATCHED` once, in execution order,
+   only after it ran successfully — directly if installed, or fetched-and-run otherwise. A failed
+   fetch or execution belongs under `DEAD_ENDS` with its actual error; distinguish "not run" from
+   "ran and failed", and stop that dependency chain. `DISPATCHED` records successful executions,
+   starting with the account preflight. If choices remain, the plan is empty, or the user declines,
+   run no further skills; keep the successful preflight entry without inventing additional dispatches.
 8. **Summarize — render the SUMMARY block.** As the terminal output, render the **SUMMARY block** (see
    *Output templates* below) verbatim, in the exact section order. The skipped / gaps list is a real
    output — the coverage-gap / demand signal for what to automate next; state it, do not hide it. Emit
@@ -294,21 +313,24 @@ Approve?  [Proceed — all {{k}}]  ·  [Cancel]
 session {{session_id}} · {{event_count}} events · result {{result}} ({{s}}✓ / {{f}}✗ / {{k}}⊘)
 ```
 
-> **Run verdict** — the overall `{{result}}`: use `success` when every **dispatched** skill succeeded,
+> **Run verdict** — the overall `{{result}}`: use `success` when every **planned** skill succeeded,
 > even if some recommended products are **dead-ends / "Not automated"** (no skill yet) — those are
-> coverage gaps, not partial failures. Reserve `partial_success` for when a dispatched skill **failed**
-> or was **skipped**; `blocked` when nothing ran because every product dead-ended; `cancelled` when the
-> user declined every step. (`emit.py` reconciles the telemetry verdict the same way.)
+> coverage gaps, not partial failures. Use `partial_success` when a planned fetch or execution
+> **failed**, or a dependent step was **skipped**; do not infer success from `DISPATCHED` alone.
+> Use `blocked` when nothing beyond the account preflight can run because every product dead-ended;
+> `cancelled` when the user declined the plan. Report failures and skips in the telemetry counts even
+> though those skills are absent from `DISPATCHED`; `emit.py` reconciles the verdict from those counts.
 
 ## Telemetry (best-effort — never blocks onboarding)
 
 All telemetry goes through `emit.py`; **never build your own HTTP request or `curl`.** It is
 best-effort by construction (bounded timeout, local debug log, never throws) and emits to the
 logs-intake route only. Turn it off with `DD_ORCH_TELEMETRY_DISABLED=1`. Reuse the single
-`SESSION ID:` from Step 5 on every call so the whole run stitches together.
+`SID` captured in Step 5 via `--session-id "$SID"` on every call so the whole run stitches together.
 
-`resolve.py` already emits the reliable core: `skill_run:started`, `skill_run:plan_resolved`, and
-one `skill_step:planned` per plan node and per dead-end (each `skill_step` also carries `depends_on`
+`resolve.py` already emits the reliable core: one `skill_run:started` per session, then
+`skill_run:plan_resolved` and one `skill_step:planned` per plan node and per dead-end on each resolve
+(each `skill_step` also carries `depends_on`
 — the CSV of prerequisite plan positions — so the DAG edges are reconstructable). `resolve.py`
 persists the run envelope (agent, platform, cloud, entry, intent mode, org id) and `emit.py` re-attaches it plus an
 `emitted_at` (ms) timestamp to **every** event automatically — so you need not re-pass the envelope;
@@ -316,7 +338,7 @@ send only the per-step fields below. During dispatch you add the per-step lifecy
 run event:
 
 ```
-SID=<the SESSION ID printed by resolve.py>
+# SID is the run-local SESSION_ID captured in Step 5.
 
 # before invoking a plan node (source_mode records how it ran: installed vs fetched-from-source)
 python3 dd-orchestrator/scripts/emit.py skill_step --action started --session-id "$SID" \

@@ -317,8 +317,13 @@ Detection hints: `pg`/`psycopg2`/`lib/pq`/`pgx` (Postgres) · `mysql`/`mysql2`/`
 
 ### Datastores / messaging → integration + APM spans; DSM for queues (Situational)
 Redis · Memcached · Elasticsearch/OpenSearch → APM cache/query spans (foundational) + Agent integration (situational).
-**Kafka · RabbitMQ · SQS · SNS** → **Data Streams Monitoring** (Situational) for end-to-end
-queue lag/latency. DSM SDKs: Java, Node, Python, .NET.
+**Kafka · RabbitMQ · SQS · SNS · Kinesis · Pub/Sub · IBM MQ · Azure Service Bus · BullMQ** →
+**Data Streams Monitoring** (Situational) for end-to-end pipeline latency, consumer lag, and throughput
+across services. DSM SDKs: Java, Python, Node.js, .NET, Ruby (Kafka), Go (Kafka).
+Also a fit without an explicit broker dependency when the architecture is event-driven: microservices
+that hand work to each other asynchronously, sync requests that fan out to background jobs, or Lambda
+functions triggered by SQS / SNS / Kinesis. Not for Redis-backed job queues (Sidekiq, Celery on Redis, RQ),
+which DSM does not monitor.
 
 ### Deployment / platform → Infrastructure / Serverless (Foundational)
 | Signal | Detection hint | Products |
@@ -647,7 +652,7 @@ refers to it by another name.
 | Canonical name | Commonality | Aliases / how it shows up |
 |---|---|---|
 | **Database Monitoring (DBM)** | mainstream | query monitoring, slow queries, explain plans, query performance, Postgres/MySQL/SQL Server/Oracle/Mongo monitoring |
-| **Data Streams Monitoring (DSM)** | niche | Kafka/RabbitMQ/SQS/SNS monitoring, queue lag, pipeline latency, streaming monitoring |
+| **Data Streams Monitoring (DSM)** | niche | Kafka/RabbitMQ/SQS/SNS/Kinesis/Pub/Sub monitoring, queue lag, consumer lag, pipeline latency, streaming monitoring, event-driven architecture |
 | **Data Observability** | niche | Data Jobs Monitoring (DJM), Spark/Databricks monitoring, data quality monitoring |
 
 **Network**
