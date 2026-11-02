@@ -125,9 +125,10 @@ asking the user, check the repo for how it actually deploys:
 2. Otherwise check deploy/CI config for the actual deploy command and target directory:
    `.github/workflows/*.yml`, `.gitlab-ci.yml`, `vercel.json`, `netlify.toml`, `wrangler.toml`,
    `Dockerfile`. If the deploy step ships the bundler's output directory verbatim (e.g.
-   `pages deploy ./dist`, `netlify deploy --dir=build`), the prefix is the bundler's default asset
-   subdirectory relative to that root — Vite's default is `/assets/`, Create React App's is
-   `/static/js/`, etc.
+   `pages deploy ./dist`, `netlify deploy --dir=build`), the prefix is the URL that directory's root
+   is served from (`/` when it's deployed at the server root). Don't add asset subfolders like
+   Vite's `assets/`: the plugin appends each file's path inside the output directory, so `/assets/`
+   would upload `/assets/assets/index-*.js`.
 3. Check for path-rewrite config that could override the answer from step 2 above: Cloudflare
    `_routes.json` / `_redirects`, Netlify `_redirects`, Vercel `rewrites` in `vercel.json`. If any
    exist, re-derive the prefix from the rewrite rule instead of the raw build output path.

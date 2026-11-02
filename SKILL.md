@@ -14,6 +14,7 @@ Essential Datadog skills for AI agents.
 | Skill | Description |
 |-------|-------------|
 | **dd-account-setup** | Ensure an authenticated Datadog account with a valid API key on the right region; validates keys, fixes wrong-region 403s, signs in or creates an account |
+| **dd-android-sdk** | Route Datadog Android SDK upgrades to the migration instructions for the project's current and target major versions. |
 | **dd-apm** | Traces, services, performance analysis |
 | **dd-apps**              | Build Datadog Apps — scaffold, run, upload, publish, CI/CD |
 | **dd-aws-integration** | Connect an AWS account to Datadog with Terraform - cross-account IAM role, metrics and resource collection |
@@ -21,15 +22,16 @@ Essential Datadog skills for AI agents.
 | **dd-browser-sdk** | Browser SDK setup, RUM, Logs, Session Replay, version migration |
 | **dd-docs** | Search Datadog documentation |
 | **dd-gcp-integration** | Connect GCP projects or folders to Datadog with Terraform - keyless service-account impersonation |
+| **dd-instrument-llmo** | Instrument Python & Node.js/Next.js AI backends with Datadog LLM Observability — SDK init, agent/workflow spans, RUM↔LLMO session linking |
+| **dd-instrument-rum** | Instrument browser apps with Datadog Browser RUM — React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla |
 | **dd-llmo** | LLM Observability traces, experiments, evals |
 | **dd-logs** | Search logs, pipelines, archives |
 | **dd-monitors** | Create, manage, mute monitors and alerts |
 | **dd-oci-integration** | Connect an Oracle Cloud tenancy to Datadog with Terraform - Datadog's official OCI module |
 | **dd-product-recommender** | Recommend the right Datadog products for a codebase and/or goal (recommendation only) |
+| **dd-profiler-setup** | Set up Datadog Continuous Profiler for a service — Java, Python, Go, Ruby, Node.js, .NET, PHP |
 | **dd-pup** | Primary CLI - all pup commands, auth, PATH setup |
 | **dd-software-delivery** | CI/CD workflow skills — unblock PR, triage flaky tests |
-| **dd-instrument-llmo** | Instrument Python & Node.js/Next.js AI backends with Datadog LLM Observability — SDK init, agent/workflow spans, RUM↔LLMO session linking |
-| **dd-instrument-rum** | Instrument browser apps with Datadog Browser RUM — React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla |
 
 ## Install
 
