@@ -61,9 +61,10 @@ Wait for the user to run the commands, then re-run the check above before contin
 - [ ] kubectl configured to target cluster — `kubectl config current-context`
 - [ ] pup-cli installed — check with `pup --version`; if missing, install it now:
   ```bash
-  curl -fsSL https://raw.githubusercontent.com/DataDog/pup/main/install.sh | sh
+  brew tap datadog-labs/pack && brew install datadog-labs/pack/pup
   pup --version
   ```
+  Without Homebrew, download the binary from the [latest Pup release](https://github.com/DataDog/pup/releases/latest) and check its published checksum before placing it on `PATH`.
   Do not skip — proceed only once `pup --version` succeeds.
 
 ---

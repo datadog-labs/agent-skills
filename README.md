@@ -30,9 +30,6 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 brew tap datadog-labs/pack
 brew install datadog-labs/pack/pup
 
-# Or the install script (macOS, Linux, and Windows)
-curl -fsSL https://raw.githubusercontent.com/DataDog/pup/main/install.sh | sh
-
 # Or npm
 npm install -g @datadog/pup
 

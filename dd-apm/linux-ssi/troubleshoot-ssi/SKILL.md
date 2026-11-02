@@ -42,9 +42,12 @@ If not found, install it (OS-aware):
 ### Claude runs
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/DataDog/pup/main/install.sh | sh
+brew tap datadog-labs/pack
+brew install datadog-labs/pack/pup
 pup --version
 ```
+
+Without Homebrew, download the binary from the [latest Pup release](https://github.com/DataDog/pup/releases/latest) and check its published checksum before placing it on `PATH`.
 
 **Auth — check in this order:**
 
