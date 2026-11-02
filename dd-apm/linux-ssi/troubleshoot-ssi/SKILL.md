@@ -42,13 +42,7 @@ If not found, install it (OS-aware):
 ### Claude runs
 
 ```bash
-if [[ "$(uname)" == "Darwin" ]]; then
-  brew tap datadog-labs/pack && brew install datadog-labs/pack/pup
-else
-  PUP_VERSION=$(curl -s https://api.github.com/repos/datadog-labs/pup/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-  curl -L "https://github.com/datadog-labs/pup/releases/download/${PUP_VERSION}/pup_linux_amd64.tar.gz" | tar xz -C /usr/local/bin pup
-  chmod +x /usr/local/bin/pup
-fi
+curl -fsSL https://raw.githubusercontent.com/DataDog/pup/main/install.sh | sh
 pup --version
 ```
 

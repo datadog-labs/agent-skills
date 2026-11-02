@@ -73,7 +73,7 @@ Use this order for scoped commands:
 | Search error logs | `pup logs search --query "status:error" --from 1h` |
 | List monitors | `pup monitors list` |
 | Schedule monitor downtime | `pup downtime create --file downtime.json` |
-| Find slow traces | `pup traces search --query "service:api @duration:>500ms" --from 1h` |
+| Find slow traces | `pup traces search --query "service:api @duration:>500000000" --from 1h` |
 | Query metrics | `pup metrics query --query "avg:system.cpu.user{*}"` |
 | Check auth | `pup auth status` |
 | Refresh token | `pup auth refresh` |
