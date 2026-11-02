@@ -46,7 +46,7 @@ If not found:
 
 ```bash
 brew tap datadog-labs/pack
-brew install pup
+brew install datadog-labs/pack/pup
 ```
 
 Check auth:

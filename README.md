@@ -30,13 +30,16 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 brew tap datadog-labs/pack
 brew install datadog-labs/pack/pup
 
+# Or npm
+npm install -g @datadog/pup
+
 # Or build from source
-git clone https://github.com/datadog-labs/pup.git && cd pup
+git clone https://github.com/DataDog/pup.git && cd pup
 cargo build --release
 cp target/release/pup ~/.local/bin
 ```
 
-Pre-built binaries are also available from the [latest release](https://github.com/datadog-labs/pup/releases/latest).
+Pre-built binaries are also available from the [latest release](https://github.com/DataDog/pup/releases/latest).
 
 ```bash
 # Authenticate
@@ -487,13 +490,13 @@ Trigger a Workflow Automation workflow from a backend function
 | Search error logs | `pup logs search --query "status:error" --from 1h` |
 | List monitors | `pup monitors list` |
 | Schedule monitor downtime | `pup downtime create --file downtime.json` |
-| Find slow traces | `pup traces search --query "service:api @duration:>500ms" --from 1h` |
+| Find slow traces | `pup traces search --query "service:api @duration:>500000000" --from 1h` |
 | Query metrics | `pup metrics query --query "avg:system.cpu.user{*}"` |
 | List services for an env (required) | `pup apm services list --env <env> --from 1h --to now` |
 | Check auth | `pup auth status` |
 | Refresh token | `pup auth refresh` |
 
-More commands for `pup` are found in the [official pup docs](https://github.com/datadog-labs/pup/blob/main/docs/COMMANDS.md).
+More commands for `pup` are found in the [official pup docs](https://github.com/DataDog/pup/blob/main/docs/COMMANDS.md).
 
 ## Auth
 

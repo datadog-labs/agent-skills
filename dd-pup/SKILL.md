@@ -2,7 +2,7 @@
 name: dd-pup
 description: Datadog CLI (Rust). OAuth2 auth with token refresh.
 metadata:
-  version: "1.0.2"
+  version: "1.0.3"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,cli,dd-pup,pup
@@ -22,7 +22,7 @@ Pup CLI for Datadog API operations. Supports OAuth2 and API key auth.
 | Diff a monitor definition | `pup monitors diff <monitor-id> monitor.json` |
 | Schedule monitor downtime | `pup downtime create --file downtime.json` |
 | Open a dashboard at a live time window | `pup dashboards url <dashboard-id> --from now-1h --to now --live true` |
-| Find recent slow traces for a service (last 1h) | `pup traces search --query "service:<service-name> @duration:>500ms" --from 1h` |
+| Find recent slow traces for a service (last 1h) | `pup traces search --query "service:<service-name> @duration:>500000000" --from 1h` |
 | List incidents | `pup incidents list --limit 50` |
 | Import incident payload | `pup incidents import --file incident.json` |
 | Query metrics | `pup metrics query --query "avg:system.cpu.user{*}"` |
@@ -54,30 +54,32 @@ For commands that need specific scope values (`<env>`, `<service-name>`, `<team-
 ## Auth
 
 ```bash
-pup auth login          # OAuth2 browser flow (recommended)
-pup auth status         # Check token validity
-pup auth refresh        # Refresh expired token (no browser)
-pup auth logout         # Clear credentials
+pup auth login                 # OAuth2 browser flow (recommended)
+pup auth login --site <site>  # Log into a specific Datadog site
+pup auth login --org <name>   # Store a named org session
+pup auth status                # Check token validity and time remaining
+pup auth list                  # List stored org sessions
+pup auth refresh               # Refresh the access token (no browser)
+pup auth test                  # Test the current credentials
+pup auth logout                # Clear credentials
 ```
 
-**Tokens expire (~1 hour)**. If a command fails with 401/403 mid-conversation:
+Access tokens last about an hour. Pup refreshes them before they expire. If a command still fails with 401:
 
 ```bash
 pup auth refresh        # Try refresh first
 pup auth login          # If refresh fails, full re-auth
 ```
 
+Pass `--org <name>` on any command to select a session created with `pup auth login --org`. A 403 is a missing scope, not an expired token. Opt into an extra scope with `pup auth login --extra-scopes <scope>`.
+
 If Chrome opens the wrong profile/window, use the one-time OAuth URL printed by `pup auth login`
 (`If the browser doesn't open, visit: ...`) and open that link manually in the correct account session.
 
 ### Headless/CI (no browser)
 
-```bash
-# Use env vars or:
-export DD_API_KEY=your-api-key
-export DD_APP_KEY=your-app-key
-export DD_SITE=datadoghq.com    # or datadoghq.eu, etc.
-```
+Pup reads `DD_API_KEY`, `DD_APP_KEY`, and `DD_SITE` from the environment. Configure
+those secrets in the CI secret store or shell environment outside the agent session.
 
 ## Command Reference
 
@@ -102,6 +104,8 @@ pup logs search --query "service:<service-name>" --from 1h --limit 100
 pup logs search --query "@http.status_code:5*" --from 24h
 pup logs search --query "env:<env> level:error" --from 1h
 pup logs aggregate --query "service:<service-name>" --compute count --from 1h
+# Lookbacks past hot retention need an explicit storage tier.
+pup logs search --query "service:<service-name>" --from 15d --storage flex
 ```
 
 ### Metrics
@@ -114,10 +118,18 @@ pup metrics list --filter "system.*"
 ### APM / Traces
 ```bash
 # Confirm env tag with the user first (do not assume production/prod/prd).
+# --env is required on these service commands.
 pup apm services list --env <env> --from 1h --to now
+pup apm services stats --env <env> --from 1h --to now
+pup apm services operations --env <env> --service <service-name> --from 1h --to now
+pup apm services resources --env <env> --service <service-name> --name <operation> --from 1h --to now
+
+# Span @duration is nanoseconds. 500ms = 500000000. 1s = 1000000000.
 pup traces search --query "service:<service-name>" --from 1h
-pup traces search --query "service:<service-name> @duration:>500ms" --from 1h
+pup traces search --query "service:<service-name> @duration:>500000000" --from 1h
 pup traces search --query "service:<service-name> status:error" --from 1h
+pup traces get <trace-id>
+pup traces aggregate --query "service:<service-name>" --compute "avg(@duration)" --group-by resource_name --from 1h
 ```
 
 ### Incidents
@@ -135,6 +147,10 @@ pup dashboards url <dashboard-id> --from now-1h --to now --live true
 pup dashboards create --file dashboard.json
 pup dashboards update <dashboard-id> --file dashboard.json
 pup dashboards delete <dashboard-id>
+pup dashboards diff <dashboard-id> dashboard.json
+# Widget edits and page annotations have their own subcommands.
+pup dashboards widgets --help
+pup dashboards annotations --help
 ```
 
 #### Safe dashboard create, clone, and update workflow
@@ -163,7 +179,7 @@ The goal is a recoverable source and a verified destination. A successful API re
    jq '{layout_type, reflow_type, layouts: [.. | objects | .layout? // empty]}' dashboard-destination.json
    ```
 
-Pup 1.6.3 does not expose dashboard version history. If an exact historical version is required and no immutable snapshot exists, inspect version history in the Datadog UI before changing the dashboard.
+Pup has no dashboard version-history command. If an exact historical version is required and no immutable snapshot exists, inspect version history in the Datadog UI before changing the dashboard. `pup dashboards diff <dashboard-id> dashboard-payload.json` compares a candidate file to the live dashboard without writing it.
 
 ### SLOs
 ```bash
@@ -251,7 +267,8 @@ pup service-catalog get <service-name>
 
 ### Notebooks
 ```bash
-pup notebooks list
+pup notebooks search
+pup notebooks list          # compatibility alias of search
 pup notebooks get <notebook-id>
 ```
 
@@ -259,6 +276,7 @@ pup notebooks get <notebook-id>
 ```bash
 pup workflows get <workflow-id>
 pup workflows run <workflow-id> --payload '{"key":"value"}'
+pup workflows run <workflow-id> --payload-file input.json --wait --timeout 5m
 pup workflows instances list <workflow-id>
 ```
 
@@ -297,23 +315,25 @@ pup reference-tables batch-query --file query.json
 
 ### Cost Cloud Configs
 ```bash
-# AWS CUR configs
-pup cost aws-config list
-pup cost aws-config get <account-id>
-pup cost aws-config create --file config.json
-pup cost aws-config delete <account-id>
+# `cost` is an alias of `costs`. Cloud configs live under the `datadog` subgroup.
+# The id on get/delete is the numeric id returned by list.
+pup costs datadog aws-config list
+pup costs datadog aws-config get <id>
+pup costs datadog aws-config create --file config.json
+pup costs datadog aws-config delete <id>
 
-# Azure UC configs
-pup cost azure-config list
-pup cost azure-config get <account-id>
-pup cost azure-config create --file config.json
-pup cost azure-config delete <account-id>
+pup costs datadog azure-config list
+pup costs datadog azure-config get <id>
+pup costs datadog azure-config create --file config.json
+pup costs datadog azure-config delete <id>
 
-# GCP usage cost configs
-pup cost gcp-config list
-pup cost gcp-config get <account-id>
-pup cost gcp-config create --file config.json
-pup cost gcp-config delete <account-id>
+pup costs datadog gcp-config list
+pup costs datadog gcp-config get <id>
+pup costs datadog gcp-config create --file config.json
+pup costs datadog gcp-config delete <id>
+
+# Billing totals, separate from the cloud configs above.
+pup costs datadog projected
 ```
 
 ## Subcommand Discovery
@@ -322,10 +342,18 @@ pup cost gcp-config delete <account-id>
 pup --version           # Confirm installed version before documenting workarounds
 pup --help              # List all commands
 pup <command> --help    # Command-specific help
+pup agent schema        # Machine-readable command list for the installed binary
 pup dashboards get <dashboard-id> --jq '{title, layout_type}'  # Filter output before formatting
+
+# Raw authenticated request when no subcommand covers the endpoint.
+# Relative paths are prefixed with /api/.
+pup api v1/monitor
+pup docs api            # Live API docs. No authentication required.
 ```
 
-If local help differs from this skill, compare `pup --version` with the latest stable release before inventing a workaround.
+Global flags work on any command: `-o json`, `--jq`, `--org <name>`, `--yes` (skip a destructive confirmation), and `--read-only` (block create, update, and delete). When Pup detects an agent it returns JSON and auto-approves prompts. `--no-agent` turns that off.
+
+If local help differs from this skill, follow `pup <command> --help` for the installed binary. Compare `pup --version` with the latest stable release before inventing a workaround.
 
 ## Error Handling
 
@@ -358,3 +386,7 @@ pup --version
 | AP1 | `ap1.datadoghq.com` |
 | AP2 | `ap2.datadoghq.com` |
 | US1-FED | `ddog-gov.com` |
+
+Pup trusts Datadog-owned sites automatically. Before using an unlisted host with
+`--trust-site` or `trusted_sites`, verify the exact hostname with the user and get
+their explicit approval; a typo or lookalike host could receive API-key credentials.
