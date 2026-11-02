@@ -29,6 +29,7 @@ Essential Datadog skills for AI agents.
 | **dd-monitors** | Create, manage, mute monitors and alerts |
 | **dd-oci-integration** | Connect an Oracle Cloud tenancy to Datadog with Terraform - Datadog's official OCI module |
 | **dd-product-recommender** | Recommend the right Datadog products for a codebase and/or goal (recommendation only) |
+| **dd-profiler-setup** | Set up Datadog Continuous Profiler for a service — Java, Python, Go, Ruby, Node.js, .NET, PHP |
 | **dd-pup** | Primary CLI - all pup commands, auth, PATH setup |
 | **dd-software-delivery** | CI/CD workflow skills — unblock PR, triage flaky tests |
 
