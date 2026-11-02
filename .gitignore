@@ -1,5 +1,6 @@
 .*
 !.gitignore
+!.claude-plugin/
 
 __pycache__/
 *.py[cod]
