@@ -1,8 +1,8 @@
 ---
 name: dd-docs
-description: Datadog docs lookup using docs.datadoghq.com/llms.txt and linked Markdown pages.
+description: Look up Datadog documentation, limits, and feature availability. Prefer search_datadog_documentation when that MCP tool is available, then one Markdown page from docs.datadoghq.com/llms.txt. For API reference, use pup docs api.
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,docs,llms.txt,dd-docs
@@ -11,65 +11,42 @@ metadata:
 
 # Datadog Docs
 
-Use this skill to locate Datadog documentation and limits.
+Use the smallest source that answers the question, then stop. Cite the page URL you used.
 
-## LLM-Friendly Documentation
+1. `search_datadog_documentation` is available → Search.
+2. The question is an API endpoint or request schema, and search did not answer it → API.
+3. Otherwise → Page.
 
-Datadog provides an LLM-optimized documentation index at:
+## Search
+
+`search_datadog_documentation` (MCP toolset `documentation`, no extra permission) returns at most 10 source passages with links. It does not write an answer. It supports English, French, Japanese, Korean, and Spanish. With AI providers disabled for the org, it matches keywords only.
+
+Call `read_datadog_documentation` with one source URL or document id only when a passage is not enough. It returns long pages in parts; stop at the part that answers.
+
+If the tool is not in your tool list, skip this section. Enabling the toolset is a separate setup task.
+
+## API
+
+Pup reads the live API reference and needs no auth. Commands, smallest first:
+
+```bash
+pup docs api <topic> --operations
+pup docs api <topic>
+```
+
+The operations list is the small result. Fetch `pup docs api <topic> <operation>` only when you need that operation's request schema: the page includes every sample. Skip `pup docs api` with no topic.
+
+## Page
+
+`https://docs.datadoghq.com/llms.txt` is the section index. Open the one section index it links to, then fetch one page by appending `.md`:
 
 ```
-https://docs.datadoghq.com/llms.txt
+https://docs.datadoghq.com/monitors/llms.txt
+https://docs.datadoghq.com/monitors.md
 ```
 
-This file contains:
-- Overview of all Datadog products organized by use case
-- Full list of documentation pages with URLs and descriptions
-- Direct links to Markdown sources (append `.md` to URLs)
+Documentation is served from `docs.datadoghq.com`. Site-specific values, such as API endpoints, are selected on that page.
 
-### How to Use llms.txt
+## Uncited shortcut
 
-1. **Fetch the index** to understand available documentation:
-   ```bash
-   curl -s https://docs.datadoghq.com/llms.txt | head -100
-   ```
-
-2. **Search for specific topics**:
-
-Examples:
-
-   ```bash
-   curl -s https://docs.datadoghq.com/llms.txt | grep -i "monitors"
-   curl -s https://docs.datadoghq.com/llms.txt | grep -i "apm"
-   curl -s https://docs.datadoghq.com/llms.txt | grep -i "logs"
-   ```
-
-3. **Fetch specific doc pages** (add .md to most Datadog Docs URLs for raw content):
-   ```bash
-   curl -s https://docs.datadoghq.com/monitors.md
-   curl -s https://docs.datadoghq.com/tracing.md
-   ```
-
-### Key Documentation Sections
-
-| Topic | URL |
-|-------|-----|
-| APM/Tracing | https://docs.datadoghq.com/tracing/ |
-| Logs | https://docs.datadoghq.com/logs/ |
-| Metrics | https://docs.datadoghq.com/metrics/ |
-| Monitors | https://docs.datadoghq.com/monitors/ |
-| Dashboards | https://docs.datadoghq.com/dashboards/ |
-| Security | https://docs.datadoghq.com/security/ |
-| Synthetics | https://docs.datadoghq.com/synthetics/ |
-| RUM | https://docs.datadoghq.com/real_user_monitoring/ |
-| Incidents | https://docs.datadoghq.com/service_management/incident_management/ |
-| API Reference | https://docs.datadoghq.com/api/ |
-
-## Scope Guardrails
-
-- Use llms.txt for documentation lookups
-- Defer to official docs for feature availability and limits
-
-## Failure Handling
-
-- If docs.datadoghq.com is unreachable, check network connectivity
-- For region-specific docs, use appropriate site (datadoghq.eu, etc.)
+`pup docs ask "<question>"` returns a short generated answer with no sources and needs no auth. Use it only when you will not treat the reply as documentation.
