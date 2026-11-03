@@ -399,7 +399,7 @@ Wait for explicit user confirmation. If `--stop-after eval-bootstrap` is set, th
 **4a — Sample traces into a `DatasetRecordRaw[]` JSON.** Follow the **`agent-observability-eval-bootstrap`** skill in **`--emit-dataset` mode**:
 
 ```
-/eval-bootstrap <ml_app> --timeframe <timeframe> --trace-limit <trace-limit> --emit-dataset <output-dir>/dataset_<ml_app>_<YYYYMMDD>.json
+/agent-observability-eval-bootstrap <ml_app> --timeframe <timeframe> --trace-limit <trace-limit> --emit-dataset <output-dir>/dataset_<ml_app>_<YYYYMMDD>.json
 ```
 
 This mode samples root spans, extracts `(input_data, expected_output)` pairs, applies a PII scrub, and writes the JSON. **It does not propose or generate evaluators** — the dataset is the sole artifact. See `agent-observability/agent-observability-eval-bootstrap/SKILL.md` → Phase 3D for the full spec.
