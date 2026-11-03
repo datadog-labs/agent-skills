@@ -2,7 +2,7 @@
 name: enable-ssi
 description: Enable Single Step Instrumentation (SSI) on Kubernetes — automatically instruments applications for APM without code changes. Only use if the Datadog Agent is already running on the cluster — if not, use agent-install first.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,kubernetes,ssi,instrumentation,single-step
@@ -44,7 +44,7 @@ Do NOT invoke this skill if:
 - The Datadog Agent is not yet installed — run `agent-install` first
 - The user wants to verify SSI after setup — use `verify-ssi`
 - The user wants to enable Data Streams Monitoring: use `enable-dsm`
-- The user wants to enable Profiler or AppSec: use `dd-apm-k8s-sdk-features`
+- The user wants to enable the Continuous Profiler: use `dd-profiler-setup`. `dd-apm-k8s-sdk-features` is not a skill.
 
 ---
 

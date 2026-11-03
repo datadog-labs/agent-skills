@@ -508,10 +508,7 @@ there are no unsupported purposes. Three markers:
 - ★ **use this to load the eval corpus.** Both backends must read the SAME records or the run's
   scores are not comparable to a run on the other backend; see **Loading the whole dataset** below.
 - ⏱ **pass an explicit `--from`/`--to`.** These default to a 1-hour window; see below.
-- ⚠️† **on released pup, exits non-zero even when the write succeeds.** Verify by reading state
-  back, not by exit code. Fixed by DataDog/pup#682 — **open, not merged at time of writing**, so
-  assume the broken behaviour until you have confirmed otherwise on the installed build; see the
-  call mechanics below.
+- ⚠️† **on Pup 2.2.1 and 2.4.1, a non-zero exit from `experiments update` is a failed write.** DataDog/pup#682 is merged. Read the experiment back to confirm the stored metadata, not to ignore the exit code. See the call mechanics below.
 - ✎ **dataset writes — both need `project_id`, and the pup body shape must be confirmed, not
   assumed.** See **Creating the run's datasets** below.
 - ⧉ **annotation queues — pup returns the raw interactions with no filter and no counts**, so the
@@ -671,7 +668,7 @@ appears to fail while succeeding:
   `pup llm-obs experiments events submit --metrics '[{…}]' <EXPERIMENT_ID>` — the metrics array is
   passed inline and the `experiment_id` key the MCP tool wants is omitted. `experiments update` still
   takes `--file <path> <EXPERIMENT_ID>`.
-- ⚠️ **A non-zero pup exit does NOT mean the write failed (on released pup).**
+- ⚠️ **On pup 1.8.0, a non-zero exit did not mean the write failed.**
   `experiments create` and `experiments update` fail while *deserializing the API's response* and
   exit non-zero **after the write has already landed**. Root causes, both confirmed against the live
   API: `update`'s successful PATCH answers **HTTP 200 with a zero-byte body**, which the generated
@@ -680,18 +677,12 @@ appears to fail while succeeding:
   `missing field config`. Neither is a request failure. In one run this fired four times and all
   four writes had applied.
 
-  So for pup writes on released pup, **verify by reading state back, never by exit code** — treating
+  On that pre-fix client, verify by reading state back rather than treating exit 1 as failure — treating
   exit 1 as failure sends you into a retry loop that double-writes. `experiments events submit` is
   unaffected (exit 0, same `{experiment_id, metrics_ingested, status}` shape as MCP), so the
   per-iteration score submission can be confirmed the normal way.
 
-  **DataDog/pup#682 fixes both** by routing these two writes through pup's raw client (as every other
-  `llm-obs` command already does) and by making `raw_client::parse_response_json` treat an empty
-  successful body as JSON `null` rather than an error. With that build, `update` exits 0 and prints
-  `{"experiment_id": …, "status": "updated"}`, and `create` exits 0 returning the new id. **That PR is
-  open, not merged, at time of writing** — so do not assume it is present. Determine which behaviour
-  you have the same way you determine anything else about the installed build: run the command and
-  look at the exit code against a read-back, rather than trusting a version number or this file.
+  **DataDog/pup#682**, merged 2026-07-27, routes these two writes through pup's raw client and treats an empty successful body as JSON `null`. It is in Pup 2.2.1 and 2.4.1: `update` reports `{"experiment_id", "status": "updated"}` for an empty 200, and `create` accepts a response that omits `config`. On those versions a non-zero exit is a failed write. The non-zero-after-success behaviour above is the pre-fix client.
 - `experiments create` additionally requires `data.attributes.project_id` (it uses the typed v2 route),
   which the `unstable` REST route does not. The skill never creates an experiment — the id is an
   input — so this only matters if you are provisioning one by hand.
@@ -789,7 +780,7 @@ ran because you intended it to.
 | 3 | `config.json` written | file exists with every required field populated (incl. the resolved `files_to_optimize` list, `evaluators` verbatim, data source, `annotation_label_map` with an explicit `expected_output` answer when the source is an `annotation_queue_id`, and `datadog_backend` = the user's explicit `"mcp"`/`"pup"` — `null` or an unasked value means the intake gate was skipped) |
 | 4 | experiment id | `$experiment-id` validated as a UUID at the intake gate and persisted to `config.json` as `dd_auto_experiment_id` |
 | 5 | run context on experiment | confirm the `update_llmobs_experiment` call (or `pup llm-obs experiments update`) **actually returned a success response in hand** (not merely that you intended to call it). For the us5 MCP that response is `updated_fields` containing `"metadata"` — accept that, or any non-error response acknowledging the metadata write if the tool's shape differs. The check is "the call was made and acknowledged", so do not hard-block on one exact field name; if it errored or was never called, re-run it. |
-| 6 | backend reachable | with `datadog_backend: pup`, `pup auth status` (or `$PUP_BIN auth status`) returned `authenticated: true` for the expected site — run the check, don't assume the binary works. A missing or unauthenticated pup is a **STOP**, not a fallback (see **Datadog backend**). With `datadog_backend: mcp`, step 5's acknowledged response is itself the proof the backend is reachable. Record `backend_used` in `config.json` either way. **Under pup, satisfy step 5 by reading the experiment back** (`pup llm-obs experiments list --filter-project-id …` and confirm the metadata/status you just wrote). On released pup `experiments update` exits non-zero on a response-parsing bug even when the write landed, so an exit-code check would fail a step that actually succeeded; DataDog/pup#682 fixes that but is not merged yet. Read-back is correct either way, so use it unconditionally rather than branching on the build. |
+| 6 | backend reachable | with `datadog_backend: pup`, `pup auth status` (or `$PUP_BIN auth status`) returned `authenticated: true` for the expected site — run the check, don't assume the binary works. A missing or unauthenticated pup is a **STOP**, not a fallback (see **Datadog backend**). With `datadog_backend: mcp`, step 5's acknowledged response is itself the proof the backend is reachable. Record `backend_used` in `config.json` either way. **Under pup, satisfy step 5 by reading the experiment back** (`pup llm-obs experiments list --filter-project-id …` and confirm the metadata/status you just wrote). DataDog/pup#682 is merged, so on Pup 2.2.1 and 2.4.1 a non-zero exit is a failed write. Still read the experiment back to confirm the stored metadata. |
 | 7 | dataset writes possible | in `dataset_mode: datadog`, `project_id` in `config.json` is a real project you resolved (`get_llmobs_project` / `pup llm-obs projects list` returned it) — not a guessed UUID. In `dataset_mode: local_file`, no project is needed; confirm the mode came from an explicit user answer, not a default. |
 | 8 | corpus data not committed | `.auto_experiment/.gitignore` exists with `cache/` and `data*.jsonl`, and `git check-ignore -v .auto_experiment/cache/x.jsonl` confirms it applies |
 

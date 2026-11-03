@@ -2,7 +2,7 @@
 name: dd-monitors
 description: Monitor management - list, search, file-based create, and alerting best practices.
 metadata:
-  version: "1.0.1"
+  version: "1.0.2"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,monitors,alerting,alerts,dd-monitors
@@ -165,10 +165,10 @@ def safe_mark_monitor_for_deletion(monitor_id: str, client) -> bool:
 
 ```bash
 # Find monitors without owners
-pup monitors list | jq '.[] | select(.tags | contains(["team:"]) | not) | {id, name}'
+pup monitors list | jq '.data[] | select(.tags | contains(["team:"]) | not) | {id, name}'
 
 # Find noisy monitors (high alert count)
-pup monitors list | jq 'sort_by(.overall_state_modified) | .[:10] | .[] | {id, name, status: .overall_state}'
+pup monitors list | jq '.data | sort_by(.overall_state_modified) | .[:10] | .[] | {id, name, status: .overall_state}'
 ```
 
 ## Downtime vs Muting
