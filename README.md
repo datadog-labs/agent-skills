@@ -298,9 +298,9 @@ Or via `npx`:
 
 ```bash
 npx skills add datadog-labs/agent-skills \
-  --skill dd-software-delivery/unblock-pr \
-  --skill dd-software-delivery/triage-flaky-test \
-  --full-depth -y
+  --skill unblock-pr \
+  --skill triage-flaky-test \
+  -y
 ```
 
 #### Usage
@@ -407,9 +407,9 @@ Or via `npx`:
 
 ```bash
 npx skills add datadog-labs/agent-skills \
-  --skill dd-software-delivery/unblock-pr \
-  --skill dd-software-delivery/triage-flaky-test \
-  --full-depth -y
+  --skill unblock-pr \
+  --skill triage-flaky-test \
+  -y
 ```
 
 #### Usage
