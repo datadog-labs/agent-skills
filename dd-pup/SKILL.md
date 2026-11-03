@@ -1,8 +1,8 @@
 ---
 name: dd-pup
-description: Datadog CLI (Rust). OAuth2 auth with token refresh.
+description: Datadog CLI (pup) for Datadog app URLs and API operations, including notebooks, dashboards, metrics, logs, monitors, traces, and SLOs. Use pup instead of browser automation for those links.
 metadata:
-  version: "1.0.3"
+  version: "1.0.4"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,cli,dd-pup,pup
@@ -12,6 +12,10 @@ metadata:
 # pup (Datadog CLI)
 
 Pup CLI for Datadog API operations. Supports OAuth2 and API key auth.
+
+## Routing
+
+Use this skill for Datadog app URLs and read-only Datadog investigations, including notebooks, dashboards, monitors, logs, metrics, traces, SLOs, incidents, and audit logs. Take the numeric id from a notebook URL such as `https://app.datadoghq.com/notebook/<notebook-id>/...` and run `pup notebooks get <notebook-id>`. The same applies on other Datadog sites (`app.datadoghq.eu`, `us3.datadoghq.com`, `us5.datadoghq.com`, `ap1.datadoghq.com`, `ap2.datadoghq.com`, `ddog-gov.com`). Prefer `pup` over browser automation unless the user explicitly asks for visual inspection.
 
 ## Quick Reference
 
@@ -270,6 +274,54 @@ pup service-catalog get <service-name>
 pup notebooks search
 pup notebooks list          # compatibility alias of search
 pup notebooks get <notebook-id>
+```
+
+`get` takes the numeric id from `pup notebooks list` or from a notebook URL. A cell's resource type is `notebook_cells`. The rendered type (`markdown`, `timeseries`, and so on) goes in `attributes.definition.type`. Sending `"type": "markdown"` at the cell resource level returns `Invalid type. Expected "notebook_cells"`.
+
+`create` and `update` take a full notebook document. `edit` appends cells, so its file is a JSON array of cell objects, not a full notebook.
+
+```json
+{
+  "data": {
+    "type": "notebooks",
+    "attributes": {
+      "name": "Investigation notebook",
+      "time": {"live_span": "4h"},
+      "cells": [
+        {
+          "type": "notebook_cells",
+          "attributes": {
+            "definition": {"type": "markdown", "text": "# Investigation notes"}
+          }
+        },
+        {
+          "type": "notebook_cells",
+          "attributes": {
+            "definition": {
+              "type": "timeseries",
+              "requests": [{"q": "max:myapp.kafka.consumer.lag{*}"}]
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+```
+
+```bash
+pup notebooks create --file notebook.json
+pup notebooks update <notebook-id> --file notebook.json
+pup notebooks edit <notebook-id> --file cells.json
+```
+
+`get`, `create`, `update`, and `edit` also accept `--markdown` and then read or write a Markdown document instead of JSON cells. That path calls `/api/unstable/notebooks` and only works for rich-text notebooks. Notebooks created through the cells API have no Markdown projection. `--name` is only valid with `create --markdown`.
+
+```bash
+pup notebooks create --markdown --file doc.md
+pup notebooks get <notebook-id> --markdown
+pup notebooks update <notebook-id> --markdown --file doc.md
+pup notebooks edit <notebook-id> --markdown --file fragment.md
 ```
 
 ### Workflows

@@ -2,7 +2,7 @@
 name: dd-logs
 description: Log management - search, archives, metrics, and cost control.
 metadata:
-  version: "1.0.1"
+  version: "1.0.2"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,logs,logging,search,dd-logs
@@ -58,20 +58,27 @@ pup logs search --query="@http.status_code:>=500" --from="1h"
 | `service:api AND env:prod` | Boolean |
 | `@message:*timeout*` | Wildcard |
 
-## Configuration APIs
-
-Available log configuration commands in pup 0.42.0:
+## Commands
 
 ```bash
-# List log archives
+pup logs search --query="status:error" --from="1h"
+pup logs list
+pup logs aggregate --query="*" --from="1h" --compute="count" --group-by="service"
+pup logs patterns --query="status:error" --pattern-field="message" --from="1h"
+pup logs query --query="service:api" --from="1h"
+pup logs saved-views list
+
 pup logs archives list
-
-# List log restriction queries
-pup logs restriction-queries list
-
-# List custom log destinations
+pup logs archives get <archive-id>
 pup logs custom-destinations list
+pup logs metrics list
+pup logs metrics get <metric-id>
+
+# Restriction queries are a top-level command, not a logs subcommand.
+pup logs-restriction list
 ```
+
+`--compute` and `--group-by` on `aggregate`, and the pattern flags, follow the installed `pup logs <command> --help` if it disagrees with the examples above.
 
 ### Common Processors
 
@@ -151,8 +158,8 @@ pup logs archives list
 ### Rehydrate (Restore)
 
 ```bash
-# No `pup logs rehydrate` command in pup 0.42.0.
-# Use Datadog UI/API for rehydration workflows.
+# Pup has no logs rehydrate command.
+# Rehydrate from the Datadog UI or API.
 ```
 
 ## Log-Based Metrics
