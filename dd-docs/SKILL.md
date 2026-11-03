@@ -19,7 +19,7 @@ Use the smallest source that answers the question, then stop. Cite the page URL 
 
 ## Search
 
-`search_datadog_documentation` (MCP toolset `documentation`, no extra permission) returns at most 10 source passages with links. It does not write an answer. It supports English, French, Japanese, Korean, and Spanish. With AI providers disabled for the org, it matches keywords only.
+`search_datadog_documentation` (MCP toolset `documentation`, no extra permission) returns at most 10 source passages with links. It does not write an answer. It supports English, French, Japanese, Korean, and Spanish. 
 
 Call `read_datadog_documentation` with one source URL or document id only when a passage is not enough. It returns long pages in parts; stop at the part that answers.
 
@@ -46,7 +46,3 @@ https://docs.datadoghq.com/monitors.md
 ```
 
 Documentation is served from `docs.datadoghq.com`. Site-specific values, such as API endpoints, are selected on that page.
-
-## Uncited shortcut
-
-`pup docs ask "<question>"` returns a short generated answer with no sources and needs no auth. Use it only when you will not treat the reply as documentation.
