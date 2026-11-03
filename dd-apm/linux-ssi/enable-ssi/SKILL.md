@@ -2,7 +2,7 @@
 name: enable-ssi
 description: Configure Unified Service Tags and verify Single Step Instrumentation (SSI) injection on Linux hosts — SSI automatically instruments applications for APM without code changes. Only use if the Datadog Agent is already installed.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,linux,ssi,instrumentation,single-step,ld-preload,ust
@@ -23,7 +23,7 @@ Invoke this skill when:
 Do NOT invoke this skill if:
 - The Datadog Agent is not yet installed — run `agent-install` first
 - SSI packages are missing from `/opt/datadog-packages/` — re-run `agent-install`
-- The target is a Kubernetes cluster — use `dd-apm-k8s-enable-ssi` instead
+- The target is a Kubernetes cluster — use `enable-ssi` at `dd-apm/k8s-ssi/enable-ssi` instead
 
 ---
 

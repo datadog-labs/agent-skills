@@ -30,8 +30,7 @@ datadog-labs/pack/pup`, then `pup auth login`. MCP alternative:
   present.** Parsing the wrong level returns **zero hits on an already-ingested trace** — a silent false
   negative (see polling). Prefer `--no-agent` for a stable script path.
 - `pup llm-obs spans get-trace --trace-id <id> --from 30d` — `--trace-id` is a **flag**, not positional;
-  the default window is **1h**, so pass `--from` as a **bare duration** (`30d`/`7d`/`1h`) — `now-30d` is
-  rejected. Returns `total_duration_ms` and `trace_url`. **Carry `trace_id` forward, not `apm_trace_id`**
+  the default window is **1h**, so pass `--from` as a **bare duration** (`30d`/`7d`/`1h`). `now-30d` is also accepted. Returns `total_duration_ms` and `trace_url`. **Carry `trace_id` forward, not `apm_trace_id`**
   (also present in results) — feeding `apm_trace_id` into get-trace 404s.
 - `pup llm-obs spans get-content --trace-id <id> --span-id <root-span-id> --field output --from 30d` —
   span-id from get-trace; `--field` is required (`input`/`output`/`messages`/…). **Same 1h default window as

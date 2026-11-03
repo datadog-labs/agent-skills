@@ -2,7 +2,7 @@
 name: troubleshoot-ssi
 description: Diagnose and fix Single Step Instrumentation (SSI) issues on Linux hosts — SSI automatically instruments applications for APM without code changes. Only use if the agent and SSI are configured but traces are missing or instrumentation is not working.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,linux,ssi,troubleshooting,instrumentation,ld-preload
@@ -186,11 +186,11 @@ Before investigating, explicitly state your ranked hypotheses based on triage ou
 
 | Triage signal | Strong hypothesis |
 |---|---|
-| `pup troubleshooting list` shows `result: error`, `result_class: incorrect_installation` | Package directory empty or corrupt — verify files exist under `/opt/datadog-packages/datadog-apm-library-<lang>/`, then use remediation flow |
-| `pup troubleshooting list` shows `result: error`, import/load error | Tracer library couldn't be loaded — check runtime version, libc compatibility |
-| `pup troubleshooting list` shows `result: abort`, reason `already_instrumented` | Manual ddtrace/OTel already in the app — launcher silently disabled itself |
-| `pup troubleshooting list` shows `result: abort`, reason `language not detected` | Expected for non-app processes (e.g., bash, cron). Not a failure. |
-| `pup troubleshooting list` empty | Either no injection attempts yet (process not restarted), or injection succeeded silently |
+| `pup apm troubleshooting list` shows `result: error`, `result_class: incorrect_installation` | Package directory empty or corrupt — verify files exist under `/opt/datadog-packages/datadog-apm-library-<lang>/`, then use remediation flow |
+| `pup apm troubleshooting list` shows `result: error`, import/load error | Tracer library couldn't be loaded — check runtime version, libc compatibility |
+| `pup apm troubleshooting list` shows `result: abort`, reason `already_instrumented` | Manual ddtrace/OTel already in the app — launcher silently disabled itself |
+| `pup apm troubleshooting list` shows `result: abort`, reason `language not detected` | Expected for non-app processes (e.g., bash, cron). Not a failure. |
+| `pup apm troubleshooting list` empty | Either no injection attempts yet (process not restarted), or injection succeeded silently |
 | `service-library-config get` shows `apm_enabled: false` | Tracer is loaded but explicitly disabled — check `source` field to see who set it |
 | `service-library-config get` shows `trace_agent_url` pointing to wrong host/port | Tracer can't reach the Agent — fix the URL |
 | `service-library-config get` shows wrong `site` | Traces going to wrong Datadog org |
@@ -258,7 +258,7 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
   "sudo cat /proc/<PID>/maps | grep -E 'launcher|apm-library|datadog'"
 ```
 - **Launcher + language library present** — injection succeeded for this process
-- **Launcher only, no language library** — launcher ran but couldn't inject the tracer (check `pup troubleshooting list` for the reason)
+- **Launcher only, no language library** — launcher ran but couldn't inject the tracer (check `pup apm troubleshooting list` for the reason)
 - **Nothing** — `/etc/ld.so.preload` not set, process started before SSI was enabled, or static binary
 
 **Was the process started before SSI was enabled?**
@@ -357,7 +357,7 @@ If the conclusion doesn't hold up, return to Step 2 with new hypotheses.
 
 **Remediation: Reinstalling a Broken APM Package**
 
-`datadog-installer status` reflects DB registration, not actual file presence. If `pup troubleshooting list` shows `incorrect_installation` but the installer says the package is installed, the registration is stale:
+`datadog-installer status` reflects DB registration, not actual file presence. If `pup apm troubleshooting list` shows `incorrect_installation` but the installer says the package is installed, the registration is stale:
 
 ```bash
 # Remove the stale registration first
