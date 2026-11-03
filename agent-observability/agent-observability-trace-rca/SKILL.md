@@ -537,7 +537,7 @@ Write the full report following the Output Format below. **This is the primary d
 3. After successful creation by either method, output the URL on its own line:
    `RCA report exported to notebook: <url>`
 
-Print the URL prominently — if `/eval-bootstrap` runs next in the same session, it will detect this URL and offer to append the evaluator suite to the same notebook.
+Print the URL prominently — if `/agent-observability-eval-bootstrap` runs next in the same session, it will detect this URL and offer to append the evaluator suite to the same notebook.
 
 #### Notebook Cell Structure
 

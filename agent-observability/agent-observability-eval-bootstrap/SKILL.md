@@ -43,7 +43,7 @@ After a publish run, if the user wants the same suite as offline code or a porta
 ## Usage
 
 ```
-/eval-bootstrap <ml_app> [--timeframe <window>] [--sdk-code | --data-only | --emit-dataset <path>] [--trace-limit <N>]
+/agent-observability-eval-bootstrap <ml_app> [--timeframe <window>] [--sdk-code | --data-only | --emit-dataset <path>] [--trace-limit <N>]
 ```
 
 Arguments: $ARGUMENTS
@@ -54,7 +54,7 @@ Arguments: $ARGUMENTS
 |-------|----------|---------|-------------|
 | `ml_app` | Yes | — | ML application to scope traces |
 | `timeframe` | No | `now-7d` | How far back to look |
-| `rca_report` | No | — | Failure taxonomy from `eval-trace-rca` skill, or a free-text failure hypothesis |
+| `rca_report` | No | — | Failure taxonomy from `agent-observability-trace-rca`, or a free-text failure hypothesis |
 | `--sdk-code` | No | off | Emit a Python SDK `.py` file for offline experiments instead of publishing online. Mutually exclusive with `--data-only` and `--emit-dataset`. |
 | `--data-only` | No | off | Emit a self-contained JSON spec file instead of publishing online. Mutually exclusive with `--sdk-code` and `--emit-dataset`. |
 | `--emit-dataset <path>` | No | off | **Dataset-only mode.** Sample production traces and write a `DatasetRecordRaw[]` JSON to `<path>`. Skips the evaluator workflow entirely. Mutually exclusive with `--sdk-code` and `--data-only`. |
@@ -338,7 +338,7 @@ If you have access to dd-trace-py locally, verify the API surface by reading the
 
    **In `publish` mode, also note any template-variable convention** the existing custom evaluators already use (so a new suite reads consistently). Online evaluator templates resolve against the **full span JSON**, not against `EvaluatorContext`. See the "Online Template Variables" section under "Publishing Conventions" for the supported syntax (`{{span_input}}`, `{{span_output}}`, dot-paths, array selectors, filter accessors).
 
-5. **Notebook context detection**: Scan the current conversation for a Datadog notebook URL that was produced by `/eval-trace-rca` (pattern: `https://app.datadoghq.com/notebook/{numeric-id}`). If found, store it as `rca_notebook_url` and extract the numeric ID as `rca_notebook_id`. This is used after Phase 3 to offer appending the evaluator suite to that notebook instead of creating a new one.
+5. **Notebook context detection**: Scan the current conversation for a Datadog notebook URL that was produced by `/agent-observability-trace-rca` (pattern: `https://app.datadoghq.com/notebook/{numeric-id}`). If found, store it as `rca_notebook_url` and extract the numeric ID as `rca_notebook_id`. This is used after Phase 3 to offer appending the evaluator suite to that notebook instead of creating a new one.
 
 ---
 
@@ -584,7 +584,7 @@ For each evaluator:
 {Only in publish mode, when the suite contains code-based evaluators (JSONEvaluator, RegexMatchEvaluator, LengthEvaluator, StringCheckEvaluator, BaseEvaluator). Required when any code-based proposal exists.}
 
 **Not publishable in this mode** (code-based evaluators — the publish API is LLM-judge only):
-- `{name}` ({type}) — {what it would check}. Ask me to emit these as offline SDK code (or run `/eval-bootstrap {ml_app} --sdk-code`), or `/eval-bootstrap {ml_app} --data-only` for a framework-agnostic JSON spec.
+- `{name}` ({type}) — {what it would check}. Ask me to emit these as offline SDK code (or run `/agent-observability-eval-bootstrap {ml_app} --sdk-code`), or `/agent-observability-eval-bootstrap {ml_app} --data-only` for a framework-agnostic JSON spec.
 ```
 
 **Which evaluators should I generate?** Treat the proposal as a candidate set — the suite below is intentionally broad so you can pick what matters for your team's quality bar. Reply with **which to keep, which to drop, and which to rename**; not every domain-specific proposal will fit your priorities. In `sdk_code` mode you may also add custom evaluators or change provider/model. In `publish` mode you may override `integration_provider`, `model_name`, `sampling_percentage`, `eval_scope`, `root_spans_only`, or `filter` per evaluator. (In the default `publish` mode these are created as **online drafts** in Datadog on confirmation — you review and enable them in the UI. Prefer offline SDK code or a JSON spec instead? Say so and I'll generate the confirmed suite that way.)
@@ -652,7 +652,7 @@ The generated `.py` file should follow this structure:
 ```python
 """
 Auto-generated evaluators for {ml_app}
-Generated: {YYYY-MM-DD} by eval-bootstrap
+Generated: {YYYY-MM-DD} by agent-observability-eval-bootstrap
 
 App profile: {LLM | RAG | Agent | Multi-agent}
 
@@ -798,7 +798,7 @@ After displaying the summary, offer notebook export.
 {
   "schema_version": "1",
   "generated_at": "<ISO 8601 UTC>",
-  "generated_by": "eval-bootstrap",
+  "generated_by": "agent-observability-eval-bootstrap",
   "app": {
     "ml_app": "<string>",
     "app_type": "LLM | RAG | Agent | Multi-agent",
@@ -1190,7 +1190,7 @@ Wrote {N} online evaluators to ml_app `{ml_app}`. **All published as drafts (`en
 
 {If any code-based proposals were dropped:}
 **Not published** (code-based, not supported by online evaluator API):
-- `{name}` ({type}) — ask me to emit it as offline SDK code, or run `/eval-bootstrap {ml_app} --sdk-code`.
+- `{name}` ({type}) — ask me to emit it as offline SDK code, or run `/agent-observability-eval-bootstrap {ml_app} --sdk-code`.
 
 ### Next Steps — review and activate in the UI
 
@@ -1203,7 +1203,7 @@ The drafts are intentionally not running yet. Walk through each one in the Datad
    - **Click into a sample span/trace** and use the test pane to dry-run the prompt against real data. Confirm the result matches your expectation.
 3. **Enable**: once each draft passes review, toggle it to enabled. Datadog starts scoring incoming spans immediately.
 4. **Wait for first scores**: with `sampling_percentage=10` (span scope) or `5` (trace / session scope), expect first results within minutes for high-traffic apps — except **session scope**, where the first result appears only after the session's 30-minute inactivity window closes.
-5. **Tune sampling/filter**: if results are noisy or volume is too high, reduce `sampling_percentage` or tighten the `filter` from the UI. Re-running `/eval-bootstrap {ml_app}` will round-trip the existing config before overwriting — your manual tweaks survive across reruns.
+5. **Tune sampling/filter**: if results are noisy or volume is too high, reduce `sampling_percentage` or tighten the `filter` from the UI. Re-running `/agent-observability-eval-bootstrap {ml_app}` will round-trip the existing config before overwriting — your manual tweaks survive across reruns.
 6. **Prefer offline code?** These evaluators run online in Datadog. If you'd rather iterate on the same suite as offline SDK code (`sdk_code`) or a portable JSON spec (`data_only`), just ask — I'll regenerate the **confirmed** suite without re-exploring.
 ```
 

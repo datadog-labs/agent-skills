@@ -41,9 +41,9 @@ description: >
 
 **Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:agent-observability-session-classify[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:agent-observability-session-classify:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:agent-observability-session-classify:start[3a9f1c2b] — Step 1: enumerate turn root spans for session abc-123`
 
-# Skill: eval-session-classify
+# Skill: agent-observability-session-classify
 
-Classification skill for Datadog Agent Observability sessions and traces. Produces a satisfaction verdict (`yes` / `partial` / `no`) with a brief reasoning string. Designed to be called standalone or by `eval-pipeline`.
+Classification skill for Datadog Agent Observability sessions and traces. Produces a satisfaction verdict (`yes` / `partial` / `no`) with a brief reasoning string. Designed to be called standalone or by `agent-observability-eval-pipeline`.
 
 ---
 
@@ -1039,7 +1039,7 @@ Compact block per unit:
 
 ### Step M3 — Emit summary
 
-After all units are classified, emit the summary. The `# Session Classification Summary` header is the **detection sentinel** for downstream skills (`eval-trace-rca`, `eval-pipeline`) — emit it exactly as shown:
+After all units are classified, emit the summary. The `# Session Classification Summary` header is the **detection sentinel** for downstream skills (`agent-observability-trace-rca`, `agent-observability-eval-pipeline`) — emit it exactly as shown:
 
 ```markdown
 # Session Classification Summary

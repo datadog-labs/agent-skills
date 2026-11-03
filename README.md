@@ -217,10 +217,10 @@ claude mcp add --scope user --transport http "datadog-llmo-mcp" 'https://mcp.dat
 
 ```
 # Analyze experiments
-experiment-analyzer <experiment_id>                         # single experiment
-experiment-analyzer <baseline_id> <candidate_id>            # compare two experiments
-experiment-analyzer <id(s)> <question>                      # ask a specific question
-experiment-analyzer <id(s)> [question] --output notebook    # export to Datadog notebook
+/agent-observability-experiment-analyzer <experiment_id>                         # single experiment
+/agent-observability-experiment-analyzer <baseline_id> <candidate_id>            # compare two experiments
+/agent-observability-experiment-analyzer <id(s)> <question>                      # ask a specific question
+/agent-observability-experiment-analyzer <id(s)> [question] --output notebook    # export to Datadog notebook
 
 # Root-cause why an app is failing
 What's wrong with <ml_app> based on its evals over the last 24h
@@ -228,9 +228,9 @@ Analyze eval failures for <eval_name> over the last week
 Look at the errors on <ml_app> over the last 24h
 
 # Generate evaluator code from production traces
-/eval-bootstrap <ml_app>                                    # cold start
-/eval-bootstrap <ml_app> [paste eval-trace-rca output here] # seeded from RCA
-/eval-bootstrap <ml_app> --data-only                        # emit JSON spec instead of Python SDK code
+/agent-observability-eval-bootstrap <ml_app>                                                    # cold start
+/agent-observability-eval-bootstrap <ml_app> [paste agent-observability-trace-rca output here] # seeded from RCA
+/agent-observability-eval-bootstrap <ml_app> --data-only                                        # emit JSON spec instead of Python SDK code
 
 # Bootstrap an experiment (Python SDK remains the default)
 /agent-observability-experiment-bootstrap                                                  # 3-record inline Python sample
@@ -243,7 +243,7 @@ Look at the errors on <ml_app> over the last 24h
 /agent-observability-online-experiment
 
 # Classify a session
-/eval-session-classify <session_id>
+/agent-observability-session-classify <session_id>
 
 # Guided end-to-end pipeline (6 narrated phases — classify → RCA → eval bootstrap → dataset → experiment → analyze)
 /agent-observability-eval-pipeline <ml_app>
