@@ -2,7 +2,7 @@
 name: dd-azure-integration
 description: Set up the Datadog Azure integration with Terraform - creates an Entra ID app registration and service principal, assigns Monitoring Reader across the chosen subscriptions and management groups, grants the Microsoft Graph permissions Datadog needs for resource discovery, and registers the tenant so Azure metrics and resource collection start flowing. Use when the user wants to monitor Azure VMs, App Service, SQL Database, or AKS, wants to connect an Azure subscription or management group or tenant to Datadog, or asks to set up or repair the Azure integration. Does not set up log forwarding.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,azure,integration,terraform,entra,cloud
@@ -426,8 +426,10 @@ Confirm to the user that their integration is configured and data will appear sh
 
 - **Concrete permissions the template needs** - "can create app registrations" is not enough, and a
   Contributor or Application Developer will get through discovery and then fail with 403 at apply:
-  - **Application Administrator** or **Global Administrator** in Entra ID, because
-    `azuread_app_role_assignment` grants Microsoft Graph app roles (admin consent).
+  - **Privileged Role Administrator** or **Global Administrator** in Entra ID, because
+    `azuread_app_role_assignment` grants Microsoft Graph app roles (admin consent). Application
+    Administrator and Cloud Application Administrator cannot consent to Microsoft Graph application
+    permissions, so they fail at apply.
   - `Microsoft.Authorization/roleAssignments/write` at **every** selected subscription and management-group
     scope - typically **User Access Administrator** or **Owner** there - for the Monitoring Reader
     assignments.
