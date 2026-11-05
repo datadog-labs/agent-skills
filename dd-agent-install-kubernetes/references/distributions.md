@@ -281,17 +281,29 @@ echo "Operator $csv ready"
 
 Create the API key secret **and** the `DatadogAgent` resource
 in the `openshift-operators` namespace - both must live where the operator was deployed so the
-CR can resolve `datadog-secret` and the operator picks up the CR. Either pin the namespace at
-apply time (`kubectl apply -n openshift-operators -f`) or add it to the manifest metadata:
+CR can resolve `datadog-secret` and the operator picks up the CR. The Secret is created only by the
+Phase 3 heredoc, with its namespace changed; it never goes into `datadog-agent.yaml` or any other
+saved file (a saved copy holds the literal `${DD_API_KEY}`, and applying it overwrites the real key):
 
-```yaml
+```bash
+for f in .env.local .env; do [ -f "$f" ] || continue; for k in DD_SITE DD_API_KEY DD_APP_KEY; do eval "[ -n \"\${$k:-}\" ]" && continue; v=$(grep -E "^$k=" "$f" | head -1 | cut -d= -f2- | tr -d '\r' | sed 's/^["'\'']//;s/["'\'']$//'); [ -n "$v" ] && export "$k=$v"; done; done
+: "${DD_API_KEY:?not set - run dd-account-setup (commercial sites) or supply it directly (government sites)}"
+kubectl apply -f - <<EOF || { echo "Secret creation FAILED - do NOT apply datadog-agent.yaml"; exit 1; }
 apiVersion: v1
 kind: Secret
 metadata:
   name: datadog-secret
   namespace: openshift-operators
-# ... rest of the Secret as in Phase 3 ...
----
+type: Opaque
+stringData:
+  api-key: "${DD_API_KEY}"
+EOF
+kubectl apply -n openshift-operators -f datadog-agent.yaml
+```
+
+`datadog-agent.yaml` holds only the `DatadogAgent`, with the namespace pinned in its metadata:
+
+```yaml
 apiVersion: datadoghq.com/v2alpha1
 kind: DatadogAgent
 metadata:
