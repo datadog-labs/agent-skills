@@ -32,7 +32,11 @@ If none exist, choose which file to **create** based on framework:
 
 ### Check for an existing key
 
-Check whether `DD_API_KEY` (or `DATADOG_API_KEY`) is already set to a non-empty value in the task environment or in the chosen env file (if it exists). If a non-empty key is already present, skip key creation and reuse it.
+Use the first non-empty `DD_API_KEY` (or `DATADOG_API_KEY`) found, in this order:
+
+1. The chosen env file (if it exists): reuse it as is.
+2. The task environment: write it and its `DD_SITE` to the env file with `printf 'DD_SITE=%s\nDD_API_KEY=%s\n' "${DD_SITE:-datadoghq.com}" "$DD_API_KEY" >> <env file>`, so the value never appears in your output.
+3. Otherwise, create a key with `CreateApiKey`.
 
 ### Write the key
 
