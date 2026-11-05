@@ -1,8 +1,8 @@
 ---
 name: dd-aws-storage-management
-description: Set up Datadog Storage Management for AWS S3 by configuring S3 Inventory on the buckets the user picks and provisioning the destination buckets, destination bucket policy, Datadog read policy, and Storage Management sync with the DataDog/storage-management-datadog/aws Terraform module, including multi-Region and SSE-KMS destinations and optional S3 access logs. Use when the user wants to set up Storage Management for their S3 buckets, monitor their S3 storage in Datadog, or enable S3 storage management. Does not connect a new AWS account to Datadog and does not deploy the Datadog Forwarder Lambda (that is `dd-aws-log-forwarding`). Requires an existing role-based Datadog AWS integration; run `dd-aws-integration` first if it is missing.
+description: Set up Datadog Storage Management for AWS S3 by configuring S3 Inventory on the buckets the user picks and provisioning the destination buckets, destination bucket policy, Datadog read policy, and Storage Management sync with the DataDog/storage-management-datadog/aws Terraform module, including multi-Region and SSE-KMS destinations and optional S3 access logs. Use when the user wants to set up Storage Management for their S3 buckets, monitor their S3 storage in Datadog, or enable S3 storage management. Does not connect a new AWS account to Datadog and does not deploy the Datadog Forwarder Lambda (that is `dd-aws-log-forwarding`). Commercial AWS partition only; there is no supported setup for AWS GovCloud or China. Requires an existing role-based Datadog AWS integration; run `dd-aws-integration` first if it is missing.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,aws,storage,storage-management,s3,s3-inventory,terraform
@@ -192,7 +192,9 @@ to the integration role, and there is no role here:
 The module and the policies in `references/terraform.md` hard-code `arn:aws:` ARNs, so they cannot target
 buckets in AWS GovCloud (`aws-us-gov`) or China (`aws-cn`). Check the selected account's `aws_partition`
 field in the response above, not the Datadog site. If it is anything other than `aws`, stop before any
-PATCH or Terraform and tell the user that this setup supports only the commercial AWS partition.
+PATCH or Terraform and tell the user that this setup supports only the commercial AWS partition. There is
+no supported workaround: do not suggest forking or editing the module, rewriting ARNs, or building the same
+setup by hand with the AWS CLI or API.
 
 Never pass an empty, null, or guessed `datadog_aws_integration_role_name`; the value has to come from the API
 response.
@@ -207,13 +209,16 @@ the user means.** Confirm the selected account before making any change (the res
 PATCHes below, and the Terraform apply). Record the selected account's `id`, `aws_account_id`, and
 `role_name` - you'll need them for the PATCH below and the Terraform configuration.
 
-If the user wants to add a **new** AWS account instead, complete the `dd-aws-integration` skill
-first, then return here.
+If the user wants to add a **new** AWS account instead, load the `dd-aws-integration` skill now and follow it through its own apply and verification, then return to the integration lookup at the start of Phase 1: select and confirm the newly added target, record its identifiers, and repeat every check after that lookup. Do not fold this setup into the integration's apply; start it only once the integration exists and the user has confirmed it.
 
 ### If no accounts are found
 
 Tell the user they need to set up the base AWS integration first. Ask if they'd like to do that now -
-if yes, complete the `dd-aws-integration` skill first, then return here.
+if yes, load the `dd-aws-integration` skill now and follow it in full through its own apply and
+verification (do not summarize it), then return to the integration lookup at the start of Phase 1: select
+and confirm the newly added account, record its identifiers, and repeat every check after that lookup. Do
+not fold this setup into the integration's apply; start it only once the integration exists and the user
+has confirmed it.
 
 ### Verify Resource Collection
 
@@ -234,7 +239,8 @@ grep -rnE --include='*.tf' --include='*.tf.json' 'datadog_integration_aws_accoun
   `extended_collection = true` in its `resources_config` block, and for metrics, `enabled = true` in
   `metrics_config` plus `AWS/S3` added to `namespace_filters.include_only` or removed from
   `namespace_filters.exclude_only` (keep every other namespace as it is). Still run the read-only S3 metric
-  check below to learn what has to change.
+  check below to learn what has to change. This includes an integration `dd-aws-integration` created
+  earlier in this session: its Terraform owns these settings, so never PATCH that account.
 - If nothing is found, ask the user, as part of the confirmation below, whether Terraform in another project
   or workspace manages this integration. If it does, do not PATCH here: tell the user to make the changes
   above in that project and apply them, then re-run the checks in this phase before continuing.
@@ -607,10 +613,14 @@ find . -maxdepth 1 -type f \( -name '*.tf' -o -name '*.tf.json' -o -name 'terraf
   in the same change, so the plan shows no destroy of the old logging. Otherwise defer access logs for that Region.
 - If the user has a modular layout, create a new file like `datadog-storage-management.tf`.
 
-**If no existing Terraform is found**, generate a standalone configuration. If the user just completed
-`dd-aws-integration`, an `aws` provider may already exist - reuse it only if its `region` matches a
-destination bucket's Region; otherwise add a Region-aliased provider (see "Multiple Regions"). The `datadog`
-provider is new and is always required.
+**If `dd-aws-integration` was just completed in this session**, its configuration is the existing
+Terraform: add the Storage Management resources to the same `main.tf` and reuse its `terraform` /
+`required_providers` block, `datadog` provider, and `local.datadog_site` instead of declaring them again.
+Reuse its `aws` provider only if its `region` matches a destination bucket's Region; otherwise add a
+Region-aliased provider (see "Multiple Regions").
+
+**If no existing Terraform is found**, generate a standalone configuration. The `datadog` provider is new
+and is always required.
 
 ### Generate Terraform HCL
 
