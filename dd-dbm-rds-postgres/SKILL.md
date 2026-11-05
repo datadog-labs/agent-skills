@@ -1,8 +1,8 @@
 ---
 name: dd-dbm-rds-postgres
-description: Set up Datadog Database Monitoring (DBM) for PostgreSQL on AWS RDS - enable pg_stat_statements on the instance's parameter group, then deploy a managed Agent with CloudFormation, provision one with Terraform, or configure an existing Agent, plus the read-only datadog monitoring user. Use when the user wants to set up Database Monitoring for an RDS Postgres database, monitor query performance on a Postgres RDS instance, enable DBM for Postgres on RDS, or use Terraform to set up DBM for an RDS Postgres database. Does not handle Aurora, RDS Multi-AZ DB clusters, or read replicas (point the user at the source writer or the DBM docs instead), and does not set up DBM for other engines. Requires the Datadog AWS integration for the AWS account that holds the instance; run `dd-aws-integration` first if it is missing.
+description: Set up Datadog Database Monitoring (DBM) for a standalone PostgreSQL instance on AWS RDS (not Aurora) - enable pg_stat_statements on the instance's parameter group, then deploy a managed Agent with CloudFormation, provision one with Terraform, or configure an existing Agent, plus the read-only datadog monitoring user. Use when the user wants to set up Database Monitoring for an RDS Postgres database, monitor query performance on a Postgres RDS instance, enable DBM for Postgres on RDS, or use Terraform to set up DBM for an RDS Postgres database. Not for Aurora PostgreSQL (including Serverless v2), RDS Multi-AZ DB clusters, or read replicas - do not use it to plan their setup; point the user at the source writer or the DBM docs instead - and does not set up DBM for other engines. Requires the Datadog AWS integration for the AWS account that holds the instance; run `dd-aws-integration` first if it is missing.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,database-monitoring,dbm,postgres,rds,aws,terraform
@@ -214,10 +214,13 @@ Rule out two kinds of instance before continuing:
   the write setup on either path (`CREATE ROLE` / `CREATE EXTENSION` / the explain function) fails against
   them. Point the user at the **source writer** (the `Replica` value) and run the setup there instead.
 
-If either applies, stop and tell the user **where to go instead** rather than leaving them at a dead end:
+If either applies, stop and tell the user **where to go instead** rather than leaving them at a dead end.
+Stopping means no executable setup at all for this target: no parameter-group change, reboot, secret,
+security-group rule, stack deploy, Agent config, or SQL. Give the redirect in prose.
 
 - **Read replica** (`Replica` set) - run this skill against the **source writer** (the `Replica` value),
-  which is the instance identifier of the primary.
+  which is the instance identifier of the primary. Do not continue with the writer yourself: changing a
+  different instance than the one the user named is their decision, so stop and let them rerun for it.
 - **Aurora / RDS Multi-AZ DB cluster, including Aurora Serverless v2** (`Cluster` set or
   `Engine=aurora-postgresql`) - this per-instance flow can't configure a cluster (different
   parameter-group model, separate writer/reader endpoints). Point the user at Datadog's DBM Postgres
