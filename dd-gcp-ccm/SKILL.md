@@ -2,7 +2,7 @@
 name: dd-gcp-ccm
 description: Set up Datadog Cloud Cost Management for GCP - enables the BigQuery and BigQuery Data Transfer APIs, walks the user through the Cloud Billing detailed-usage export to BigQuery, then uses Terraform to provision the GCS bucket and the predefined IAM role bindings Datadog documents for the Datadog service account, and registers the cost config through datadog_gcp_uc_config. Use when the user wants to track their GCP cloud costs, asks to set up a GCP billing export for Datadog, or asks to set up Cloud Cost Management for GCP. Does not create the GCP integration or the Datadog service account itself. Requires an existing Datadog GCP integration; run `dd-gcp-integration` first if it is missing.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,gcp,cost,ccm,cloud-cost-management,bigquery,billing,terraform,cloud
@@ -251,7 +251,7 @@ Handle the choice:
 
 - **(1)** - skip to Phase 4 to verify the config's status and report completion.
 - **(2)** - go back to the project list and ask again.
-- **(3)** - complete the `dd-gcp-integration` skill first, then return here.
+- **(3)** - load the `dd-gcp-integration` skill now and follow it through its own apply and verification, then return to the integration lookup at the start of Phase 1: select and confirm the newly added target, record its identifiers, and repeat every check after that lookup. Do not fold this setup into the integration's apply; start it only once the integration exists and the user has confirmed it. The CCM pieces that wait are the billing export dataset's access grant (`roles/bigquery.dataEditor` for the Datadog service account) and `datadog_gcp_uc_config`: write them in their own file and apply them only after the integration exists and the billing export dataset has been created.
 
 If no entries match, proceed to Phase 2. The export project can differ from the project selected above,
 so this check is repeated in Phase 2, step 6, once the export project, dataset and billing account are
@@ -259,8 +259,7 @@ known.
 
 ### If no accounts are found
 
-Tell the user they need to set up the GCP integration first. If yes, complete the
-`dd-gcp-integration` skill first, then return here.
+Tell the user they need to set up the GCP integration first. If yes, load the `dd-gcp-integration` skill now and follow it through its own apply and verification, then return to the integration lookup at the start of Phase 1: select and confirm the newly added target, record its identifiers, and repeat every check after that lookup. Do not fold this setup into the integration's apply; start it only once the integration exists and the user has confirmed it. The CCM pieces that wait are the billing export dataset's access grant (`roles/bigquery.dataEditor` for the Datadog service account) and `datadog_gcp_uc_config`: write them in their own file and apply them only after the integration exists and the billing export dataset has been created.
 
 ## Phase 2: Collect Configuration
 
