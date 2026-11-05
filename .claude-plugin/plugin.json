@@ -66,6 +66,7 @@
     "./dd-gcp-integration/",
     "./dd-gcp-log-forwarding/",
     "./dd-instrument-llmo/",
+    "./dd-instrument-product-analytics/",
     "./dd-instrument-rum/",
     "./dd-logs/",
     "./dd-monitors/",
