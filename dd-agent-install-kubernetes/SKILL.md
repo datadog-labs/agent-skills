@@ -151,8 +151,11 @@ When AWS, GCP, or Azure CLIs are available (`command -v <cli> >/dev/null 2>&1` s
 read-only cluster inventory - `aws eks list-clusters`, `gcloud container clusters list`, `az aks list` - to
 confirm the cluster the user named and pull its identifiers. Group candidates by provider and
 account, project, or subscription. If more than one cluster or context matches what the user
-described, show the candidates and ask which one to target. Never merge provider-specific settings
-from different clusters into one manifest.
+described, show the candidates and ask which one to target, then stop. Until the user picks one,
+write nothing that depends on the choice: no manifest or Helm values for any candidate, and no
+credentials or install commands. Once the target is known (including when the user named a single
+cluster), continue normally, including the current-context check and confirmation below.
+Never merge provider-specific settings from different clusters into one manifest.
 
 ### Distribution
 
