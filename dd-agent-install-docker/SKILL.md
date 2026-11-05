@@ -2,7 +2,7 @@
 name: dd-agent-install-docker
 description: Install the Datadog Agent on a Docker host - standalone Docker (Linux or Windows) or Docker Compose - with infrastructure metrics, container logs, APM trace intake, and DogStatsD on by default, plus optional live processes, tags, hostname, proxy, and container filtering, keeping the API key in a restricted env file rather than on the command line. Use when the user has Docker containers on a single server, wants to install Datadog on their Docker host, or wants to set up Datadog with Docker Compose. Does not install the Agent on Kubernetes or directly on a Linux, macOS, or Windows host (use dd-agent-install-kubernetes, dd-agent-install-linux, dd-agent-install-macos, or dd-agent-install-windows). Requires a Datadog account with a valid API key and application key; run `dd-account-setup` first if they are missing.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,agent,install,docker,docker-compose,container,infrastructure,logs,apm
@@ -443,6 +443,24 @@ resp=$(printf 'DD-API-KEY: %s\nDD-APPLICATION-KEY: %s\n' "$DD_API_KEY" "$DD_APP_
 code=$(printf '%s' "$resp" | tail -1); body=$(printf '%s' "$resp" | sed '$d')
 [ "$code" = "200" ] || { echo "metric query failed with HTTP $code - that is NOT 'metrics still propagating':"; printf '%s\n' "$body"; exit 1; }
 printf '%s\n' "$body"
+```
+
+On a Windows container host, run the same query from PowerShell. The keys stay in-process in
+`-Headers`; never pass them as arguments to `curl.exe` or any other program:
+
+```powershell
+$credDir = '<DD_CRED_DIR_FROM_PHASE_0>'   # <- replace with the DD_CRED_DIR Phase 0 printed, in its Windows form.
+if (-not (Test-Path $credDir)) { throw "Set credDir to the directory Phase 0 printed - stop." }
+foreach ($f in "$credDir\.env.local", "$credDir\.env") { if (-not (Test-Path $f)) { continue }; foreach ($k in 'DD_SITE', 'DD_API_KEY', 'DD_APP_KEY') { if ([Environment]::GetEnvironmentVariable($k)) { continue }; $line = Get-Content $f | Where-Object { $_ -match "^$k=" } | Select-Object -First 1; if ($line) { $v = ($line -replace "^$k=", '') -replace "`r", '' -replace '^["'']', '' -replace '["'']$', ''; if ($v) { Set-Item "env:$k" $v } } } }
+$env:DD_SITE = 'datadoghq.com'   # <- replace with the site confirmed in Phase 0.
+if (-not $env:DD_API_KEY) { throw "DD_API_KEY not set - run dd-account-setup (commercial sites) or supply it directly (government sites)" }
+if (-not $env:DD_APP_KEY) { throw "DD_APP_KEY not set - run dd-account-setup (commercial sites) or supply it directly (government sites)" }
+Start-Sleep -Seconds 30
+$now = [int]([datetime]::UtcNow - [datetime]'1970-01-01').TotalSeconds
+$query = [uri]::EscapeDataString("avg:docker.cpu.usage{host:<HOSTNAME>} by {container_name}")
+Invoke-RestMethod -Method Get -Uri "https://api.$env:DD_SITE/api/v1/query?from=$($now - 900)&to=$now&query=$query" `
+  -Headers @{ "DD-API-KEY" = $env:DD_API_KEY; "DD-APPLICATION-KEY" = $env:DD_APP_KEY } |
+  ConvertTo-Json -Depth 20
 ```
 
 Substitute `<HOSTNAME>` with the hostname the Agent reported in Phase 6. Without the host filter,
