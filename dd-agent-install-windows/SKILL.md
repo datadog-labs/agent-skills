@@ -2,7 +2,7 @@
 name: dd-agent-install-windows
 description: Install the Datadog Agent on Windows Server hosts - a single machine or a fleet - with support for cloud rollouts (AWS Systems Manager, GCP VM Manager, Azure Run Command), MSI properties, FIPS, custom tags, and advanced configuration, with infrastructure metrics, logs, and APM trace intake on by default. Use when the user wants to install the Datadog Agent on a Windows server, deploy Datadog to their Windows VMs, or set up the Datadog Agent on Windows Server 2022 or another Windows Server version. Does not install the Agent on Linux, macOS, Docker, or Kubernetes (use dd-agent-install-linux, dd-agent-install-macos, dd-agent-install-docker, or dd-agent-install-kubernetes) and does not connect a cloud provider integration. Requires a Datadog account with a valid API key and application key; if they are missing, run `dd-account-setup` first on commercial sites, or supply them directly on government sites.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,agent,install,host,windows,infrastructure,logs,apm
@@ -55,6 +55,22 @@ printf 'DD-API-KEY: %s\n' "$DD_API_KEY" \
 printf 'DD-API-KEY: %s\nDD-APPLICATION-KEY: %s\n' "$DD_API_KEY" "$DD_APP_KEY" \
   | curl -sS --max-time 20 -o /dev/null -w "current_user: HTTP %{http_code}\n" \
       -H @- "https://api.${DD_SITE}/api/v2/current_user"
+```
+
+When the install runs on this Windows machine and the shell is PowerShell, run the same preflight in
+PowerShell instead - a bash block cannot run there. The keys stay in-process in `-Headers`, never on a
+command line:
+
+```powershell
+foreach ($f in '.env.local', '.env') { if (-not (Test-Path $f)) { continue }; foreach ($k in 'DD_SITE', 'DD_API_KEY', 'DD_APP_KEY') { if ([Environment]::GetEnvironmentVariable($k)) { continue }; $line = Get-Content $f | Where-Object { $_ -match "^$k=" } | Select-Object -First 1; if ($line) { $v = ($line -replace "^$k=", '') -replace "`r", '' -replace '^["'']', '' -replace '["'']$', ''; if ($v) { Set-Item "env:$k" $v } } } }
+if (-not $env:DD_SITE) { $env:DD_SITE = 'datadoghq.com' }
+$sites = 'datadoghq.com', 'us3.datadoghq.com', 'us5.datadoghq.com', 'datadoghq.eu', 'ap1.datadoghq.com', 'ap2.datadoghq.com', 'uk1.datadoghq.com', 'ddog-gov.com', 'us2.ddog-gov.com'
+if ($sites -notcontains $env:DD_SITE) { throw "DD_SITE=$env:DD_SITE is not a Datadog site - stopping before any key is sent" }
+"DD_SITE=$env:DD_SITE"
+"DD_API_KEY=$(if ($env:DD_API_KEY) { 'set' } else { 'UNSET' })   DD_APP_KEY=$(if ($env:DD_APP_KEY) { 'set' } else { 'UNSET' })"
+if (-not $env:DD_API_KEY) { throw "DD_API_KEY not set - see the table below" }
+try { Invoke-RestMethod -Method Get -TimeoutSec 20 -Uri "https://api.$env:DD_SITE/api/v1/validate" -Headers @{ "DD-API-KEY" = $env:DD_API_KEY } | Out-Null; "validate:     HTTP 200" } catch { "validate:     HTTP $([int]$_.Exception.Response.StatusCode)" }
+if ($env:DD_APP_KEY) { try { Invoke-RestMethod -Method Get -TimeoutSec 20 -Uri "https://api.$env:DD_SITE/api/v2/current_user" -Headers @{ "DD-API-KEY" = $env:DD_API_KEY; "DD-APPLICATION-KEY" = $env:DD_APP_KEY } | Out-Null; "current_user: HTTP 200" } catch { "current_user: HTTP $([int]$_.Exception.Response.StatusCode)" } }
 ```
 
 | Result | Meaning | What to do |
@@ -129,7 +145,11 @@ Determine:
 
 - Whether the target is this machine, remote hosts, or cloud VMs.
 - The Windows Server version and architecture.
-- Whether this is one host or a fleet.
+- Whether this is one host or a fleet. **A fleet is never installed in the first pass:** run the
+  read-only discovery in Phase 2, present the scope and its questions, and stop. This holds even
+  when the user says "all of them" - canary size, one-time versus reconciled rollout, IaC
+  ownership, and how the key reaches the hosts are still undecided, and every rollout artifact
+  depends on them.
 - The Datadog site and optional environment or global tags.
 - Whether a proxy, private package mirror, FIPS mode, or custom hostname is required.
 - Which non-default products beyond the three pillars the user wants: live process collection.
@@ -149,6 +169,7 @@ MSI.
 
 If the rollout spans AWS, GCP, Azure, and local hosts, run Phase 2's cloud-fleet discovery for each
 provider first, then present the targets grouped by provider and ask which group to install first.
+Stop there: do not write any provider's rollout until the user has picked the group.
 Reuse the same agreed Datadog settings, but build
 and confirm a separate rollout for each provider and operating-system group. Linux targets in the
 same fleet use the Linux installation flow (`dd-agent-install-linux`).
@@ -178,6 +199,10 @@ Show the candidate scope and ask the user to confirm:
 - Canary size and rollout order.
 - One-time install or continuously reconciled policy.
 - Existing Terraform or configuration-management ownership.
+
+Stop after presenting the scope and these questions. Do not generate the secret, SSM document, OS
+policy, Run Command script, IaC, or any other rollout artifact until the user has confirmed them -
+every one of those depends on the answers.
 
 Use the user's existing IaC or management mechanism when one is present. Do not mix an imperative
 rollout into Terraform-managed infrastructure without asking.

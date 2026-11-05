@@ -2,7 +2,7 @@
 name: dd-agent-install-linux
 description: Install the Datadog Agent on Linux hosts - a single machine or a fleet - with support for cloud rollouts (AWS Systems Manager, GCP VM Manager, Azure Run Command), remote configuration management, proxy, FIPS, custom tags, and advanced configuration, with infrastructure metrics, logs, and the APM trace receiver on by default and host Single Step Instrumentation only when the user asks (for an SSI-first request, use `dd-apm/linux-ssi` `agent-install`). Use when the user wants to monitor their Linux servers, install the Datadog Agent on an Ubuntu or other Linux host, or roll the Agent out to an EC2 or other cloud VM fleet without SSHing in. Does not install the Agent on Windows, macOS, Docker, or Kubernetes (use dd-agent-install-windows, dd-agent-install-macos, dd-agent-install-docker, or dd-agent-install-kubernetes) and does not connect a cloud provider integration. Requires a Datadog account with a valid API key and application key; run `dd-account-setup` first if they are missing.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,agent,install,host,linux,infrastructure,logs,apm
@@ -114,7 +114,11 @@ Determine:
 
 - Whether the target is this machine, remote on-premises hosts, or cloud VMs.
 - The Linux distribution and architecture.
-- Whether this is one host or a fleet.
+- Whether this is one host or a fleet. **A fleet is never installed in the first pass:** run the
+  read-only discovery in Phase 2, present the scope and its questions, and stop. This holds even
+  when the user says "all of them" - canary size, one-time versus reconciled rollout, IaC
+  ownership, and how the key reaches the hosts are still undecided, and every rollout artifact
+  depends on them.
 - The Datadog site and optional environment or global tags.
 - Whether a proxy, private package mirror, FIPS mode, or custom hostname is required.
 - Which non-default products beyond the three pillars the user wants: live process collection or
@@ -142,6 +146,7 @@ boolean on the standard installer.
 
 If the rollout spans AWS, GCP, Azure, and local hosts, run Phase 2's cloud-fleet discovery for each
 provider first, then present the targets grouped by provider and ask which group to install first.
+Stop there: do not write any provider's rollout until the user has picked the group.
 Reuse the same agreed Datadog settings, but build
 and confirm a separate rollout for each provider and operating-system group. Windows targets in
 the same fleet use the Windows installation flow (`dd-agent-install-windows`).
@@ -170,6 +175,10 @@ Show the candidate scope and ask the user to confirm:
 - Canary size and rollout order.
 - One-time install or continuously reconciled policy.
 - Existing Terraform or configuration-management ownership.
+
+Stop after presenting the scope and these questions. Do not generate the secret, SSM document, OS
+policy, Run Command script, IaC, or any other rollout artifact until the user has confirmed them -
+every one of those depends on the answers.
 
 Use the user's existing IaC or management mechanism when one is present. Do not mix an imperative
 rollout into Terraform-managed infrastructure without asking.
