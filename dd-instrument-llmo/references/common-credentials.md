@@ -32,7 +32,7 @@ If none exist, choose which file to **create** based on framework:
 
 ### Check for an existing key
 
-Read the chosen env file (if it exists) and check whether `DD_API_KEY` (or `DATADOG_API_KEY`) is already set to a non-empty value. If a non-empty key is already present, skip key creation and reuse it.
+Check whether `DD_API_KEY` (or `DATADOG_API_KEY`) is already set to a non-empty value in the task environment or in the chosen env file (if it exists). If a non-empty key is already present, skip key creation and reuse it.
 
 ### Write the key
 
