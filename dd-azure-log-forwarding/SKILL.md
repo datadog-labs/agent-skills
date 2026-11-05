@@ -2,7 +2,7 @@
 name: dd-azure-log-forwarding
 description: Set up automated Azure log forwarding to Datadog by running Datadog's official Log Forwarding Orchestrator (LFO) install script through the Azure CLI - deploys the managed control plane that auto-discovers resources across the monitored subscriptions and provisions and scales the log forwarders itself, with no per-resource diagnostic settings. Use when the user wants to forward Azure logs to Datadog, send Azure resource logs to Datadog, or set up Azure log forwarding. Does not generate Terraform and does not create the Azure integration or set up metrics collection. Requires the Datadog Azure integration; run `dd-azure-integration` first if it is missing.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,azure,logs,log-forwarding,lfo,cloud
@@ -215,7 +215,10 @@ destructive in two ways. Settings are replaced, not merged: leaving out `--resou
 `--pii-scrubber-rules` sends an empty value, which clears the tag filters and PII scrubber rules already
 in place. And every subscription the installation monitors today that is missing from the new list
 loses its role assignments, and the installer deletes the resource group named like the control-plane
-resource group in that subscription. So read the current state before confirming. This block is
+resource group in that subscription. So read the current state before confirming, and always run this
+check before planning any change to an existing installation - including a request to stop forwarding
+from one subscription. Its result decides what may follow; in particular, if the subscription to drop
+hosts the control plane, the result is a stop (see below), not a reinstall. This block is
 read-only on Azure. It writes the current tag filters and PII rules to two local files, which Phase 3
 passes back to the installer, and never prints the API key. It also checks where an existing
 installation sends logs: the installer's update path keeps the stored Datadog site and API key and
@@ -327,8 +330,11 @@ EOF
   resource group named like the control plane in every removed subscription, and in the control-plane
   subscription that resource group is the control plane, so removing it would break forwarding for
   every remaining subscription. It cannot be removed through an installer update, even with the user's
-  approval. Keep it in the monitored list; to stop collecting its logs, use a resource tag filter or
-  uninstall the whole installation instead.
+  approval. Keep it in the monitored list and stop here: write no installer command, delete nothing by
+  hand, and do not move the control plane. Offer a resource tag filter (all subscriptions stay monitored;
+  only resources matching the filter forward) as the way to cut its logs, and ask which tags to use.
+  Uninstalling the whole installation is the only other option; mention it, but never draft it unless
+  the user separately chooses it - it stops forwarding for every subscription.
 - **`MULTIPLE` or an `az` failure** - stop and surface the message.
 
 ## Phase 3: Run the Installer
