@@ -2,7 +2,7 @@
 name: dd-agent-install-kubernetes
 description: Install the Datadog Agent on a Kubernetes cluster - Amazon EKS (standard or Fargate profiles), Azure AKS, Google GKE (standard or Autopilot), OpenShift, Oracle OKE, VMware Tanzu (TKG), Rancher (RKE2/K3s), or self-managed - through the Datadog Operator (kubectl/Helm), the Datadog Helm chart, or Terraform, with metrics, logs, and APM trace intake on by default, Single Step Instrumentation off unless the user asks, and optional products; for an SSI-first install use `dd-apm/k8s-ssi` `agent-install`. Use when the user is running a Kubernetes cluster on GKE, EKS, AKS, OpenShift, OKE, or TKG, asks to install or set up the Datadog Agent on Kubernetes, wants to install the Agent with Terraform, or wants to monitor their Kubernetes pods. Does not connect a cloud provider integration or install the Agent on standalone hosts or plain Docker. Requires a Datadog account with a valid API key and application key; run `dd-account-setup` first if they are missing.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,agent,kubernetes,k8s,eks,aks,gke,openshift,oke,tkg,rancher,terraform
@@ -151,8 +151,14 @@ When AWS, GCP, or Azure CLIs are available (`command -v <cli> >/dev/null 2>&1` s
 read-only cluster inventory - `aws eks list-clusters`, `gcloud container clusters list`, `az aks list` - to
 confirm the cluster the user named and pull its identifiers. Group candidates by provider and
 account, project, or subscription. If more than one cluster or context matches what the user
-described, show the candidates and ask which one to target. Never merge provider-specific settings
-from different clusters into one manifest.
+described, show the candidates and ask which one to target, then stop. Until the user picks one,
+write nothing that depends on the choice: no manifest or Helm values for any candidate, and no
+credentials or install commands. Once the target is known (including when the user named a single
+cluster), continue normally, including the current-context check and confirmation below. A mismatch
+between the cluster or distribution the user named and the current kubectl context or the discovered
+nodes is the same kind of stop: report it and ask, and do not draft a manifest for whichever context
+happens to be current.
+Never merge provider-specific settings from different clusters into one manifest.
 
 ### Distribution
 
@@ -586,7 +592,9 @@ create neither the Secret nor the `DatadogAgent`.
 
 After confirmation, create the Secret and apply the CR in one block. The heredoc piped into
 `kubectl apply -f -` keeps the key off the command line, `ps` output, and shell history
-(`--from-literal` would put it in all three). On EKS Fargate, run the Fargate Secret block from
+(`--from-literal` would put it in all three). The Secret exists only in this heredoc: never add it, an `apiKey:`
+field, or a `${DD_API_KEY}` reference to `datadog-agent.yaml` or any other saved file, on any
+distribution (OpenShift included). On EKS Fargate, run the Fargate Secret block from
 *Operator path* in `references/distributions.md` in place of the Secret part, then apply the CR; it
 also writes the Cluster Agent `token` key and the workload-namespace copies.
 

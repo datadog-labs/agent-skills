@@ -2,7 +2,7 @@
 name: dd-oci-ccm
 description: Set up Datadog Cloud Cost Management for Oracle Cloud Infrastructure (OCI) by enabling cost collection on an integrated parent tenancy - an API toggle on the existing tenancy integration, with no Terraform, storage buckets, exports or extra IAM policies. Use when the user wants to track their OCI cloud costs or asks to set up Cloud Cost Management for OCI. Does not create the OCI tenancy integration itself and does not provision any infrastructure. Requires an existing Datadog OCI integration; run `dd-oci-integration` first if it is missing.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,oci,cost,ccm,cloud-cost-management,cloud
@@ -174,12 +174,11 @@ After the user picks, handle their choice:
   `true`, skip to Phase 3 to verify and report completion. If it is not, tell the user resource
   collection is off and offer to enable it through Phase 2 (which also leaves CCM on); if they decline,
   skip to Phase 3. If they intended a different tenancy, ask again.
-- **A new tenancy** - complete the `dd-oci-integration` skill first, then return here.
+- **A new tenancy** - load the `dd-oci-integration` skill now and follow it through its own apply and verification, then return to the integration lookup at the start of Phase 1: select and confirm the newly added target, record its identifiers, and repeat every check after that lookup. The cost-collection PATCH in Phase 2 is a separate step: send it only after that lookup has been re-run and the new tenancy has been selected and confirmed.
 
 ### If no tenancies are found
 
-Tell the user they need to set up the OCI integration first. If yes, complete the
-`dd-oci-integration` skill first, then return here.
+Tell the user they need to set up the OCI integration first. If yes, load the `dd-oci-integration` skill now and follow it through its own apply and verification, then return to the integration lookup at the start of Phase 1: select and confirm the newly added target, record its identifiers, and repeat every check after that lookup. The cost-collection PATCH in Phase 2 is a separate step: send it only after that lookup has been re-run and the new tenancy has been selected and confirmed.
 
 ## Phase 2: Enable Cost Collection
 
