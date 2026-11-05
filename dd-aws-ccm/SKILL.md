@@ -2,7 +2,7 @@
 name: dd-aws-ccm
 description: Set up Datadog Cloud Cost Management for AWS by configuring a Cost and Usage Report - either CUR 2.0 (recommended) or a Legacy CUR - and provisioning the S3 bucket, bucket policy, IAM read policy, role attachment, and Datadog registration with Terraform. Use when the user wants to track their AWS cloud costs, set up cost and usage reports, set up Cloud Cost Management (CCM) for AWS, set up CCM with CUR 2.0, or connect an AWS Data Export to Datadog. Does not connect a new AWS account to Datadog and does not set up cost management for other clouds. Requires an existing role-based Datadog AWS integration; run `dd-aws-integration` first if it is missing.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,aws,cost,ccm,cur,cur2,terraform
@@ -214,7 +214,7 @@ curl -H @- -s -X GET "https://api.${DD_SITE}/api/v2/integration/aws/accounts?aws
 
 The `aws_account_id` query parameter filters server-side and is the only reliable way to reach an
 account beyond the first 100. An empty `data` array means no integration exists for that account -
-complete the `dd-aws-integration` skill first, then return here.
+load the `dd-aws-integration` skill now and follow it through its own apply and verification, then return here and repeat the lookup above. Do not fold this setup into the integration's apply; start it only once the integration exists and the user has confirmed it.
 
 ### If accounts are found
 
@@ -234,13 +234,12 @@ change (the resource-collection PATCH and the Terraform apply). For example:
 Record the selected account's `id`, `aws_account_id`, and `auth_config.role_name` from the response - you'll need
 all three for the Terraform configuration.
 
-If the user wants to add a **new** AWS account instead, complete the `dd-aws-integration` skill
-first, then return here to continue with CCM.
+If the user wants to add a **new** AWS account instead, load the `dd-aws-integration` skill now and follow it through its own apply and verification, then return here and repeat the lookup above. Do not fold this setup into the integration's apply; start it only once the integration exists and the user has confirmed it.
 
 ### If no accounts are found
 
 Tell the user they need to set up the base AWS integration first. Ask if they'd like to do that
-now - if yes, complete the `dd-aws-integration` skill first, then return here to continue with CCM.
+now - if yes, load the `dd-aws-integration` skill now and follow it through its own apply and verification, then return here and repeat the lookup above. Do not fold this setup into the integration's apply; start it only once the integration exists and the user has confirmed it.
 
 ### Verify Resource Collection
 
@@ -346,7 +345,7 @@ Handle the choice:
 
 - **(1)** - skip to Phase 4 to verify and report completion.
 - **(2)** - go back to the account list and ask again.
-- **(3)** - complete the `dd-aws-integration` skill first, then return here.
+- **(3)** - load the `dd-aws-integration` skill now and follow it through its own apply and verification, then return here and repeat the lookup above. Do not fold this setup into the integration's apply; start it only once the integration exists and the user has confirmed it.
 
 Datadog supports **one Cost and Usage Report per member account**, so an existing config of either
 type means the account is already onboarded. Do not offer to add a second report alongside it.
