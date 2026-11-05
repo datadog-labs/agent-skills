@@ -2,7 +2,7 @@
 name: dd-aws-log-forwarding
 description: Set up AWS log forwarding to Datadog with Terraform - deploys the Datadog Forwarder Lambda in the user's AWS account, seeds the Datadog API key into a Secrets Manager secret out-of-band so it never lands in Terraform state, and registers the forwarder ARN on the existing AWS integration so Datadog automatically subscribes CloudWatch log groups and S3 buckets. Use when the user wants to forward AWS logs to Datadog, send CloudWatch logs to Datadog, or set up the Datadog Forwarder Lambda. Does not create the AWS integration itself or set up metrics collection. Requires the Datadog AWS integration (datadog_integration_aws_account); run `dd-aws-integration` first if it is missing.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,aws,logs,log-forwarding,lambda,terraform,cloud
@@ -156,8 +156,9 @@ printf '%s\n' "$body"
 - **The account ID appears in the response** - the integration exists in Datadog. Before continuing,
   confirm that the Terraform project you are in actually manages it (next block).
 - **The account ID is missing** (or the list is empty) - stop. Tell the user the AWS integration is not
-  set up yet, run the **dd-aws-integration** skill, then return here and start again at Phase 0. Do not
-  create the integration from this skill.
+  set up yet, run the **dd-aws-integration** skill through its own apply and verification, then return
+  here and start again at Phase 0. Do not create the integration from this skill, and do not put the
+  forwarder in the integration's Terraform apply.
 - **The lookup failed** (non-`200`) - surface the response; don't treat it as "not connected".
 
 Then, from the integration's Terraform project, check that it holds the resource Phase 3 edits, and
