@@ -2,7 +2,7 @@
 name: dd-agent-install-kubernetes
 description: Install the Datadog Agent on a Kubernetes cluster - Amazon EKS (standard or Fargate profiles), Azure AKS, Google GKE (standard or Autopilot), OpenShift, Oracle OKE, VMware Tanzu (TKG), Rancher (RKE2/K3s), or self-managed - through the Datadog Operator (kubectl/Helm), the Datadog Helm chart, or Terraform, with metrics, logs, and APM trace intake on by default, Single Step Instrumentation off unless the user asks, and optional products; for an SSI-first install use `dd-apm/k8s-ssi` `agent-install`. Use when the user is running a Kubernetes cluster on GKE, EKS, AKS, OpenShift, OKE, or TKG, asks to install or set up the Datadog Agent on Kubernetes, wants to install the Agent with Terraform, or wants to monitor their Kubernetes pods. Does not connect a cloud provider integration or install the Agent on standalone hosts or plain Docker. Requires a Datadog account with a valid API key and application key; run `dd-account-setup` first if they are missing.
 metadata:
-  version: "1.0.1"
+  version: "1.0.2"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,agent,kubernetes,k8s,eks,aks,gke,openshift,oke,tkg,rancher,terraform
@@ -17,6 +17,10 @@ You are helping a user install the Datadog Agent on a Kubernetes cluster.
 Per-distribution manifest and values changes live in **`references/distributions.md`**, the Terraform
 install path in **`references/terraform.md`**, and FIPS, private registries, APM library pinning, and
 namespace scoping in **`references/advanced.md`**. Read the relevant file when a step below points to it.
+
+## Stopping
+
+Some steps below end in a stop: no target cluster chosen yet when discovery finds more than one candidate, and a current kubectl context or node set that does not match the cluster the user named (Phase 1). Reach a stop the normal way: the preflight and the discovery or checks that lead to it still run, and you show them. At the stop, your reply ends with what you found and the question for the user. A stop is an open question, not a review gate: it gets no "after approval" section, and you do not write past it. Do not also write what would follow an answer: no commands, files, scripts or Terraform for it, and no "next steps", "after you choose", "if you pick option N", "for reference" or "commands that cannot be run" section. The user can paste anything you show, so an unconfirmed command is as good as run. Write the next steps after the user answers.
 
 ## Running another skill
 

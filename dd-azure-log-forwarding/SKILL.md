@@ -2,7 +2,7 @@
 name: dd-azure-log-forwarding
 description: Set up automated Azure log forwarding to Datadog by running Datadog's official Log Forwarding Orchestrator (LFO) install script through the Azure CLI - deploys the managed control plane that auto-discovers resources across the monitored subscriptions and provisions and scales the log forwarders itself, with no per-resource diagnostic settings. Use when the user wants to forward Azure logs to Datadog, send Azure resource logs to Datadog, or set up Azure log forwarding. Does not generate Terraform and does not create the Azure integration or set up metrics collection. Requires the Datadog Azure integration; run `dd-azure-integration` first if it is missing.
 metadata:
-  version: "1.0.1"
+  version: "1.0.2"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,azure,logs,log-forwarding,lfo,cloud
@@ -25,6 +25,10 @@ expressible as static resources), so the correct tool is Datadog's official inst
 the Azure CLI, not a hand-maintained Terraform reimplementation that would drift the moment the LFO
 changes. The script is public, in `DataDog/integrations-management` (`azure/logging_install`); Phase 3
 runs a pinned release of it, verified by checksum.
+
+## Stopping
+
+Some steps below end in a stop: an existing-installation check (Phase 2) whose result is a stop, such as dropping the subscription that hosts the control plane. Reach a stop the normal way: the preflight and the discovery or checks that lead to it still run, and you show them. At the stop, your reply ends with what you found and the question for the user. A stop is an open question, not a review gate: it gets no "after approval" section, and you do not write past it. Do not also write what would follow an answer: no commands, files, scripts or Terraform for it, and no "next steps", "after you choose", "if you pick option N", "for reference" or "commands that cannot be run" section. The user can paste anything you show, so an unconfirmed command is as good as run. Write the next steps after the user answers.
 
 ## Running another skill
 
