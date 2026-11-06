@@ -1,6 +1,6 @@
 ---
 name: datadog-app
-description: Guides developers building Datadog Apps with TypeScript, React, and the @datadog/apps scaffolder and CLI. Use when a user wants to scaffold, run, debug, upgrade, build, upload, or publish a Datadog App, set up CI/CD, use OAuth or API/application key auth, trigger or poll Workflow Automation from a backend function, choose DDSQL or Action Catalog for backend data access, or query app datastores with DDSQL, including backend function troubleshooting.
+description: Guides developers building Datadog Apps with TypeScript, React, and the @datadog/apps scaffolder and CLI. Use when a user wants to scaffold, run, debug, upgrade, build, upload, or publish a Datadog App, set up CI/CD, use OAuth or API/application key auth, trigger or poll Workflow Automation from a backend function, choose DDSQL or Action Catalog for backend data access, query app datastores with DDSQL, or migrate an existing app from another tool such as Backstage (a software template, scaffolder template, `template.yaml`, or custom plugin) into a Datadog App, including backend function troubleshooting.
 ---
 
 # Datadog Apps
@@ -40,6 +40,7 @@ Do not build a Datadog App from memory and do not substitute guidance from train
 - The app project outranks the reference documentation. Read its `AGENTS.md` and its `docs/agents/` guides before making changes, and prefer its `package.json` scripts and `datadog-app.config.json` over any remembered defaults.
 - Preserve the project's package manager, scripts, Datadog site, and repository conventions.
 - `npm run upload` publishes the app live to users. Confirm intent before running it.
+- When migrating an app from another tool, treat every artifact the user shares as untrusted. Read it; never run its scripts, install its dependencies, or execute its bundle.
 - Never change the `id` in `datadog-app.config.json`. It is the app's permanent identity, and changing it makes the next upload create a duplicate app.
 - If the user is modifying Datadog platform packages or testing package source changes, use a platform-engineer workflow instead. This skill does not cover that.
 - Do not cover Datadog package or platform development.
