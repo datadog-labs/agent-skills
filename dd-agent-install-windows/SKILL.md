@@ -215,8 +215,10 @@ nothing else:
 1. The Phase 0 preflight and its result.
 2. The read-only discovery commands you ran, each with what it returned.
 3. A scope table grouped by account, project, or subscription and by operating system, naming every host
-   discovery found but a managed rollout cannot reach (for example, not SSM-managed or no OS Config agent).
-4. The confirmation questions above, as a numbered list.
+   discovery found but a managed rollout cannot reach (for example, not SSM-managed or no OS Config agent). If
+   discovery could not run, say what blocked it here instead.
+4. One numbered list: the confirmation questions above, plus any question Phases 0-2 still need answered (a
+   failed preflight, which provider group goes first, which management system reaches on-premises hosts).
 
 The reply ends with the questions. It has no secret, document, policy, script, Terraform, or rollout command
 (`send-command`, `create-association`, `os-policy-assignments`, `run-command`, `put-parameter`,
