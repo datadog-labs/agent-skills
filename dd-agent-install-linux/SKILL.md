@@ -185,6 +185,19 @@ Stop after presenting the scope and these questions. Do not generate the secret,
 policy, Run Command script, IaC, or any other rollout artifact until the user has confirmed them -
 every one of those depends on the answers.
 
+**Fleet reply shape.** While the fleet scope is unconfirmed, the whole reply is these four parts, in order, and
+nothing else:
+
+1. The Phase 0 preflight and its result.
+2. The read-only discovery commands you ran, each with what it returned.
+3. A scope table grouped by account, project, or subscription and by operating system, naming every host
+   discovery found but a managed rollout cannot reach (for example, not SSM-managed or no OS Config agent).
+4. The confirmation questions above, as a numbered list.
+
+The reply ends with the questions. It has no secret, document, policy, script, Terraform, or rollout command
+(`send-command`, `create-association`, `os-policy-assignments`, `run-command`, `put-parameter`,
+`secrets create`, `ssh`), not even under "next steps", "after approval", or "once you confirm".
+
 Use the user's existing IaC or management mechanism when one is present. Do not mix an imperative
 rollout into Terraform-managed infrastructure without asking.
 
