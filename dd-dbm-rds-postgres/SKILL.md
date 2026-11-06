@@ -341,8 +341,8 @@ already ≥ 4096, *and* the status above is `in-sync`** (common on PG15+ default
 collects untruncated query metrics with no parameter change and no reboot. The only settings left are
 optional tuning: `pg_stat_statements.track=all` (capture nested statements) and `track_io_timing=1` (I/O
 timing in explain plans) - both **dynamic** (`ApplyMethod=immediate`). They are opt-in: ask whether the user wants
-them, and if the user declines or has not said yes, change nothing and go to the chosen install path (Phase 3A,
-3B, or 3C). On a yes, how to apply them depends on the current group:
+them, and if the user declines or has not said yes, change nothing, do not offer the commands again later as an
+optional extra, and go to the chosen install path (Phase 3A, 3B, or 3C). On a yes, how to apply them depends on the current group:
 
 - **On a custom group** - set the two params in place with `modify-db-parameter-group`
   (`ApplyMethod=immediate`); they take effect with **no reboot**. If the group is shared with other
