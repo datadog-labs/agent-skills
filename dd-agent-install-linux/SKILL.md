@@ -190,9 +190,11 @@ nothing else:
 
 1. The Phase 0 preflight and its result.
 2. The read-only discovery commands you ran, each with what it returned.
-3. A scope table grouped by account, project, or subscription and by operating system, naming every host
-   discovery found but a managed rollout cannot reach (for example, not SSM-managed or no OS Config agent). If
-   discovery could not run, say what blocked it here instead.
+3. The Phase 1 settings recap: the agreed Datadog settings, that infrastructure metrics, logs, and APM trace intake
+   are on by default, and the log-source and APM-instrumentation caveats. Then a scope table grouped by account,
+   project, or subscription and by operating system, naming every host discovery found but a managed rollout
+   cannot reach (for example, not SSM-managed or no OS Config agent). If discovery could not run, say what
+   blocked it here instead.
 4. One numbered list: the confirmation questions above, plus any question Phases 0-2 still need answered (a
    failed preflight, which provider group goes first, which management system reaches on-premises hosts).
 
