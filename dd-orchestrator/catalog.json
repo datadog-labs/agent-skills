@@ -1843,6 +1843,46 @@
       "visibility": "public"
     },
     {
+      "key": "dd-instrument-product-analytics@s2",
+      "id": "dd-instrument-product-analytics",
+      "kind": "product-enable",
+      "product": "product-analytics",
+      "action": "enable",
+      "platform": [],
+      "cloud": [],
+      "scope": [
+        "browser"
+      ],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "product-enable",
+          "product": "rum"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-product-analytics/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "apm-onboarding-summary-kubernetes@s2",
       "id": "apm-onboarding-summary-kubernetes",
       "kind": "verify-troubleshoot",
