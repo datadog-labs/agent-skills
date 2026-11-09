@@ -16,7 +16,7 @@ Placeholders to replace before writing the files:
 | `<SCOPE>` | Phase 2 - `billing_account`, `subscription` or `resource_group` |
 | `<SCOPE_ID_FIELD>`, `<SCOPE_ID_VALUE>`, `<SCOPE_VALUE>` | Phase 2 - scope details, formatted as shown in Sections 3 and 5 |
 | `<BILLING_ACCOUNT_ID>`, `<SUBSCRIPTION_ID>` | Phase 2 - scope details |
-| `<ACTUAL_EXPORT_NAME>`, `<ACTUAL_EXPORT_PATH>`, `<AMORTIZED_EXPORT_NAME>`, `<AMORTIZED_EXPORT_PATH>` | Phase 2 - Export Configuration |
+| `<ACTUAL_EXPORT_NAME>`, `<ACTUAL_EXPORT_PATH>`, `<AMORTIZED_EXPORT_NAME>`, `<AMORTIZED_EXPORT_PATH>` | Phase 2 - Export Configuration. Each path is independent of its export's name: when the user accepts the default paths, use `dd-actual-exports` and `dd-amortized-exports` even if the exports are renamed |
 | `<CURRENT_DATE_MIDNIGHT_UTC>` | Today's date in `YYYY-MM-DDT00:00:00Z` format |
 | `<CONTAINER_ID_REF>` | `local.ccm_storage_container_id` if creating new storage (defined in Section 1), `local.storage_container_id` if using existing |
 | `<TENANT_ID>` | Phase 1 - the selected integration's `tenant_name` |
@@ -77,7 +77,7 @@ The scope ID field also depends on the scope:
 - Subscription: `subscription_id = "/subscriptions/<SUBSCRIPTION_ID>"`
 - Resource Group: `resource_group_id = "/subscriptions/<SUBSCRIPTION_ID>/resourceGroups/<COST_RESOURCE_GROUP>"`
 
-Generate two exports - one for actual cost, one for amortized:
+Generate two exports - one for actual cost, one for amortized. `root_folder_path` comes from `<ACTUAL_EXPORT_PATH>` / `<AMORTIZED_EXPORT_PATH>`, never from the export name (defaults `dd-actual-exports` and `dd-amortized-exports`):
 
 ```hcl
 resource "azurerm_<SCOPE>_cost_management_export" "actual_cost" {
@@ -177,7 +177,7 @@ single apply.
 
 For the existing-exports case, drop the export references and keep just the role assignments.
 
-Pick the variant that matches the path the user is on. The `client_id`, `storage_account`, and `storage_container` fields are written DIFFERENTLY for the resource-reference case (unquoted) vs the literal case (quoted) - do not mix the two.
+Each bill config's `export_path` must match the `root_folder_path` of the export it names, not the export name. Pick the variant that matches the path the user is on. The `client_id`, `storage_account`, and `storage_container` fields are written DIFFERENTLY for the resource-reference case (unquoted) vs the literal case (quoted) - do not mix the two.
 
 **Variant A - New storage (Section 1), and `azuread_application.datadog_app` is declared in this root module:** all three are HCL resource references, written unquoted. If that resource is not in the current module, use Variant B.
 
