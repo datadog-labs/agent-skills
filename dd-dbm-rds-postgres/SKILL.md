@@ -2,7 +2,7 @@
 name: dd-dbm-rds-postgres
 description: Set up Datadog Database Monitoring (DBM) for a standalone PostgreSQL instance on AWS RDS (not Aurora) - enable pg_stat_statements on the instance's parameter group, then deploy a managed Agent with CloudFormation, provision one with Terraform, or configure an existing Agent, plus the read-only datadog monitoring user. Use when the user wants to set up Database Monitoring for an RDS Postgres database, monitor query performance on a Postgres RDS instance, enable DBM for Postgres on RDS, or use Terraform to set up DBM for an RDS Postgres database. Not for Aurora PostgreSQL (including Serverless v2), RDS Multi-AZ DB clusters, or read replicas - do not use it to plan their setup; explain why and point the user at the DBM docs instead. Requires the Datadog AWS integration for the AWS account that holds the instance; run `dd-aws-integration` first if it is missing.
 metadata:
-  version: "1.0.1"
+  version: "1.0.2"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,database-monitoring,dbm,postgres,rds,aws,terraform
@@ -340,8 +340,9 @@ applies only when the status is `in-sync`.
 already ≥ 4096, *and* the status above is `in-sync`** (common on PG15+ default groups), the required parameters are already satisfied - DBM
 collects untruncated query metrics with no parameter change and no reboot. The only settings left are
 optional tuning: `pg_stat_statements.track=all` (capture nested statements) and `track_io_timing=1` (I/O
-timing in explain plans) - both **dynamic** (`ApplyMethod=immediate`). How to apply them depends on the
-current group:
+timing in explain plans) - both **dynamic** (`ApplyMethod=immediate`). They are opt-in: ask whether the user wants
+them, and if the user declines or has not said yes, change nothing, do not offer the commands again later as an
+optional extra, and go to the chosen install path (Phase 3A, 3B, or 3C). On a yes, how to apply them depends on the current group:
 
 - **On a custom group** - set the two params in place with `modify-db-parameter-group`
   (`ApplyMethod=immediate`); they take effect with **no reboot**. If the group is shared with other
