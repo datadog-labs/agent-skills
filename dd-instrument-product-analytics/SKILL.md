@@ -23,10 +23,10 @@ Product Analytics turns the sessions, page views and clicks that the Datadog RUM
 
 ## Set up
 
-1. **Inspect.** Find the browser app; in a monorepo with several, ask which one. Search source and HTML files, skipping `node_modules` and build output, for the RUM setup: an `init` call on the `datadogRum` import from `@datadog/browser-rum`, including renamed imports and wrapper modules, or a CDN `DD_RUM.init`. Record the number of inits, the SDK version, `trackUserInteractions`, the `site` (absent means `datadoghq.com`), the application ID, and how users sign in, through an auth library or the app's own session or user state. When the init reads the application ID or the site from environment variables, read only those lines of the env file, for example `grep -E '^VITE_DD_(RUM_APPLICATION_ID|SITE)=' .env.local`, because env files often hold secrets.
+1. **Inspect.** If the request or target project is a mobile app (iOS, Android, React Native, Flutter, or Kotlin Multiplatform), stop before any browser search or edit: say that this skill is for the browser product (`@datadog/browser-rum`) only, and do not give the Manage Applications enable path. Otherwise, find the browser app; in a monorepo with several, ask which one. Search source and HTML files, skipping `node_modules` and build output, for the RUM setup: an `init` call on the `datadogRum` import from `@datadog/browser-rum`, including renamed imports and wrapper modules, or a CDN `DD_RUM.init`. Record the number of inits, the SDK version, `trackUserInteractions`, the `site` (absent means `datadoghq.com`), the application ID, and how users sign in, through an auth library or the app's own session or user state. When the init reads the application ID or the site from environment variables, read only those lines of the env file, for example `grep -E '^VITE_DD_(RUM_APPLICATION_ID|SITE)=' .env.local`, because env files often hold secrets.
 
 2. **Check what Product Analytics needs.**
-   - **No RUM init:** stop before any edit. Tell the user that Product Analytics collects its data through the RUM Browser SDK, that this app has none, and that RUM must be set up first with the [`dd-instrument-rum`](https://github.com/datadog-labs/agent-skills/tree/main/dd-instrument-rum) skill. Ask whether to set up RUM now. On yes, run that skill; when it is not installed, get it from that link or follow the [Browser Monitoring setup](https://docs.datadoghq.com/real_user_monitoring/application_monitoring/browser/setup/) docs. Then restart at step 1, and if there is still no init with an application ID, stop and report it. On no, or when you cannot ask, end without changes and report that RUM is missing.
+   - **No RUM init:** stop before any edit. Tell the user that Product Analytics collects its data through the RUM Browser SDK, that this app has none, and that RUM must be set up first with the [`dd-instrument-rum`](https://github.com/datadog-labs/agent-skills/tree/main/dd-instrument-rum) skill. Ask whether to set up RUM now, and close with the `blocked: RUM missing` summary below (naming `dd-instrument-rum` and asking whether to run it) instead of the settings step. On yes, run that skill; when it is not installed, get it from that link or follow the [Browser Monitoring setup](https://docs.datadoghq.com/real_user_monitoring/application_monitoring/browser/setup/) docs, then restart at step 1, and if there is still no init with an application ID, stop and report it.
    - **Two or more inits, or npm and CDN setups mixed:** stop and report each location, because a second init splits sessions between configurations. Repairing that belongs to RUM setup.
    - **Site `ddog-gov.com` or `us2.ddog-gov.com`:** stop and report that Product Analytics is not available on those sites.
    - **No application ID found:** ask the user. It is listed under Real User Monitoring > Manage Applications in Datadog.
@@ -53,12 +53,12 @@ Record the highest level you actually reached:
 
 A passing build shows only that the project compiles. Name each level you could not check and the step left for the user, such as signing in once to see their own user.
 
-The app host is `app.datadoghq.com` for `datadoghq.com`, `app.datadoghq.eu` for `datadoghq.eu`, and the site itself for the others, for example `us5.datadoghq.com`. End with this summary:
+The app host is `app.datadoghq.com` for `datadoghq.com`, `app.datadoghq.eu` for `datadoghq.eu`, and the site itself for the others, for example `us5.datadoghq.com`. End with this summary (when step 1 or 2 stops before step 3, use the `blocked:` status instead of the settings step and omit `View:`):
 
 ```text
-Product Analytics: turned on | already on | waiting for your settings step (<the step>)
+Product Analytics: turned on | already on | waiting for your settings step (<the step>) | blocked: RUM missing (run dd-instrument-rum first — set up RUM now?) | blocked: <reason>
 Changed: <files, or none>
-Evidence: <highest level reached>; not checked: <levels and the step left>
+Evidence: <highest level reached, or none>; not checked: <levels and the step left>
 View: https://APP_HOST/product-analytics?query=@application.id:<APP_ID>
 ```
 
