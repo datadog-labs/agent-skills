@@ -14,7 +14,9 @@ kubectl heredoc from SKILL.md Phase 3 and reference it by name from the CR.
 The `helm` and `kubernetes` providers authenticate from the kubeconfig you connected in Phase 1.
 The example below is for new configurations using Helm provider v3 syntax. In an existing project,
 respect its lock file and provider major version; do not silently upgrade a v2 configuration while
-adding the Datadog resources.
+adding the Datadog resources. A module can have only one `required_providers` block: if
+the project already declares one (often in `versions.tf`), add the `helm` and `kubernetes` entries to it
+instead of writing a second `terraform` block.
 
 ```hcl
 terraform {
