@@ -2,7 +2,7 @@
 name: dd-azure-ccm
 description: Set up Datadog Cloud Cost Management for Azure with Terraform - provisions (or reuses) a Storage Account and Container, creates the actual-cost and amortized-cost Cost Management exports, grants the existing Datadog app registration read access through role assignments, and registers the exports with Datadog through datadog_azure_uc_config in a two-phase apply around the manual file-partitioning step. Use when the user wants to track their Azure cloud costs, asks to set up Azure cost exports for Datadog, or asks to set up Cloud Cost Management for Azure. Does not create the Azure integration or its app registration / service principal. Requires an existing Datadog Azure integration; run `dd-azure-integration` first if it is missing.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,azure,cost,ccm,cloud-cost-management,cost-exports,terraform,cloud
@@ -347,6 +347,9 @@ from the Azure portal (**Cost Management** → **Exports**), or, if `command -v 
 | **Actual Cost Export Path** | Path prefix in the container | `dd-actual-exports` |
 | **Amortized Cost Export Name** | Name for the amortized cost export | `amortized-export` |
 | **Amortized Cost Export Path** | Path prefix in the container | `dd-amortized-exports` |
+
+The path defaults do not follow the export names: if the user renames an export but accepts the default paths,
+keep `dd-actual-exports` and `dd-amortized-exports`.
 
 ## Phase 3: Generate and Apply Terraform
 
