@@ -2,7 +2,7 @@
 name: dd-dbm-rds-postgres
 description: Set up Datadog Database Monitoring (DBM) for a standalone PostgreSQL instance on AWS RDS (not Aurora) - enable pg_stat_statements on the instance's parameter group, then deploy a managed Agent with CloudFormation, provision one with Terraform, or configure an existing Agent, plus the read-only datadog monitoring user. Use when the user wants to set up Database Monitoring for an RDS Postgres database, monitor query performance on a Postgres RDS instance, enable DBM for Postgres on RDS, or use Terraform to set up DBM for an RDS Postgres database. Not for Aurora PostgreSQL (including Serverless v2), RDS Multi-AZ DB clusters, or read replicas - do not use it to plan their setup; explain why and point the user at the DBM docs instead. Requires the Datadog AWS integration for the AWS account that holds the instance; run `dd-aws-integration` first if it is missing.
 metadata:
-  version: "1.0.2"
+  version: "1.0.3"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,database-monitoring,dbm,postgres,rds,aws,terraform
@@ -35,6 +35,10 @@ supports all three:
 **All three paths require `pg_stat_statements` on the instance** (Phase 2) - including the managed path,
 because the managed installer does *not* configure the RDS parameter group. This is a **product
 integration (PINT) flow**: it requires an existing Datadog AWS integration.
+
+## Stopping
+
+Some steps below end in a stop: an instance that Phase 1 classifies as Aurora, an RDS Multi-AZ DB cluster or a read replica, or any other target this skill does not support. Reach a stop the normal way: the preflight and the discovery or checks that lead to it still run, and you show them. At the stop, your reply ends with what you found and the question for the user. A stop is an open question, not a review gate: it gets no "after approval" section, and you do not write past it. Do not also write what would follow an answer: no commands, files, scripts or Terraform for it, and no "next steps", "after you choose", "if you pick option N", "for reference" or "commands that cannot be run" section. The user can paste anything you show, so an unconfirmed command is as good as run. Write the next steps after the user answers.
 
 ## Running another skill
 

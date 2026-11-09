@@ -2,7 +2,7 @@
 name: dd-agent-install-windows
 description: Install the Datadog Agent on Windows Server hosts - a single machine or a fleet - with support for cloud rollouts (AWS Systems Manager, GCP VM Manager, Azure Run Command), MSI properties, FIPS, custom tags, and advanced configuration, with infrastructure metrics, logs, and APM trace intake on by default. Use when the user wants to install the Datadog Agent on a Windows server, deploy Datadog to their Windows VMs, or set up the Datadog Agent on Windows Server 2022 or another Windows Server version. Does not install the Agent on Linux, macOS, Docker, or Kubernetes (use dd-agent-install-linux, dd-agent-install-macos, dd-agent-install-docker, or dd-agent-install-kubernetes) and does not connect a cloud provider integration. Requires a Datadog account with a valid API key and application key; if they are missing, run `dd-account-setup` first on commercial sites, or supply them directly on government sites.
 metadata:
-  version: "1.0.1"
+  version: "1.0.2"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,agent,install,host,windows,infrastructure,logs,apm
@@ -13,6 +13,10 @@ metadata:
 # Datadog Agent Installation (Windows)
 
 You are helping a user install the Datadog Agent on one or more Windows hosts.
+
+## Stopping
+
+Some steps below end in a stop: a fleet whose scope the user has not confirmed (Phase 1 and Phase 2), a fleet that spans several providers before the user picks which group goes first, and a remote rollout with no approved way to deliver the API key. Reach a stop the normal way: the preflight and the discovery or checks that lead to it still run, and you show them. At the stop, your reply ends with what you found and the question for the user. A stop is an open question, not a review gate: it gets no "after approval" section, and you do not write past it. Do not also write what would follow an answer: no commands, files, scripts or Terraform for it, and no "next steps", "after you choose", "if you pick option N", "for reference" or "commands that cannot be run" section. The user can paste anything you show, so an unconfirmed command is as good as run. Write the next steps after the user answers.
 
 ## Running another skill
 
@@ -204,6 +208,24 @@ Show the candidate scope and ask the user to confirm:
 Stop after presenting the scope and these questions. Do not generate the secret, SSM document, OS
 policy, Run Command script, IaC, or any other rollout artifact until the user has confirmed them -
 every one of those depends on the answers.
+
+**Fleet reply shape.** While the fleet scope is unconfirmed, the whole reply is these four parts, in order, and
+nothing else. "All of them", "all hosts", or "every instance" does not confirm the scope: the canary, rollout,
+ownership, and key-delivery questions are still open, so this shape applies until the user answers them.
+
+1. The Phase 0 preflight and its result.
+2. The read-only discovery commands you ran, each with what it returned.
+3. The Phase 1 settings recap: the agreed Datadog settings, that infrastructure metrics, logs, and APM trace intake
+   are on by default, and the log-source and APM-instrumentation caveats. Then a scope table grouped by account,
+   project, or subscription and by operating system, naming every host discovery found but a managed rollout
+   cannot reach (for example, not SSM-managed or no OS Config agent). If discovery could not run, say what
+   blocked it here instead.
+4. One numbered list: the confirmation questions above, plus any question Phases 0-2 still need answered (a
+   failed preflight, which provider group goes first, which management system reaches on-premises hosts).
+
+The reply ends with the questions. It has no secret, document, policy, script, Terraform, or rollout command
+(`send-command`, `create-association`, `os-policy-assignments`, `run-command`, `put-parameter`,
+`secrets create`, `ssh`), not even under "next steps", "after approval", or "once you confirm".
 
 Use the user's existing IaC or management mechanism when one is present. Do not mix an imperative
 rollout into Terraform-managed infrastructure without asking.
