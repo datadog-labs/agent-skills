@@ -41,15 +41,37 @@ Check these before step 1; when a required one fails, stop with its fix:
   or `npm install -g @datadog/pup` (Windows or anywhere with npm); see
   https://github.com/DataDog/pup. Then run `pup auth login`. Do not ask
   the user to create or store Datadog API or application keys.
+- **`pup` at v2 or later.** The setup script uses v2-only CLI flags (such as
+  `--no-envelope`); Pup 1.x fails with an opaque `pup_request_failed`. Check
+  `pup --version`: a major version of 2 or later is required. If it is older,
+  ask before upgrading. When the environment allows it, upgrade with the
+  official installer or npm as above. Some workspaces block piping a remote
+  script to a shell (`curl | sh`), and `/usr/local/bin` may not be
+  user-writable; there, install from the release archive in a fresh empty
+  directory instead (replace `2.4.3` and the platform suffix with the latest
+  release):
+
+  ```bash
+  VERSION=2.4.3
+  curl -fsSLO "https://github.com/DataDog/pup/releases/download/v${VERSION}/pup_${VERSION}_Linux_x86_64.tar.gz" &&
+  curl -fsSLO "https://github.com/DataDog/pup/releases/download/v${VERSION}/pup_${VERSION}_checksums.txt" &&
+  grep "pup_${VERSION}_Linux_x86_64.tar.gz$" "pup_${VERSION}_checksums.txt" | sha256sum -c - &&
+  tar -xzf "pup_${VERSION}_Linux_x86_64.tar.gz" &&
+  sudo install -m 0755 ./pup /usr/local/bin/pup &&
+  pup auth login
+  ```
+
 - **`python3`** on `PATH` (`command -v python3`) to run the setup script.
 - **The GitHub CLI (`gh`), optional, signed in** (`gh auth status`), to list the
   enterprises and organizations the user can connect. Without it the user
   types the enterprise slug or organization login (the script's
   `gh_unavailable` exit). To install it, see https://cli.github.com.
-- **A graphical desktop session** (macOS, Linux with X11 or Wayland, or
-  Windows): the token prompt opens in a new terminal window. Over SSH, in a
-  container, or on a headless host, stop and point the user to the GitHub Costs
-  integration tile in Datadog.
+- **A graphical desktop session or a tmux session** (macOS, Linux with X11 or
+  Wayland, or Windows; or the agent session inside tmux, which also works on
+  headless hosts): the token prompt opens in a new terminal window — a new
+  tmux window when the session runs inside tmux. Over SSH with no desktop
+  session and no tmux, in a container, or on a headless host outside tmux,
+  stop and point the user to the GitHub Costs integration tile in Datadog.
 - **Enterprise:** an Enterprise Administrator creates a **classic** PAT with the
   `manage_billing:enterprise` and `read:org` scopes. Fine-grained tokens cannot
   read enterprise billing, so the script refuses them.
@@ -149,7 +171,9 @@ use a named Pup session (`pup auth login --org <name>`), also set the `DD_ORG`
 environment variable to that session's name. Set them the way the shell expects: a
 `NAME=value` prefix on POSIX shells, `$env:NAME="value";` in PowerShell, or
 `set "NAME=value" &&` in cmd.exe. Do not detach the process or redirect its
-input. Tell the user to switch to the new terminal when it appears.
+input. Tell the user to switch to the new terminal when it appears — a
+tmux window named `github-costs-token` when the session runs inside
+tmux.
 
 Run the command with the longest command timeout your tool allows (at least 10
 minutes). The user may take up to 5 minutes to enter the token, and Datadog
@@ -188,6 +212,9 @@ trimmed `complete` result looks like:
 - **`already_configured`** → an account with that name exists (`account.target`
   says what it reads); nothing changed. Offer a different name if they meant a
   new target.
+- **`pup_cli_outdated`** → the installed Pup is older than v2 and cannot run this
+  setup. Ask before upgrading it (see the Pup version preflight above), then rerun
+  once the upgrade is done.
 - **`target_already_connected`** → that enterprise or organization is already
   connected under `details.account.name`; nothing was written. Do not add it
   again: a second account would count those costs twice.

@@ -50,6 +50,30 @@ pup auth status
   or `npm install -g @datadog/pup` (Windows or anywhere with npm); see
   https://github.com/DataDog/pup. Then run `pup auth login`.
 
+**Pup version.** The setup script uses Pup v2 CLI flags (such as
+`--no-envelope`); Pup 1.x fails with an opaque `pup_request_failed`. Check:
+
+```bash
+pup --version
+```
+
+A major version of 2 or later is required. If it is older, ask before
+upgrading. When the environment allows it, upgrade with the official
+installer or npm as above. Some workspaces block piping a remote script to a
+shell (`curl | sh`), and `/usr/local/bin` may not be user-writable; there,
+install from the release archive in a fresh empty directory instead (replace
+`2.4.3` and the platform suffix with the latest release):
+
+```bash
+VERSION=2.4.3
+curl -fsSLO "https://github.com/DataDog/pup/releases/download/v${VERSION}/pup_${VERSION}_Linux_x86_64.tar.gz" &&
+curl -fsSLO "https://github.com/DataDog/pup/releases/download/v${VERSION}/pup_${VERSION}_checksums.txt" &&
+grep "pup_${VERSION}_Linux_x86_64.tar.gz$" "pup_${VERSION}_checksums.txt" | sha256sum -c - &&
+tar -xzf "pup_${VERSION}_Linux_x86_64.tar.gz" &&
+sudo install -m 0755 ./pup /usr/local/bin/pup &&
+pup auth login
+```
+
 **Python.** The flow runs `scripts/setup.py`, so confirm `python3` is on
 `PATH` before starting:
 
@@ -59,9 +83,11 @@ command -v python3 || echo "MISSING python3"
 
 **Graphical terminal.** The key prompt opens in a new desktop terminal window
 (macOS Terminal, Windows Terminal or `cmd.exe`, or a Linux terminal with
-`DISPLAY` or `WAYLAND_DISPLAY` set). If the user is on SSH, in a container, or
-has no desktop session, stop and point them to the Anthropic Usage and Costs
-tile in the Datadog app instead of running the script.
+`DISPLAY` or `WAYLAND_DISPLAY` set), or in a new tmux window when the agent
+session runs inside tmux — which also works on headless hosts. If the user is
+on SSH with no desktop session and no tmux, or in a container, stop and point
+them to the Anthropic Usage and Costs tile in the Datadog app instead of
+running the script.
 
 **The Anthropic key, decided by the plan:**
 
@@ -151,7 +177,9 @@ Management only if the Datadog org uses CCM.
      `https://platform.claude.com/settings/keys?ws=default` (Platform) or
      `https://claude.ai/admin-settings/api-access` (Enterprise), then waits for
      the user to create the key and paste it. Input is hidden like a password.
-     Tell the user to switch to the new terminal when it appears.
+     Tell the user to switch to the new terminal when it appears — a
+     tmux window named `anthropic-token` when the session runs inside
+     tmux.
    - Run the command with the longest command timeout your tool allows (at
      least 10 minutes). The user may take up to 5 minutes to enter the key, and
      Datadog requests have no client-side timeout. Killing the command during
@@ -188,6 +216,9 @@ Report the script's status and warnings without exposing credentials.
 - **Repair (new key for an existing account)** → setup does not replace the
   key on an existing account. Send the user to the Anthropic Usage and Costs
   tile in the Datadog app to replace it in the configuration panel.
+- **`pup_cli_outdated`** → the installed Pup is older than v2 and cannot run this
+  setup. Ask before upgrading it (see the Pup version preflight above), then rerun
+  once the upgrade is done.
 - **`invalid_anthropic_key`** or **`anthropic_key_rejected`** → a key Anthropic
   rejects never reaches Datadog, so nothing was written. Ask the user to create
   the right key for their plan (see [Phase 0: Preflight](#phase-0-preflight))

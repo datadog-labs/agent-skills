@@ -246,6 +246,30 @@ def _list_accounts() -> list[dict[str, Any]]:
     return _account_summary(_pup_api("GET", ACCOUNTS_PATH))
 
 
+def _pup_version() -> tuple[int, int, int] | None:
+    """Parse `pup --version` output such as "pup 2.4.3"; None when unreadable."""
+    try:
+        result = subprocess.run(
+            ["pup", "--version"],
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    stdout = result.stdout.decode(errors="replace") if result.stdout else ""
+    if result.returncode:
+        return None
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", stdout)
+    if not match:
+        return None
+    return (
+        int(match.group(1)),
+        int(match.group(2)),
+        int(match.group(3)) if match.group(3) else 0,
+    )
+
+
 def _validate_pup() -> dict[str, Any]:
     if shutil.which("pup") is None:
         raise SetupError(
@@ -257,6 +281,27 @@ def _validate_pup() -> dict[str, Any]:
                 "or `npm install -g @datadog/pup` (see https://github.com/DataDog/pup), then run `pup auth login`."
             ),
             recoverable=False,
+        )
+    version = _pup_version()
+    if version is None or version[0] < 2:
+        # The scripts rely on v2-only CLI flags such as --no-envelope; older
+        # Pup versions fail on the first request with an opaque error.
+        raise SetupError(
+            "pup_cli_outdated",
+            "Pup 2 or later is required; the installed Pup is too old.",
+            recoverable=True,
+            details={
+                "installed_version": ".".join(str(part) for part in version)
+                if version
+                else None,
+                "remediation": (
+                    "Upgrade Pup from https://github.com/DataDog/pup/releases "
+                    "(download the release archive, verify its checksum, and "
+                    "install it, for example "
+                    "`sudo install -m 0755 ./pup /usr/local/bin/pup`), then "
+                    "rerun setup."
+                ),
+            },
         )
     status_command = [
         "pup",
@@ -447,10 +492,33 @@ def _launch_terminal(command: list[str]) -> None:
                     except OSError:
                         continue
                     return
+        if os.environ.get("TMUX") and shutil.which("tmux"):
+            # Inside a tmux session, a new tmux window is a user-visible
+            # terminal even on headless hosts with no DISPLAY, and it beats a
+            # graphical emulator that may open where the user cannot see it.
+            try:
+                result = subprocess.run(
+                    [
+                        "tmux",
+                        "new-window",
+                        "-n",
+                        "anthropic-token",
+                        "exec " + shlex.join(command),
+                    ],
+                    start_new_session=True,
+                    capture_output=True,
+                    timeout=15,
+                    check=False,
+                )
+                if result.returncode == 0:
+                    return
+            except (OSError, subprocess.TimeoutExpired):
+                pass  # Fall through to the graphical candidates below.
         if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
             raise SetupError(
                 "terminal_launch_failed",
-                "No graphical display is available to open a credential terminal.",
+                "No graphical display and no tmux session are available to "
+                "open a credential terminal.",
             )
         # x-terminal-emulator goes last: it can resolve to an emulator whose
         # -e takes a single command string, which would mangle the helper.
@@ -786,6 +854,10 @@ def _open_token_page(plan: str = "platform") -> None:
         except OSError:
             pass  # Non-fatal: the credential terminal also prints the URL.
     webbrowser.open(url, new=2)
+    # Headless and remote hosts often have no visible browser; stderr keeps
+    # the JSON contract on stdout while still surfacing the URL to the
+    # operator (the credential terminal prints it too).
+    print(f"If no browser opened, create the token at: {url}", file=sys.stderr)
 
 
 def _prompt_for_token(plan: str = "platform") -> str:

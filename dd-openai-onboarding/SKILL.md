@@ -49,6 +49,30 @@ pup auth status
   with the exact `pup auth login` command. Ask before running it, and do not
   ask the user to create or export Datadog API or application keys.
 
+**Pup version.** The setup script uses Pup v2 CLI flags (such as
+`--no-envelope`); Pup 1.x fails with an opaque `pup_request_failed`. Check:
+
+```bash
+pup --version
+```
+
+A major version of 2 or later is required. If it is older, ask before
+upgrading. When the environment allows it, upgrade with the official
+installer or npm as above. Some workspaces block piping a remote script to a
+shell (`curl | sh`), and `/usr/local/bin` may not be user-writable; there,
+install from the release archive in a fresh empty directory instead (replace
+`2.4.3` and the platform suffix with the latest release):
+
+```bash
+VERSION=2.4.3
+curl -fsSLO "https://github.com/DataDog/pup/releases/download/v${VERSION}/pup_${VERSION}_Linux_x86_64.tar.gz" &&
+curl -fsSLO "https://github.com/DataDog/pup/releases/download/v${VERSION}/pup_${VERSION}_checksums.txt" &&
+grep "pup_${VERSION}_Linux_x86_64.tar.gz$" "pup_${VERSION}_checksums.txt" | sha256sum -c - &&
+tar -xzf "pup_${VERSION}_Linux_x86_64.tar.gz" &&
+sudo install -m 0755 ./pup /usr/local/bin/pup &&
+pup auth login
+```
+
 **Python.** The flow runs `scripts/setup.py`, so confirm `python3` is on
 `PATH` before starting:
 
@@ -58,9 +82,11 @@ command -v python3 || echo "MISSING python3"
 
 **Desktop session.** Key entry needs a local graphical terminal: Terminal.app
 on macOS; gnome-terminal, konsole, xterm or x-terminal-emulator with `DISPLAY`
-or `WAYLAND_DISPLAY` set on Linux; a console on Windows or WSL. If none is
-available, such as over SSH or in a container, stop before approval and ask the
-user to run this from a machine with a desktop session.
+or `WAYLAND_DISPLAY` set on Linux; a console on Windows or WSL; or a new tmux
+window when the agent session runs inside tmux, which also works on headless
+hosts. If none is available, such as over SSH without tmux or in a container,
+stop before approval and ask the user to run this from a machine with a
+desktop session or inside tmux.
 
 **OpenAI admin key.** Only organization owners can create one, and the key is
 shown only once by OpenAI. A **project key** (`sk-proj-...`) connects but
@@ -132,8 +158,9 @@ CCM.
    registration leaves the outcome unknown.
 
 5. **Hand off to the terminal.** Tell the user to switch to the new terminal
-   when it appears. The script always opens a new graphical terminal for key
-   entry and fails instead of prompting in place. Never ask the user to paste
+   when it appears — a tmux window named `openai-token` when the session runs
+   inside tmux. The script always opens a new graphical terminal (or tmux
+   window) for key entry and fails instead of prompting in place. Never ask the user to paste
    the key into chat, and never pass it through a command argument,
    environment variable, shell pipe, redirected input, or file.
 
@@ -175,6 +202,9 @@ failure, the script prints `status: error` and an `error.reason`.
   repairing an account whose key was revoked or replaced, the script does not
   ask for a new key: send them to the **Configuration** tab of the OpenAI
   integration tile in Datadog to update the key on that account.
+- **`pup_cli_outdated`** → the installed Pup is older than v2 and cannot run this
+  setup. Ask before upgrading it (see the Pup version preflight above), then rerun
+  once the upgrade is done.
 - **`admin_key_required`** → the user pasted a project key; nothing was written.
   Ask them to create an admin key at
   `https://platform.openai.com/settings/organization/admin-keys` (organization
