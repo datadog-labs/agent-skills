@@ -104,12 +104,13 @@ def _profile_identity(binary: str = "nebius") -> dict[str, str]:
 SUSPENDED_TENANT_STATES = frozenset({"SUSPENDING", "SUSPENDED", "RESUMING"})
 
 
-def _tenant_suspension_state(binary: str, tenant_id: str) -> str:
-    """Read the tenancy suspension state; empty when it is not reported.
+def _tenant_info(binary: str, tenant_id: str) -> dict[str, str]:
+    """Read the tenancy's human-readable name and suspension state.
 
     Only the v1 tenant read exposes suspension (the v2 tenant status does
     not carry it), so this reads `iam tenant get` despite its CLI
-    deprecation notice. The write path never touches this command.
+    deprecation notice. The write path never touches this command. Both
+    fields are empty when the tenant object does not report them.
     """
     tenant = _run_json(
         [
@@ -123,14 +124,20 @@ def _tenant_suspension_state(binary: str, tenant_id: str) -> str:
         ]
     )
     if not isinstance(tenant, dict):
-        return ""
-    return discovery._first_string(
-        tenant,
-        (
-            ("status", "suspension_state"),
-            ("status", "suspensionState"),
+        tenant = {}
+    return {
+        "name": discovery._first_string(
+            tenant,
+            (("metadata", "name"), ("name",), ("spec", "name")),
         ),
-    ).upper()
+        "suspension_state": discovery._first_string(
+            tenant,
+            (
+                ("status", "suspension_state"),
+                ("status", "suspensionState"),
+            ),
+        ).upper(),
+    }
 
 
 def _list_authorized_keys(binary: str, service_account_id: str) -> Any:

@@ -35,8 +35,42 @@ pup auth status
   `curl -fsSL https://raw.githubusercontent.com/DataDog/pup/main/install.sh | sh`,
   or `npm install -g @datadog/pup` (Windows or anywhere with npm); see
   https://github.com/DataDog/pup. Then run `pup auth login`.
-- `authenticated: false` → ask before running `pup auth login`. Do not ask the
-  user to create or export Datadog API or application keys.
+- `authenticated: false` → continue to the Datadog org step below, whose
+  browser login establishes authentication. Do not ask the user to create or
+  export Datadog API or application keys.
+
+**Pup version.** The scripts use Pup v2 CLI flags (such as `--no-envelope`);
+Pup 1.x fails with an opaque `pup_request_failed`. Check:
+
+```bash
+pup --version
+```
+
+A major version of 2 or later is required. If it is older, ask before
+upgrading. When the environment allows it, upgrade with the official
+installer or npm as above. Some workspaces block piping a remote script to a
+shell (`curl | sh`), and `/usr/local/bin` may not be user-writable; there,
+install from the release archive in a fresh empty directory instead (replace
+`2.4.3` and the platform suffix with the latest release):
+
+```bash
+VERSION=2.4.3
+curl -fsSLO "https://github.com/DataDog/pup/releases/download/v${VERSION}/pup_${VERSION}_Linux_x86_64.tar.gz" &&
+curl -fsSLO "https://github.com/DataDog/pup/releases/download/v${VERSION}/pup_${VERSION}_checksums.txt" &&
+grep "pup_${VERSION}_Linux_x86_64.tar.gz$" "pup_${VERSION}_checksums.txt" | sha256sum -c - &&
+tar -xzf "pup_${VERSION}_Linux_x86_64.tar.gz" &&
+sudo install -m 0755 ./pup /usr/local/bin/pup &&
+pup auth login
+```
+
+**Datadog org.** Always establish the run's org with a fresh `pup auth login`
+before setup — run it in the background, tell the user to complete the browser
+login (this is where they select the org), and wait for it to finish. Do not
+ask the user which org to target, and do not infer the org from the stored
+session: `pup auth status`'s `org` (`null` for the default session) and the
+login's "Hinting org UUID" line are stored defaults, not the org the fresh
+token will belong to. If the user selected a named Pup organization session,
+run setup with the `DD_ORG` environment variable set to that session's name.
 
 **Python and OpenSSL.** The scripts need Python 3.9 or later. `openssl` is used
 only to reconcile an ambiguous authorized-key creation; if it is missing, tell
@@ -84,7 +118,7 @@ create` again on the user's behalf, as above.
 ## Workflow
 
 ```
-- [ ] 1. Preflight: pup authenticated, python3 >= 3.9, nebius on PATH with a profile
+- [ ] 1. Preflight: pup >= 2, fresh `pup auth login` completed (org selected in the browser), python3 >= 3.9, nebius on PATH with a profile
 - [ ] 2. Gather log streams and account tags (one form)
 - [ ] 3. One approval question
 - [ ] 4. Run setup.py; handle the result per "Results"
@@ -106,7 +140,9 @@ create` again on the user's behalf, as above.
 
    - the service account is always named `datadog-integration` (reused when it
      already exists in the profile's project, created when it does not)
-   - the Datadog display name is always derived from the tenant and project
+   - the Datadog display name is always derived from the tenant's
+     human-readable Nebius name (for example `nebius-teal-condor-tenant-f2j`),
+     falling back to the tenant ID when the tenant reports no name
    - resource metadata collection and service quota collection are always enabled
    - a suspended tenancy is never onboarded; the script detects suspension and
      refuses with `tenant_suspended` before any write
@@ -179,6 +215,9 @@ The script prints one JSON object. Report every returned warning to the user.
   [Phase 0](#installing-and-authenticating-the-nebius-cli)) so the profile
   selects the tenant and project.
 - `pup_cli_missing` → follow [Pup](#phase-0-preflight).
+- `pup_cli_outdated` → the installed Pup is older than v2 and cannot run this
+  setup. Ask before upgrading it (see the Pup version preflight above), then
+  rerun once the upgrade is done.
 - `pup_not_authenticated`, `pup_authentication_failed`, or
   `pup_scopes_missing` → ask before running `pup auth login`, adding the
   `--extra-scopes` that `error.details.remediation` reports.
@@ -212,8 +251,8 @@ After the setup script returns `complete` or `already_configured`, confirm that 
 the user what they can do with them, without blocking the conversation:
 
 1. Start a background subagent with this task, using the `account.name` value
-   from the setup output (the script always derives the name from the tenant
-   and project) and the same `DD_ORG` setting if setup used one:
+   from the setup output (the script always derives the name from the tenant's
+   human-readable Nebius name) and the same `DD_ORG` setting if setup used one:
 
    > Run `python3 <SKILL_DIR>/scripts/verify_logs.py --account-name "<ACCOUNT_NAME>"`
    > with a command timeout of at least 8 minutes. It polls Datadog for up to 7 minutes and prints JSON.

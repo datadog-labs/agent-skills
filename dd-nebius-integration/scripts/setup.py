@@ -39,7 +39,7 @@ from _nebius import (  # noqa: E402
     _issue_static_key,
     _list_service_accounts,
     _profile_identity,
-    _tenant_suspension_state,
+    _tenant_info,
 )
 
 STREAMS = {
@@ -108,15 +108,17 @@ def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
 
 
-def _account_name(tenant_id: str, project_id: str) -> str:
-    identity = f"{tenant_id}:{project_id}"
-    readable = f"nebius-{_slug(tenant_id)}-{_slug(project_id)}"
+def _account_name(tenant_id: str, tenant_name: str) -> str:
+    # Prefer the tenant's human-readable Nebius name (for example
+    # "teal-condor-tenant-f2j" -> "nebius-teal-condor-tenant-f2j"); fall back
+    # to the tenant ID when the tenant object reports no name.
+    readable = f"nebius-{_slug(tenant_name or tenant_id)}"
     # Keep derived display names at most 80 characters. A longer name keeps a
     # 63-character readable prefix plus "-" and a 16-hex-digit hash of the
-    # identity (63 + 1 + 16 = 80), so truncated names stay unique and stable.
+    # tenant ID (63 + 1 + 16 = 80), so truncated names stay unique and stable.
     if len(readable) <= 80:
         return readable
-    digest = hashlib.sha256(identity.encode()).hexdigest()[:16]
+    digest = hashlib.sha256(tenant_id.encode()).hexdigest()[:16]
     return f"{readable[:63].rstrip('-')}-{digest}"
 
 
@@ -136,7 +138,8 @@ def _discover_config(
             recoverable=False,
         )
     identity = _profile_identity()
-    suspension_state = _tenant_suspension_state(binary, identity["tenant_id"])
+    tenant = _tenant_info(binary, identity["tenant_id"])
+    suspension_state = tenant["suspension_state"]
     if suspension_state in SUSPENDED_TENANT_STATES:
         raise SetupError(
             "tenant_suspended",
@@ -194,7 +197,7 @@ def _discover_config(
         "service_account_name": service_account_name,
         "create_service_account": create_service_account,
         "ensure_admin_membership": ensure_admin_membership,
-        "account_name": _account_name(identity["tenant_id"], project_id),
+        "account_name": _account_name(identity["tenant_id"], tenant["name"]),
         "streams": selected_streams,
         "account_tags": list(account_tags or []),
         "resources_enabled": True,

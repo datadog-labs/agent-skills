@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 from typing import Any
@@ -161,12 +162,57 @@ def _find_verified_account(
     return account
 
 
+def _pup_version() -> tuple[int, int, int] | None:
+    """Parse `pup --version` output such as "pup 2.4.3"; None when unreadable."""
+    try:
+        result = subprocess.run(
+            ["pup", "--version"],
+            capture_output=True,
+            check=False,
+            timeout=30,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    stdout = result.stdout.decode(errors="replace") if result.stdout else ""
+    if result.returncode:
+        return None
+    match = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", stdout)
+    if not match:
+        return None
+    return (
+        int(match.group(1)),
+        int(match.group(2)),
+        int(match.group(3)) if match.group(3) else 0,
+    )
+
+
 def _validate_pup() -> dict[str, Any]:
     if shutil.which("pup") is None:
         raise SetupError(
             "pup_cli_missing",
             "Install Pup and authenticate with `pup auth login`.",
             recoverable=False,
+        )
+    version = _pup_version()
+    if version is None or version[0] < 2:
+        # The scripts rely on v2-only CLI flags such as --no-envelope; older
+        # Pup versions fail on the first request with an opaque error.
+        raise SetupError(
+            "pup_cli_outdated",
+            "Pup 2 or later is required; the installed Pup is too old.",
+            recoverable=True,
+            details={
+                "installed_version": ".".join(str(part) for part in version)
+                if version
+                else None,
+                "remediation": (
+                    "Upgrade Pup from https://github.com/DataDog/pup/releases "
+                    "(download the release archive, verify its checksum, and "
+                    "install it, for example "
+                    "`sudo install -m 0755 ./pup /usr/local/bin/pup`), then "
+                    "rerun setup."
+                ),
+            },
         )
     status_command = [
         "pup",
