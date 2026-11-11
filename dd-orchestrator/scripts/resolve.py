@@ -804,14 +804,17 @@ def _emit_telemetry(session_id, args, products, router, res):
     try:
         import emit
 
+        emit.set_current_session(session_id)   # later fresh-shell emit.py calls find the run
         base = {
             "invocation_mode": "orchestrated",
             "entry_skill_id": "dd-orchestrator",
-            "agent_name": getattr(args, "agent_name", None) or "unknown",
+            "agent_name": getattr(args, "agent_name", None) or emit.detect_agent(),
+            "run_context": emit.run_context(),
             "intent_mode": getattr(args, "intent_mode", None),   # explicit (shortcut) | recommended
             "target_platform": normalize_platform(args.platform),
             "target_cloud": normalize_cloud(args.cloud),
-            "org_id": os.environ.get("DD_ORG_ID") or None,   # auth'd org public_id; None -> omitted
+            # auth'd org public_id, fetched once per run; None -> omitted
+            "org_id": emit.session_org_id(session_id) or emit.fetch_org_id(),
         }
         # Refresh the envelope and plan shape on replans; preserve the event sequence
         # and run-start marker so later emit.py processes stay in the same run.
@@ -819,7 +822,10 @@ def _emit_telemetry(session_id, args, products, router, res):
             "dead_end_count": len(res["dead_ends"]),
             "planned_skill_count": len(res["plan"]),
             "choice_count": len(res["choices"]),
-        })
+        }, plan=[{"id": n["id"], "position": i, "kind": n["kind"],
+                  "product": n.get("product") or "",
+                  "source_repo": (n.get("source") or {}).get("repo") or ""}
+                 for i, n in enumerate(res["plan"], 1)])
         emit.emit("skill_run", "started", session_id, dict(base), critical=True)
 
         tokens = sorted({t for t in (normalize_product(p, router.product_tokens)
@@ -919,8 +925,9 @@ def main():
     )
     ap.add_argument(
         "--agent-name",
-        default="unknown",
-        help="executor agent for telemetry: claude_code | codex | cursor | unknown",
+        default=None,
+        help="executor agent for telemetry: claude_code | codex | cursor | unknown "
+             "(default: detected from the agent's environment)",
     )
     ap.add_argument(
         "--intent-mode",
@@ -962,6 +969,14 @@ def main():
     # Explicit IDs keep replans in one run without exporting state into later runs.
     # Preserve the environment fallback for IDs intentionally supplied by an outer wrapper.
     supplied_session = a.session_id or os.environ.get("DD_ORCH_SESSION_ID")
+    if a.session_id == "":
+        # `--session-id "$SID"` from a fresh shell where $SID is gone: this is a replan of
+        # the current run, not a new one, so keep its id instead of splitting telemetry.
+        try:
+            import emit
+            supplied_session = emit.current_session() or supplied_session
+        except Exception:
+            pass
     session_id = supplied_session or str(uuid.uuid4())
     if not a.trace:
         # In --trace mode the framed block already carries SESSION_ID; keep this human-oriented

@@ -17,13 +17,19 @@ lands events in the same internal ``service:setup-cli`` pipeline the onboarding-
 team already consumes. It deliberately does NOT use the customer's DD_API_KEY: that
 would write onboarding telemetry into the customer's own org, not Datadog's.
 
-CLI (the runbook calls this at each dispatch boundary — see SKILL.md):
-  python3 emit.py skill_run  --action started   --session-id <uuid> [--field k=v ...]
-  python3 emit.py skill_step --action started   --session-id <uuid> --field skill_id=<id> ...
-  python3 emit.py skill_run  --action finished  --session-id <uuid> --field result=success ...
+CLI (the runbook calls `record` at each dispatch boundary — see SKILL.md). `record`
+updates the run's trace file AND emits the matching event, deriving every field from
+the plan resolve.py stored, so the agent passes only the skill id:
+  python3 emit.py record confirmed | declined
+  python3 emit.py record started  <skill_id> [--source-mode installed|fetched]
+  python3 emit.py record finished <skill_id> --result success|failed
+  python3 emit.py record skipped  <skill_id> [--result skipped_dependency]
+  python3 emit.py record run-finished [--result blocked|cancelled]
+The raw form stays for anything `record` does not cover:
+  python3 emit.py skill_step --action started [--session-id <uuid>] --field skill_id=<id> ...
 
-The session id is minted and printed by resolve.py ("SESSION ID: <uuid>"); every
-event in one DAG run must reuse it.
+The session id is minted by resolve.py and saved to a state file, so a fresh shell
+(no `$SID`) still lands on the current run. --session-id overrides it.
 """
 from __future__ import annotations
 
@@ -47,7 +53,7 @@ PLATFORM = "cli"
 
 EVENT_TYPES = {"skill_run", "skill_step"}
 ACTIONS = {
-    "skill_run": {"started", "plan_resolved", "finished"},
+    "skill_run": {"started", "plan_resolved", "confirmed", "declined", "finished"},
     "skill_step": {"planned", "started", "finished", "skipped"},
 }
 
@@ -62,7 +68,7 @@ SKILL_KINDS = {"foundation", "platform-install", "cloud-connect",
 # only for readability; the union is what gates.
 _FACETS = {
     "event_type", "event_action", "result", "invocation_mode", "intent_mode", "entry_skill_id",
-    "agent_name", "headless", "target_platform", "target_cloud", "step_kind",
+    "agent_name", "run_context", "headless", "target_platform", "target_cloud", "step_kind",
     "skill_id", "skill_kind", "product", "source_repo", "source_mode", "error_code", "result_reported",
 }
 _MEASURES = {
@@ -159,7 +165,92 @@ def _coerce(key, value):
 # --- run-scoped state: shared by sequential resolve.py and emit.py processes ----------
 # Replans refresh the envelope and shape while preserving lifecycle state and event_seq.
 _ENVELOPE_KEYS = ("entry_skill_id", "invocation_mode", "intent_mode", "agent_name",
-                  "target_platform", "target_cloud", "org_id")
+                  "run_context", "target_platform", "target_cloud", "org_id")
+
+# Env markers each agent sets in the shells it spawns. First match wins.
+# ponytail: Codex/Cursor markers are best-known names, not verified against every
+# version; --agent-name still overrides when a marker is missing.
+_AGENT_MARKERS = (
+    ("claude_code", ("CLAUDECODE",)),
+    ("codex", ("CODEX_SANDBOX", "CODEX_SANDBOX_NETWORK_DISABLED", "CODEX_THREAD_ID")),
+    ("cursor", ("CURSOR_AGENT", "CURSOR_TRACE_ID")),
+)
+_RUN_CONTEXTS = {"eval", "ci", "dev", "user"}
+
+
+def detect_agent():
+    for name, markers in _AGENT_MARKERS:
+        if any(os.environ.get(m) for m in markers):
+            return name
+    return "unknown"
+
+
+def run_context():
+    """eval | ci | dev | user. The eval harness sets DD_ORCH_RUN_CONTEXT=eval."""
+    ctx = os.environ.get("DD_ORCH_RUN_CONTEXT", "").strip().lower()
+    if ctx in _RUN_CONTEXTS:
+        return ctx
+    return "ci" if _truthy(os.environ.get("CI", "")) else "user"
+
+
+def _oauth_token_path():
+    # Same path dd-account-setup writes: ${TMPDIR:-/tmp}/dd-oauth-$(id -u).token
+    return os.path.join(os.environ.get("TMPDIR") or "/tmp", f"dd-oauth-{os.getuid()}.token")
+
+
+def fetch_org_id(site=None):
+    """The authenticated org's public_id, or None. Reads the OAuth token file
+    dd-account-setup leaves in place (a file survives across the agent's fresh shells;
+    an exported variable does not), else the API+APP key pair. Never raises."""
+    try:
+        if os.environ.get("DD_ORG_ID"):
+            return os.environ["DD_ORG_ID"]
+        if _is_disabled():
+            return None
+        headers = {}
+        try:
+            with open(_oauth_token_path()) as fh:
+                token = fh.read().strip()
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+        except OSError:
+            pass
+        if not headers and os.environ.get("DD_API_KEY") and os.environ.get("DD_APP_KEY"):
+            headers = {"DD-API-KEY": os.environ["DD_API_KEY"],
+                       "DD-APPLICATION-KEY": os.environ["DD_APP_KEY"]}
+        if not headers:
+            return None
+        site = site or os.environ.get("DD_SITE") or "datadoghq.com"
+        request = urllib.request.Request(f"https://api.{site}/api/v2/current_user",
+                                         headers=headers)
+        with urllib.request.urlopen(request, timeout=5) as response:
+            data = json.load(response)
+        org = data["data"]["relationships"]["org"]["data"]["id"]
+        return next((x["attributes"]["public_id"] for x in data.get("included", [])
+                     if x.get("type") == "orgs" and x.get("id") == org), org)
+    except Exception:
+        return None
+
+
+def _current_session_path():
+    return os.path.join(tempfile.gettempdir(), "dd-orch-current-session")
+
+
+def set_current_session(session_id):
+    """Remember the run's session id on disk for later fresh-shell calls. Never raises."""
+    try:
+        with open(_current_session_path(), "w") as fh:
+            fh.write(str(session_id))
+    except Exception:
+        pass
+
+
+def current_session():
+    try:
+        with open(_current_session_path()) as fh:
+            return fh.read().strip() or None
+    except Exception:
+        return None
 
 
 def _session_state_path(session_id):
@@ -176,23 +267,33 @@ def _load_state(session_id):
         return {}
 
 
-def write_session_state(session_id, envelope, shape=None):
+def write_session_state(session_id, envelope, shape=None, plan=None):
     """Persist the run's envelope (re-attached to every later emit) and, when given, the plan
     shape (`dead_end_count`, ...), so the terminal skill_run:finished can reconcile `result`
-    against the real counts. Preserves the seq counter across re-writes. Never raises."""
+    against the real counts, and the plan nodes `record` derives step fields from.
+    A replan merges into the envelope, so a value captured earlier (e.g. org_id) is kept.
+    Preserves the seq counter across re-writes. Never raises."""
     try:
         if not session_id:
             return
         state = _load_state(session_id)
-        state["envelope"] = {k: (envelope or {})[k] for k in _ENVELOPE_KEYS
-                             if (envelope or {}).get(k) not in (None, "")}
+        merged = dict(state.get("envelope") or {})
+        merged.update({k: v for k, v in (envelope or {}).items() if v not in (None, "")})
+        state["envelope"] = {k: merged[k] for k in _ENVELOPE_KEYS if k in merged}
         if shape is not None:
             state["shape"] = {k: int(v) for k, v in shape.items()}
+        if plan is not None:
+            state["plan"] = plan
         state.setdefault("seq", 0)
         with open(_session_state_path(session_id), "w") as fh:
             json.dump(state, fh)
     except Exception:
         pass
+
+
+def session_org_id(session_id):
+    """org_id already captured for this run (a replan need not fetch it again)."""
+    return (_load_state(session_id).get("envelope") or {}).get("org_id")
 
 
 def _read_session_envelope(session_id):
@@ -278,10 +379,19 @@ def _reconcile_run_result(out, session_id):
         return
     if not any(k in out for k in ("step_success_count", "step_failed_count", "step_skipped_count")):
         return   # no counts on this event -> nothing to reconcile against
-    s = int(out.get("step_success_count", 0) or 0)
-    f = int(out.get("step_failed_count", 0) or 0)
-    k = int(out.get("step_skipped_count", 0) or 0)
-    d = int(_read_run_shape(session_id).get("dead_end_count", 0) or 0)
+    derived = _derive_result(
+        int(out.get("step_success_count", 0) or 0),
+        int(out.get("step_failed_count", 0) or 0),
+        int(out.get("step_skipped_count", 0) or 0),
+        int(_read_run_shape(session_id).get("dead_end_count", 0) or 0))
+    if derived != result:
+        out["result_reported"] = result    # preserve the agent's verdict
+        out["result"] = derived            # count-consistent truth for the funnel
+        out["result_reconciled"] = True
+
+
+def _derive_result(s, f, k, d):
+    """The run verdict the step counts (success/failed/skipped) and dead-end count imply."""
     if s >= 1 and f == 0 and k == 0:
         derived = "success"                # everything dispatched succeeded; dead-ends are coverage
                                            # gaps (a product with no skill yet), not partial failures
@@ -293,10 +403,7 @@ def _reconcile_run_result(out, session_id):
         derived = "blocked"                # nothing errored, but dead-ends stopped all progress
     else:
         derived = "failed"                 # something actually failed
-    if derived != result:
-        out["result_reported"] = result    # preserve the agent's verdict
-        out["result"] = derived            # count-consistent truth for the funnel
-        out["result_reconciled"] = True
+    return derived
 
 
 def build_event(event_type, event_action, session_id, fields=None):
@@ -443,13 +550,143 @@ def emit(event_type, event_action, session_id, fields=None,
         return False
 
 
+# --- `record`: one call per dispatch boundary = trace update + event -------------------
+# The trace is graded, so the agent reliably keeps it current. Routing that update through
+# here makes the step events ride along instead of depending on a separate, skippable call.
+_INSTRUMENTING_KINDS = {"platform-install", "cloud-connect", "product-enable"}
+
+
+def trace_path():
+    # Same path SKILL.md Step 5 tees to.
+    base = os.environ.get("DD_ORCH_OUTPUT_DIR") or os.path.join(
+        os.environ.get("TMPDIR") or "/tmp", "dd-orchestrator")
+    return os.path.join(base, "trace.md")
+
+
+def _edit_trace(confirmed=None, dispatched=None):
+    """Set `CONFIRMED:` and/or add one skill id under `DISPATCHED:` (once). Never raises."""
+    try:
+        path = trace_path()
+        with open(path) as fh:
+            lines = fh.read().splitlines()
+        out, in_dispatched, seen = [], False, False
+        for line in lines:
+            if confirmed is not None and line.startswith("CONFIRMED:"):
+                line = f"CONFIRMED: {confirmed}"
+            if line.startswith("DISPATCHED:"):
+                in_dispatched = True
+                if dispatched:
+                    line = "DISPATCHED:"              # drop the fill-in placeholder
+            elif in_dispatched and line.startswith("=== END"):
+                if dispatched and not seen:
+                    out.append(f"  {dispatched}")
+                in_dispatched = False
+            elif in_dispatched and line.strip().lstrip("-* ").split(" ")[0] == dispatched:
+                seen = True
+            out.append(line)
+        with open(path, "w") as fh:
+            fh.write("\n".join(out) + "\n")
+    except Exception as err:
+        _debug(f"trace-edit failed: {err!r}")
+
+
+def _save_state(session_id, state):
+    try:
+        with open(_session_state_path(session_id), "w") as fh:
+            json.dump(state, fh)
+    except Exception:
+        pass
+
+
+def record(what, session_id, skill_id=None, result=None, source_mode=None):
+    """Advance the run one step: update the trace and emit the matching event, with every
+    field derived from the stored plan. Never raises."""
+    try:
+        state = _load_state(session_id)
+        steps = state.setdefault("steps", {})
+        plan = state.get("plan") or []
+        node = next((n for n in plan if n.get("id") == skill_id), {})
+        step = {"skill_id": skill_id, "plan_position": node.get("position"),
+                "skill_kind": node.get("kind"), "product": node.get("product"),
+                "source_repo": node.get("source_repo")}
+        now = int(time.time() * 1000)
+
+        if what in ("confirmed", "declined"):
+            state["confirmed"] = what == "confirmed"
+            _save_state(session_id, state)
+            _edit_trace(confirmed="yes" if what == "confirmed" else "no")
+            emit("skill_run", what, session_id)
+        elif what == "started":
+            steps[skill_id] = {"started_at": now}
+            _save_state(session_id, state)
+            emit("skill_step", "started", session_id, {**step, "source_mode": source_mode})
+        elif what == "finished":
+            result = result or "success"
+            entry = steps.setdefault(skill_id, {})
+            entry["status"] = "success" if result == "success" else "failed"
+            started = entry.get("started_at")
+            _save_state(session_id, state)
+            if result == "success":
+                _edit_trace(dispatched=skill_id)
+            emit("skill_step", "finished", session_id, {
+                **step, "result": result, "skill_invoked": True,
+                "duration_ms": now - started if started else None,
+                "instrumentation_invoked": node.get("kind") in _INSTRUMENTING_KINDS})
+        elif what == "skipped":
+            steps.setdefault(skill_id, {})["status"] = "skipped"
+            _save_state(session_id, state)
+            emit("skill_step", "skipped", session_id,
+                 {**step, "result": result or "skipped_dependency"})
+        elif what == "run-finished":
+            statuses = [s.get("status") for s in steps.values()]
+            s, f, k = (statuses.count(x) for x in ("success", "failed", "skipped"))
+            if not result:
+                if state.get("confirmed") is False:
+                    result = "cancelled"
+                elif s or f or k:
+                    result = _derive_result(
+                        s, f, k, int((state.get("shape") or {}).get("dead_end_count", 0)))
+                else:
+                    result = "blocked"             # nothing ran and nobody declined
+            emit("skill_run", "finished", session_id, {
+                "result": result, "step_success_count": s,
+                "step_failed_count": f, "step_skipped_count": k})
+        else:
+            _debug(f"record: unknown step {what!r}")
+    except Exception as err:
+        _debug(f"record-exception {what}: {err!r}")
+
+
+def _record_cli(argv):
+    parser = argparse.ArgumentParser(prog="emit.py record",
+                                     description="update the trace and emit one run event")
+    parser.add_argument("what", choices=("confirmed", "declined", "started", "finished",
+                                         "skipped", "run-finished"))
+    parser.add_argument("skill_id", nargs="?")
+    parser.add_argument("--result")
+    parser.add_argument("--source-mode", choices=("installed", "fetched"))
+    parser.add_argument("--session-id", default="")
+    args = parser.parse_args(argv)
+    session_id = args.session_id or current_session()
+    if not session_id:
+        _debug(f"record: no session id for {args.what}")
+        return 0
+    if args.what in ("started", "finished", "skipped") and not args.skill_id:
+        parser.error(f"record {args.what} needs a skill_id")
+    record(args.what, session_id, args.skill_id, args.result, args.source_mode)
+    return 0
+
+
 def _cli(argv=None):
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["record"]:
+        return _record_cli(argv[1:])
     parser = argparse.ArgumentParser(
         description="best-effort dd-orchestrator telemetry emitter (v1)")
     parser.add_argument("event_type", choices=sorted(EVENT_TYPES))
     parser.add_argument("--action", required=True, help="event lifecycle action")
-    parser.add_argument("--session-id", required=True,
-                        help="the run's shared session id (from resolve.py 'SESSION ID:')")
+    parser.add_argument("--session-id", default="",
+                        help="the run's session id; defaults to the one resolve.py saved")
     parser.add_argument("--field", action="append", default=[], metavar="KEY=VALUE",
                         help="event field (repeatable); non-allow-listed keys are dropped")
     args = parser.parse_args(argv)
@@ -460,7 +697,7 @@ def _cli(argv=None):
             continue
         key, value = item.split("=", 1)
         fields[key.strip()] = value
-    emit(args.event_type, args.action, args.session_id, fields)
+    emit(args.event_type, args.action, args.session_id or current_session(), fields)
     return 0   # ALWAYS succeed — telemetry must never fail the caller
 
 

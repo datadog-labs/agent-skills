@@ -87,15 +87,15 @@ composition is computed from the capability graph in
   per plan node** (e.g. `-> dd-account-setup ...` then `done: dd-account-setup`). Do not narrate your
   reasoning, read files aloud, restate the goal or the plan, or re-explain these rules. The audit detail
   belongs in the run's trace file (Step 5) — point to it; do not reprint it. Keep your reasoning internal; do not
-  think out loud. **Setup and telemetry plumbing** — capturing the org id, running preflight shell
-  commands, emitting `emit.py` events — is internal: run it silently and never announce it or report its
-  outcome (e.g. "capturing the org id", "org id not captured"), **unless the context explicitly asks for
-  debug info**. Fewer words, no lost meaning (this pairs with Simplified Technical English below).
-- **Correctness first; styling and telemetry are best-effort.** The load-bearing path is: account
-  first → compose with `resolve.py` → confirm → dispatch each planned skill once, in order. Per-step
-  telemetry (`emit.py`) and the Simplified Technical English styling below are best-effort. If you are
-  under load, on a tight budget, or a telemetry call is failing, skip them and keep going — they never
-  change the plan, the dispatch, or the grade.
+  think out loud. **Setup and telemetry plumbing** — running preflight shell commands and
+  `emit.py record` calls — is internal: run it silently and never announce it or report its outcome,
+  **unless the context explicitly asks for debug info**. Fewer words, no lost meaning (this pairs with
+  Simplified Technical English below).
+- **Correctness first; styling is best-effort.** The load-bearing path is: account first → compose
+  with `resolve.py` → confirm → dispatch each planned skill once, in order, recording each boundary
+  with `emit.py record` (it keeps the trace current, so it is not optional). The Simplified Technical
+  English styling below is best-effort. Sending telemetry can fail without consequence: `record`
+  always exits 0 and still updates the trace.
 - **Prefer Simplified Technical English (ASD-STE100)** (best-effort — see *Correctness first* above).
   All user-facing output — the checklist, the plan, choice questions, gaps, and the summary — uses
   Simplified Technical English (ASD-STE100). Apply its core rules:
@@ -136,25 +136,8 @@ developer goal
 2. **Ensure the account** — invoke `dd-account-setup` (installed → invoke directly; not installed →
    fetch it from source and run it inline, per *Ground rules*); stop if it cannot produce a validated
    key. `dd-account-setup` owns the site/region and authentication prompts — do not pre-empt them;
-   invoke it and let it ask.
-   Then capture the authenticated org id for telemetry (best-effort — any failure just leaves it unset
-   and the field is omitted). This works on **any** validated path: prefer the OAuth Bearer token that
-   `dd-account-setup` leaves in place, and fall back to the API+APP key pair — so an OAuth sign-in that
-   has no app key still resolves the org (do not try to mint an app key just for this). Run once,
-   before Step 5, and **silently** — do not announce the capture or its outcome (it is best-effort
-   telemetry); surface it only if the context asks for debug info:
-
-   ```bash
-   tf="${TMPDIR:-/tmp}/dd-oauth-$(id -u).token"
-   if   [ -s "$tf" ];        then hdr=(-H "Authorization: Bearer $(cat "$tf")")
-   elif [ -n "$DD_APP_KEY" ]; then hdr=(-H "DD-API-KEY: $DD_API_KEY" -H "DD-APPLICATION-KEY: $DD_APP_KEY")
-   else hdr=(); fi
-   [ ${#hdr[@]} -gt 0 ] && export DD_ORG_ID="$(curl -sf -m 5 "${hdr[@]}" \
-     "https://api.${DD_SITE:-datadoghq.com}/api/v2/current_user" \
-     | python3 -c 'import sys,json; d=json.load(sys.stdin); o=d["data"]["relationships"]["org"]["data"]["id"]; print(next((x["attributes"]["public_id"] for x in d.get("included",[]) if x.get("type")=="orgs" and x.get("id")==o), o))' 2>/dev/null || true)"
-   ```
-
-   `resolve.py` (Step 5) reads `DD_ORG_ID` into the run envelope, so every event carries the org id.
+   invoke it and let it ask. Leave the OAuth token it writes in place until the run ends: `resolve.py`
+   (Step 5) uses it to read the org id for telemetry.
 3. **Products — shortcut or recommend.** First check whether the intent already names products:
    `python3 dd-orchestrator/scripts/resolve.py --detect-products "<intent>"`.
    - If it prints one or more product tokens, the user named the products: use that list and **skip
@@ -192,13 +175,15 @@ developer goal
    `$TRACE`. **That deterministic block IS your dispatch trace; never re-narrate the plan by
    hand.** Read the same output for the ordered plan, the dead-ends, and any choice points. **Capture the
    `SESSION_ID:` value from that block** in a run-local variable: `SID=<SESSION_ID>`.
-   Pass `--session-id "$SID"` to every later `resolve.py` re-run and `emit.py` call. Capture a fresh
-   value from the first trace of each new run; do not export `DD_ORCH_SESSION_ID`. If an outer wrapper
-   supplies that environment variable, the resolver honors it; leave its value unchanged.
-   A new id during a replan would split one run's telemetry and restart its `event_seq`. In **debug
+   Pass `--session-id "$SID"` to every later `resolve.py` re-run. Capture a fresh value from the first
+   trace of each new run; do not export `DD_ORCH_SESSION_ID`. If an outer wrapper supplies that
+   environment variable, the resolver honors it; leave its value unchanged. `resolve.py` also saves the
+   id to a state file, so `emit.py record` needs no id, and a re-run whose `$SID` is empty in a new shell
+   stays in the same run. A new id during a replan would split one run's telemetry and restart its
+   `event_seq`. In **debug
    mode** (only when the context explicitly asks for it), add `--debug` to also render the ASCII DAG
-   (indent = dependency depth, `<-` = direct prerequisites). `resolve.py` also emits the reliable
-   telemetry core here (see **Telemetry** below). After seeding the trace, record the successful
+   (indent = dependency depth, `<-` = direct prerequisites). `resolve.py` also emits the plan
+   telemetry here (see **Run records** below). After seeding the trace, record the successful
    `dd-account-setup` preflight as the first line under `DISPATCHED`. Restore that entry after any
    choice-driven trace regeneration, including when no further skills can run.
 6. **Resolve choices** — for each choice point (e.g. "pick a platform: kubernetes, linux"), ask the
@@ -212,22 +197,23 @@ developer goal
    source and run inline, per *Ground rules*) — and ticking the
    checklist. Whenever the plan begins with `dd-account-setup` (every plan that needs an account —
    i.e. any non-empty onboarding plan), Step 2 already ran it: do **not** invoke it a second time;
-   tick that node, retain its first `DISPATCHED` entry, and emit its `skill_step:started`/`finished`
+   tick that node, retain its first `DISPATCHED` entry, and record its `started` / `finished`
    from the preflight result, then continue with the next node. Do not start a node until its
    prerequisites succeeded; if one fails, skip its dependents.
-   As you dispatch, emit best-effort per-step telemetry (**Telemetry** below): `skill_step:started`
-   before a node, then `skill_step:finished` (with `result` + `duration_ms`) or `skill_step:skipped`.
-   **Keep the trace file (`$TRACE`, Step 5) current:** set `CONFIRMED: yes` on approval, or
-   `CONFIRMED: no` if the user declines. Add each `skill_id` to `DISPATCHED` once, in execution order,
-   only after it ran successfully — directly if installed, or fetched-and-run otherwise. A failed
+   **Keep the trace file (`$TRACE`, Step 5) current with `emit.py record`** (**Run records** below):
+   `record confirmed` on approval or `record declined` if the user declines; `record started <id>`
+   before each node; then `record finished <id> --result success|failed`, or `record skipped <id>`
+   for a node that does not run. `record finished --result success` adds the id to `DISPATCHED` once,
+   in execution order, so `DISPATCHED` lists only skills that ran successfully, directly if installed
+   or fetched-and-run otherwise. A failed
    fetch or execution belongs under `DEAD_ENDS` with its actual error; distinguish "not run" from
    "ran and failed", and stop that dependency chain. `DISPATCHED` records successful executions,
    starting with the account preflight. If choices remain, the plan is empty, or the user declines,
    run no further skills; keep the successful preflight entry without inventing additional dispatches.
 8. **Summarize — render the SUMMARY block.** As the terminal output, render the **SUMMARY block** (see
    *Output templates* below) verbatim, in the exact section order. The skipped / gaps list is a real
-   output — the coverage-gap / demand signal for what to automate next; state it, do not hide it. Emit
-   one terminal `skill_run:finished` (**Telemetry**).
+   output — the coverage-gap / demand signal for what to automate next; state it, do not hide it. Run
+   `emit.py record run-finished` once (**Run records**).
 
 ## Output templates
 
@@ -318,48 +304,42 @@ session {{session_id}} · {{event_count}} events · result {{result}} ({{s}}✓ 
 > coverage gaps, not partial failures. Use `partial_success` when a planned fetch or execution
 > **failed**, or a dependent step was **skipped**; do not infer success from `DISPATCHED` alone.
 > Use `blocked` when nothing beyond the account preflight can run because every product dead-ended;
-> `cancelled` when the user declined the plan. Report failures and skips in the telemetry counts even
+> `cancelled` when the user declined the plan. Record failures and skips with `emit.py record` even
 > though those skills are absent from `DISPATCHED`; `emit.py` reconciles the verdict from those counts.
 
-## Telemetry (best-effort — never blocks onboarding)
+## Run records (`emit.py record`) and telemetry
 
-All telemetry goes through `emit.py`; **never build your own HTTP request or `curl`.** It is
-best-effort by construction (bounded timeout, local debug log, never throws) and emits to the
-logs-intake route only. Turn it off with `DD_ORCH_TELEMETRY_DISABLED=1`. Reuse the single
-`SID` captured in Step 5 via `--session-id "$SID"` on every call so the whole run stitches together.
-
-`resolve.py` already emits the reliable core: one `skill_run:started` per session, then
-`skill_run:plan_resolved` and one `skill_step:planned` per plan node and per dead-end on each resolve
-(each `skill_step` also carries `depends_on`
-— the CSV of prerequisite plan positions — so the DAG edges are reconstructable). `resolve.py`
-persists the run envelope (agent, platform, cloud, entry, intent mode, org id) and `emit.py` re-attaches it plus an
-`emitted_at` (ms) timestamp to **every** event automatically — so you need not re-pass the envelope;
-send only the per-step fields below. During dispatch you add the per-step lifecycle and the terminal
-run event:
+Every dispatch boundary is **one** `emit.py record` call. It updates the trace file (`$TRACE`) and
+sends the matching telemetry event in the same step, so you never edit `CONFIRMED` or `DISPATCHED`
+by hand and never call the emitter separately. `record` takes the plan, the session id, and the
+step fields from the state that `resolve.py` saved, so a fresh shell needs no `$SID`. It also
+computes `duration_ms` and the final step counts itself.
 
 ```
-# SID is the run-local SESSION_ID captured in Step 5.
-
-# before invoking a plan node (source_mode records how it ran: installed vs fetched-from-source)
-python3 dd-orchestrator/scripts/emit.py skill_step --action started --session-id "$SID" \
-  --field plan_position=<n> --field skill_id=<id> --field skill_kind=<kind> \
-  --field product=<product> --field source_repo=<repo> --field source_mode=<installed|fetched>
-
-# after it returns
-python3 dd-orchestrator/scripts/emit.py skill_step --action finished --session-id "$SID" \
-  --field plan_position=<n> --field skill_id=<id> --field result=success \
-  --field duration_ms=<ms> --field skill_invoked=true \
-  --field instrumentation_invoked=<true if it was an install/connect/enable skill>
-
-# if a node is NOT run (failed prerequisite, user declined, no automation, source unreachable)
-python3 dd-orchestrator/scripts/emit.py skill_step --action skipped --session-id "$SID" \
-  --field plan_position=<n> --field skill_id=<id> --field result=skipped_dependency
-
-# once, when the run reaches a terminal state
-python3 dd-orchestrator/scripts/emit.py skill_run --action finished --session-id "$SID" \
-  --field result=<success|partial_success|failed|blocked|cancelled> \
-  --field step_success_count=<n> --field step_failed_count=<n> --field step_skipped_count=<n>
+python3 dd-orchestrator/scripts/emit.py record confirmed          # user approved the plan -> CONFIRMED: yes
+python3 dd-orchestrator/scripts/emit.py record declined           # user declined -> CONFIRMED: no
+python3 dd-orchestrator/scripts/emit.py record started  <skill_id> --source-mode <installed|fetched>
+python3 dd-orchestrator/scripts/emit.py record finished <skill_id> --result <success|failed>   # success -> DISPATCHED
+python3 dd-orchestrator/scripts/emit.py record skipped  <skill_id>  # failed prerequisite, declined, or source unreachable
+python3 dd-orchestrator/scripts/emit.py record run-finished       # once, at the end
 ```
+
+`record run-finished` derives `result` from the recorded steps: `cancelled` after `record declined`,
+and `blocked` when nothing ran. Pass `--result blocked` or `--result cancelled` only when that
+derivation would be wrong.
+
+The commands always exit 0. Sending is best-effort (bounded timeout, local debug log, never throws),
+goes to the logs-intake route only, and is turned off with `DD_ORCH_TELEMETRY_DISABLED=1`; the trace
+update still happens. **Never build your own HTTP request or `curl`.** The eval harness sets
+`DD_ORCH_RUN_CONTEXT=eval` so its runs are kept apart from real usage.
+
+`resolve.py` emits the plan core on each resolve: one `skill_run:started` per session, then
+`skill_run:plan_resolved` and one `skill_step:planned` per plan node and per dead-end (each
+`skill_step` also carries `depends_on`, the CSV of prerequisite plan positions, so the DAG edges are
+reconstructable). It also saves the run envelope (agent, run context, platform, cloud, entry, intent
+mode, org id), and `emit.py` re-attaches it and an `emitted_at` (ms) timestamp to **every** event. The
+agent is detected from its environment, and the org id is read with the OAuth token that
+`dd-account-setup` leaves in place.
 
 Field values are bounded enums / ids / counts only — never send goal text, paths, keys, URLs, or
 model output (the emitter also strips anything not on its allow-list).
