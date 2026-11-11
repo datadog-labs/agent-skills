@@ -1883,6 +1883,280 @@
       "visibility": "public"
     },
     {
+      "key": "dd-aws-ccm@s2",
+      "id": "dd-aws-ccm",
+      "kind": "product-enable",
+      "product": "cost",
+      "action": "enable",
+      "platform": [],
+      "cloud": [
+        "aws"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "aws"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-aws-ccm/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-azure-ccm@s2",
+      "id": "dd-azure-ccm",
+      "kind": "product-enable",
+      "product": "cost",
+      "action": "enable",
+      "platform": [],
+      "cloud": [
+        "azure"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "azure"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-azure-ccm/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-gcp-ccm@s2",
+      "id": "dd-gcp-ccm",
+      "kind": "product-enable",
+      "product": "cost",
+      "action": "enable",
+      "platform": [],
+      "cloud": [
+        "gcp"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "gcp"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-gcp-ccm/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-oci-ccm@s2",
+      "id": "dd-oci-ccm",
+      "kind": "product-enable",
+      "product": "cost",
+      "action": "enable",
+      "platform": [],
+      "cloud": [
+        "oci"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "oci"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-oci-ccm/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-aws-storage-management@s2",
+      "id": "dd-aws-storage-management",
+      "kind": "product-enable",
+      "product": "storage",
+      "action": "enable",
+      "platform": [],
+      "cloud": [
+        "aws"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "aws"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-aws-storage-management/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-dbm-rds-postgres@s2",
+      "id": "dd-dbm-rds-postgres",
+      "kind": "product-enable",
+      "product": "dbm",
+      "action": "enable",
+      "platform": [],
+      "cloud": [
+        "aws"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "aws"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "standalone, writable, single-instance PostgreSQL on Amazon RDS only - not a read replica, not part of an RDS Multi-AZ DB cluster, not Aurora, and not MySQL, SQL Server or another engine; confirm the target matches before running this skill or its prerequisites",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-dbm-rds-postgres/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-confluent-cloud-integration@s2",
+      "id": "dd-confluent-cloud-integration",
+      "kind": "product-enable",
+      "product": "confluent-cloud",
+      "action": "enable",
+      "platform": [],
+      "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-confluent-cloud-integration/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "apm-onboarding-summary-kubernetes@s2",
       "id": "apm-onboarding-summary-kubernetes",
       "kind": "verify-troubleshoot",
