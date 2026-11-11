@@ -109,7 +109,6 @@ SITE_APP_SLUGS = {
     "us5.datadoghq.com": "datadog-us5",
     "ap1.datadoghq.com": "datadog-ap1",
     "datadoghq.eu": "datadog-eu",
-    "ddog-gov.com": "datadog-gov",
     "datad0g.com": "datadog-staging",
 }
 
@@ -220,11 +219,19 @@ def app_host(site):
     return site if site.count(".") >= 2 else f"app.{site}"
 
 
+# Datadog for Government is out of scope for the agentic onboarding skills.
+GOV_SITE = "ddog-gov.com"
+
+
 def resolve_site(args):
-    """--site wins (lowercased); otherwise derive from pup."""
-    if args.site:
-        return normalize_site(args.site)
-    return site_from_pup(args.pup, args.org)
+    """--site wins (lowercased); otherwise derive from pup. Refuses gov sites."""
+    site = normalize_site(args.site) if args.site else site_from_pup(args.pup, args.org)
+    if site == GOV_SITE or site.endswith("." + GOV_SITE):
+        raise GitHubError(
+            f"this onboarding skill does not support Datadog for Government ({site}); "
+            "set up the integration from the Datadog app instead"
+        )
+    return site
 
 
 def pup_api(pup, site, method, path, fields=None, org=None, auto_approve=False, body=None):

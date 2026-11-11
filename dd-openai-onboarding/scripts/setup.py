@@ -46,6 +46,10 @@ HELPER_CHALLENGE_PATTERN = re.compile(r"^[A-Za-z0-9_-]{32,128}$")
 HELPER_CONNECT_TIMEOUT = 60
 
 
+# Datadog for Government is out of scope for the agentic onboarding skills.
+GOV_SITE = "ddog-gov.com"
+
+
 class SetupError(Exception):
     def __init__(
         self,
@@ -243,6 +247,18 @@ def _pup_version() -> tuple[int, int, int] | None:
     )
 
 
+def _refuse_gov_site(site: str) -> None:
+    """Raise when the Datadog site is Datadog for Government, which is out of scope."""
+    site = site.strip().lower()
+    if site == GOV_SITE or site.endswith("." + GOV_SITE):
+        raise SetupError(
+            "datadog_gov_unsupported",
+            f"This onboarding skill does not support Datadog for Government ({site}). "
+            "Set up the integration from the Datadog app instead.",
+            details={"site": site},
+        )
+
+
 def _validate_pup() -> dict[str, Any]:
     if shutil.which("pup") is None:
         raise SetupError(
@@ -285,6 +301,7 @@ def _validate_pup() -> dict[str, Any]:
             "pup_not_authenticated",
             "Authenticate to Datadog with `pup auth login`.",
         )
+    _refuse_gov_site(str(status.get("site") or ""))
     if status.get("token_type") == "bearer":
         scopes = {
             item for item in status.get("scopes", [])

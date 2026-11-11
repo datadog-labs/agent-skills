@@ -45,6 +45,10 @@ Checklist:
 
 ## Phase 0: Preflight
 
+**Datadog for Government is not supported.** If `pup auth status` reports a
+`ddog-gov.com` site, stop and tell the user to set up the integration from the
+Datadog app instead. The script refuses Government sites too.
+
 **Tools.** `pup` and `python3` are required; a browser is needed to finish PagerDuty's
 install screen:
 

@@ -70,8 +70,9 @@ pup auth status
 ```
 
 - `authenticated: true` → use the reported `site`; continue.
-- The site is **Datadog for Government** (`ddog-gov.com`) → stop: the GitHub
-  Copilot integration is not available there yet, and the script refuses it.
+- The site is **Datadog for Government** (`ddog-gov.com`) → stop: this skill
+  doesn't support Government sites; point the user to the Datadog app. The
+  script refuses it too.
 - `authenticated: false` → **do not declare the user unauthenticated yet.** pup reports the
   session for the site in `DD_SITE` (default `datadoghq.com`) or the named pup session —
   a user logged into another site (e.g. EU `datadoghq.eu`) shows as unauthenticated

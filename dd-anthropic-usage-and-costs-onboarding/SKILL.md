@@ -30,6 +30,10 @@ so the script creates the account and turns on CCM in the same request.
 
 ## Phase 0: Preflight
 
+**Datadog for Government is not supported.** If `pup auth status` reports a
+`ddog-gov.com` site, stop and tell the user to set up the integration from the
+Datadog app instead. The script refuses Government sites too.
+
 **Pup.** Installed and authenticated. The setup script performs every Datadog
 request through `pup api`, which owns authentication selection, OAuth
 refresh, site, and organization selection, and it validates Pup itself before

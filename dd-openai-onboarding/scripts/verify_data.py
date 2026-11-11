@@ -23,6 +23,7 @@ from setup import (
     _account_summary,
     _existing_account,
     _pup_base,
+    _refuse_gov_site,
     _sanitize_text,
     emit,
 )
@@ -150,6 +151,10 @@ def verify(
     def remaining() -> float:
         return max(deadline - clock(), 0)
 
+    # Refuse Government sites before any Datadog API call.
+    site = _datadog_site(timeout=min(remaining(), 10))
+    _refuse_gov_site(site or "")
+
     # Retry transient lookup failures (for example 429 or 503) within the same
     # deadline as polling, backing off quickly so a brief blip costs little.
     lookup_delays = iter(LOOKUP_RETRY_DELAYS_SECONDS)
@@ -176,7 +181,6 @@ def verify(
             recoverable=False,
         )
     account_id = str(account["id"])
-    site = _datadog_site(timeout=min(remaining(), 10))
 
     attempts = 0
     sample: list[str] = []

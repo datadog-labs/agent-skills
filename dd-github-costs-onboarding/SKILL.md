@@ -29,6 +29,10 @@ and code in stack traces or PR comments through the GitHub App (use
 
 ## Phase 0: Preflight
 
+**Datadog for Government is not supported.** If `pup auth status` reports a
+`ddog-gov.com` site, stop and tell the user to set up the integration from the
+Datadog app instead. The script refuses Government sites too.
+
 Check these before step 1; when a required one fails, stop with its fix:
 
 - **`pup`, installed and authenticated.** The setup script performs every

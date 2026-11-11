@@ -162,11 +162,19 @@ def site_from_pup(pup="pup", org=None):
     return site
 
 
+# Datadog for Government is out of scope for the agentic onboarding skills.
+GOV_SITE = "ddog-gov.com"
+
+
 def resolve_site(args):
-    """--site wins (validated, lowercased); otherwise derive from pup."""
-    if args.site:
-        return normalize_site(args.site)
-    return site_from_pup(args.pup, args.org)
+    """--site wins (validated, lowercased); otherwise derive from pup. Refuses gov sites."""
+    site = normalize_site(args.site) if args.site else site_from_pup(args.pup, args.org)
+    if site == GOV_SITE or site.endswith("." + GOV_SITE):
+        raise SlackError(
+            f"this onboarding skill does not support Datadog for Government ({site}); "
+            "set up the integration from the Datadog app instead"
+        )
+    return site
 
 
 def pup_api(pup, site, method, path, fields=None, org=None):

@@ -18,7 +18,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from _common import SetupError, sanitize_text  # noqa: E402
-from _datadog import ACCOUNTS_PATH, _account_summary, _pup_base  # noqa: E402
+from _datadog import ACCOUNTS_PATH, _account_summary, _pup_base, _refuse_gov_site  # noqa: E402
 
 MAX_WAIT_SECONDS = 420
 POLL_INTERVAL_SECONDS = 30
@@ -182,6 +182,10 @@ def verify(
     def remaining() -> float:
         return max(deadline - clock(), 0)
 
+    # Refuse Government sites before any Datadog API call.
+    site = _datadog_site(timeout=min(remaining(), 10))
+    _refuse_gov_site(site or "")
+
     name = account_name.strip()
     # Retry transient lookup failures (for example 429 or 503) within the same
     # deadline as polling, backing off quickly so a brief blip costs little.
@@ -199,7 +203,6 @@ def verify(
                     details={"message": str(error)},
                 ) from error
             sleep(wait)
-    site = _datadog_site(timeout=min(remaining(), 10))
     attempts = 0
     last_error: str | None = None
     events: list[dict[str, Any]] = []

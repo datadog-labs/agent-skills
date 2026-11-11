@@ -216,8 +216,8 @@ def resolve_site(args):
     site = normalize_site(args.site) if args.site else site_from_pup(args.pup, args.org)
     if site == GOV_SITE_SUFFIX or site.endswith("." + GOV_SITE_SUFFIX):
         raise CopilotError(
-            f"the GitHub Copilot integration is not available on Datadog for "
-            f"Government ({site}) yet"
+            f"this onboarding skill does not support Datadog for Government ({site}); "
+            "set up the integration from the Datadog app instead"
         )
     return site
 

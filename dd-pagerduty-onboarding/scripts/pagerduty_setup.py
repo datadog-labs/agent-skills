@@ -156,12 +156,22 @@ def site_from_pup(pup="pup", org=None):
     return site
 
 
+# Datadog for Government is out of scope for the agentic onboarding skills.
+GOV_SITE = "ddog-gov.com"
+
+
 def resolve_site(args):
     """The Datadog site of the user's pup session (`DD_SITE` selects it).
 
     There is no --site override: the site always comes from the session that
-    makes the API calls, so the mint and the API never disagree."""
-    return site_from_pup(args.pup, args.org)
+    makes the API calls, so the mint and the API never disagree. Refuses gov sites."""
+    site = site_from_pup(args.pup, args.org)
+    if site == GOV_SITE or site.endswith("." + GOV_SITE):
+        raise PagerDutyError(
+            f"this onboarding skill does not support Datadog for Government ({site}); "
+            "set up the integration from the Datadog app instead"
+        )
+    return site
 
 
 def pup_api(pup, site, method, path, fields=None, org=None, auto_approve=False, body=None):

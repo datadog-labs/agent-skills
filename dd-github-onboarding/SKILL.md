@@ -45,6 +45,10 @@ GitHub billing and costs in Cloud Cost Management (use
 
 ## Phase 0: Preflight
 
+**Datadog for Government is not supported.** If `pup auth status` reports a
+`ddog-gov.com` site, stop and tell the user to set up the integration from the
+Datadog app instead. The script refuses Government sites too.
+
 **`pup` and the site.** This flow drives the Datadog API through `pup api`, and
 the site is derived from the user's pup authentication, so the API
 calls hit the same Datadog environment they are logged into:
