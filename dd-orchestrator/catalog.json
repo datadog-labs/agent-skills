@@ -1883,6 +1883,40 @@
       "visibility": "public"
     },
     {
+      "key": "dd-instrument-test-optimization@s2",
+      "id": "dd-instrument-test-optimization",
+      "kind": "product-enable",
+      "product": "test-optimization",
+      "action": "enable",
+      "platform": [],
+      "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-test-optimization/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "apm-onboarding-summary-kubernetes@s2",
       "id": "apm-onboarding-summary-kubernetes",
       "kind": "verify-troubleshoot",
