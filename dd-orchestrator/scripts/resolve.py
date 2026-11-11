@@ -589,6 +589,14 @@ class Router:
                     add(v)
                     dependencies.add((v["key"], m["key"]))
 
+        # `after` orders a node behind every planned skill of the named product
+        # (its enabler and verifier) without staging that product when it is absent.
+        for n in include.values():
+            for edge in n.get("after", []):
+                for other in include.values():
+                    if other["key"] != n["key"] and other.get("product") == edge["product"]:
+                        dependencies.add((n["key"], other["key"]))
+
         def stable_key(key):
             n = include[key]
             return (KIND_RANK[n["kind"]], n.get("product") or "", n["id"], n["key"])

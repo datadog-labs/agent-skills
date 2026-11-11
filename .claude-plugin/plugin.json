@@ -65,6 +65,7 @@
     "./dd-gcp-ccm/",
     "./dd-gcp-integration/",
     "./dd-gcp-log-forwarding/",
+    "./dd-instrument-error-tracking/",
     "./dd-instrument-llmo/",
     "./dd-instrument-product-analytics/",
     "./dd-instrument-rum/",
