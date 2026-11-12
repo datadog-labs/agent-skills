@@ -95,8 +95,8 @@ composition is computed from the capability graph in
 - **Correctness first; styling is best-effort.** The load-bearing path is: account first → compose
   with `resolve.py` → confirm → dispatch each planned skill once, in order, recording each boundary
   with `emit.py record` (it keeps the trace current, so it is not optional). The Simplified Technical
-  English styling below is best-effort. Sending telemetry can fail without consequence: `record`
-  always exits 0 and still updates the trace.
+  English styling below is best-effort. Sending telemetry can fail without consequence: a failed
+  send never changes `record`'s exit code and the trace is still updated.
 - **Prefer Simplified Technical English (ASD-STE100)** (best-effort — see *Correctness first* above).
   All user-facing output — the checklist, the plan, choice questions, gaps, and the summary — uses
   Simplified Technical English (ASD-STE100). Apply its core rules:
@@ -160,12 +160,12 @@ developer goal
    value is missing or the repository and goal conflict. Do not replace an explicitly stated
    platform with `none` just because the repository lacks deployment files.
 5. **Compose the plan and seed the trace.** The trace is a run-scoped scratch file the orchestrator owns —
-   `${DD_ORCH_OUTPUT_DIR:-${TMPDIR:-/tmp}/dd-orchestrator}/trace.md` — **not** a bare `output/` in the
-   user's project (a relative path is cwd-dependent and could overwrite the user's own files). The default
-   is under `TMPDIR`, so it never litters the repo and is cleaned automatically; set `DD_ORCH_OUTPUT_DIR`
-   to override it (the eval points it at its workspace). Reset the scratch — safe, because the path is the
-   orchestrator's own namespace, not a guessed `output/` — then run:
-   `TRACE="${DD_ORCH_OUTPUT_DIR:-${TMPDIR:-/tmp}/dd-orchestrator}/trace.md"; mkdir -p "$(dirname "$TRACE")" && rm -f "$TRACE"`
+   **not** a bare `output/` in the user's project. Ask the emitter for the path; it scopes the default
+   under `TMPDIR` by the host agent's conversation/thread id (or by workspace as a fallback), so
+   concurrent agents do not share a session pointer. `DD_ORCH_OUTPUT_DIR` overrides the directory
+   (the eval sets it per cell). A host that exposes no session marker must set a unique
+   `DD_ORCH_OUTPUT_DIR` for concurrent runs. Reset the scratch, then run:
+   `TRACE="$(python3 dd-orchestrator/scripts/emit.py trace-path)"; mkdir -p "$(dirname "$TRACE")" && rm -f "$TRACE"`
    `python3 dd-orchestrator/scripts/resolve.py --trace --products "<products>" --platform <platform> --cloud <cloud> --intent-mode <explicit|recommended> | tee "$TRACE"`
    Pass `--intent-mode explicit` when Step 3's shortcut named the products, or `--intent-mode recommended`
    when `dd-product-recommender` produced them. It is **required** — `resolve.py --trace` refuses to
@@ -181,15 +181,22 @@ developer goal
    environment variable, the resolver honors it; leave its value unchanged. `resolve.py` also saves the
    id to a state file, so `emit.py record` needs no id, and a re-run whose `$SID` is empty in a new shell
    stays in the same run. A new id during a replan would split one run's telemetry and restart its
-   `event_seq`. In **debug
+   `event_seq`. The saved session is scoped to the same directory as `$TRACE`, and every `record`
+   call verifies that the trace's embedded session id matches before changing state. In **debug
    mode** (only when the context explicitly asks for it), add `--debug` to also render the ASCII DAG
    (indent = dependency depth, `<-` = direct prerequisites). `resolve.py` also emits the plan
-   telemetry here (see **Run records** below). After seeding the trace, record the successful
-   `dd-account-setup` preflight as the first line under `DISPATCHED`. Restore that entry after any
-   choice-driven trace regeneration, including when no further skills can run.
+   telemetry here (see **Run records** below). Immediately after the first trace, record the completed
+   `dd-account-setup` preflight exactly once with `record started dd-account-setup` then
+   `record finished dd-account-setup --result success`. These post-hoc boundary records deliberately
+   omit account duration; they do not pretend to time work completed before the session existed.
+   A choice-driven replan restores successful dispatches from state automatically; do not record the
+   account again.
 6. **Resolve choices** — for each choice point (e.g. "pick a platform: kubernetes, linux"), ask the
-   developer and re-run with the confirmed value and `--session-id "$SID"` from Step 5 so the
-   updated plan and subsequent telemetry remain part of the same run.
+   developer and re-run the Step 5 command with the confirmed value, the same `--intent-mode`, and
+   `--session-id "$SID"` so the updated plan and subsequent telemetry remain part of the same run.
+   Write the output to a new file and replace `$TRACE` only when the command succeeds, so a failed
+   re-run cannot empty the trace:
+   `python3 dd-orchestrator/scripts/resolve.py --trace ... --session-id "$SID" > "$TRACE.new" && mv "$TRACE.new" "$TRACE" && cat "$TRACE"`
 7. **Confirm — render the PLAN block, then dispatch.** Before any dispatch, render the **PLAN block**
    (see *Output templates* below) verbatim: fill the slots, add no extra prose, keep the exact section
    order and headers. The Plan table's Source column is the skill's source URL, as `resolve.py` prints
@@ -198,8 +205,8 @@ developer goal
    source and run inline, per *Ground rules*) — and ticking the
    checklist. Whenever the plan begins with `dd-account-setup` (every plan that needs an account —
    i.e. any non-empty onboarding plan), Step 2 already ran it: do **not** invoke it a second time;
-   tick that node, retain its first `DISPATCHED` entry, and record its `started` / `finished`
-   from the preflight result, then continue with the next node. Do not start a node until its
+   Step 5 already recorded it, so tick that node, retain its first `DISPATCHED` entry, and continue
+   with the next node. Do not emit another account lifecycle event. Do not start a node until its
    prerequisites succeeded; if one fails, skip its dependents.
    **Keep the trace file (`$TRACE`, Step 5) current with `emit.py record`** (**Run records** below):
    `record confirmed` on approval or `record declined` if the user declines; `record started <id>`
@@ -211,12 +218,17 @@ developer goal
    "ran and failed", and stop that dependency chain. `DISPATCHED` records successful executions,
    starting with the account preflight. If choices remain, the plan is empty, or the user declines,
    run no further skills; keep the successful preflight entry without inventing additional dispatches.
+   After `record declined`, go to Step 8: `record run-finished` closes every unrun node as declined.
    A node removed under the scope rule (see the PLAN block) is not run: record it under `DEAD_ENDS`
-   as `- <skill_id> — out of scope: <the caveat it falls outside>` and keep it out of `DISPATCHED`.
+   as `- <skill_id> — out of scope: <the caveat it falls outside>`, keep it out of `DISPATCHED`, and
+   close it with `record skipped <skill_id> --result out_of_scope` at the confirm gate, before you
+   start any later node (a later node cannot start while an earlier node is open).
 8. **Summarize — render the SUMMARY block.** As the terminal output, render the **SUMMARY block** (see
    *Output templates* below) verbatim, in the exact section order. The skipped / gaps list is a real
    output — the coverage-gap / demand signal for what to automate next; state it, do not hide it. Run
-   `emit.py record run-finished` once (**Run records**).
+   `emit.py record run-finished` once (**Run records**) — except while a choice question from Step 6
+   is waiting for the developer's answer: the run is paused, not finished, so do not run it then;
+   finish the run after the replan.
 
 ## Output templates
 
@@ -334,26 +346,37 @@ python3 dd-orchestrator/scripts/emit.py record confirmed          # user approve
 python3 dd-orchestrator/scripts/emit.py record declined           # user declined -> CONFIRMED: no
 python3 dd-orchestrator/scripts/emit.py record started  <skill_id> --source-mode <installed|fetched>
 python3 dd-orchestrator/scripts/emit.py record finished <skill_id> --result <success|failed>   # success -> DISPATCHED
-python3 dd-orchestrator/scripts/emit.py record skipped  <skill_id>  # failed prerequisite, declined, or source unreachable
+python3 dd-orchestrator/scripts/emit.py record skipped  <skill_id> [--result skipped_dependency|declined|source_unreachable|out_of_scope]
+#   default: skipped_dependency (a prerequisite failed) or declined; use source_unreachable when the fetch
+#   failed and out_of_scope for a node removed under the CAVEATS scope rule
 python3 dd-orchestrator/scripts/emit.py record run-finished       # once, at the end
 ```
 
-`record run-finished` derives `result` from the recorded steps: `cancelled` after `record declined`,
-and `blocked` when nothing ran. Pass `--result blocked` or `--result cancelled` only when that
-derivation would be wrong.
+`record run-finished` derives `result` from the recorded steps: `cancelled` after `record declined`
+(it also closes the unrun nodes as declined), and `blocked` when nothing beyond account preflight ran
+because every product dead-ended. Pass an
+explicit terminal result only when that derivation would be wrong. A run cannot continue after
+`record run-finished`, so never run it while a choice question is waiting for the developer.
 
-The commands always exit 0. Sending is best-effort (bounded timeout, local debug log, never throws),
-goes to the logs-intake route only, and is turned off with `DD_ORCH_TELEMETRY_DISABLED=1`; the trace
-update still happens. **Never build your own HTTP request or `curl`.** The eval harness sets
-`DD_ORCH_RUN_CONTEXT=eval` so its runs are kept apart from real usage.
+Valid commands exit 0 even when sending fails; malformed commands, unknown skill ids, trace/session
+mismatches, and duplicate or out-of-order transitions exit 2 without changing the trace, and print
+the reason on stderr; correct the call from that reason instead of retrying it unchanged. Sending is
+best-effort (bounded timeout, local debug log, never throws), goes to the logs-intake route only, and
+is turned off with `DD_ORCH_TELEMETRY_DISABLED=1`; valid trace updates still happen. **Never build
+your own HTTP request or `curl`.** The eval harness sets `DD_ORCH_RUN_CONTEXT=eval` so its runs are
+kept apart from real usage.
 
 `resolve.py` emits the plan core on each resolve: one `skill_run:started` per session, then
-`skill_run:plan_resolved` and one `skill_step:planned` per plan node and per dead-end (each
+`skill_run:plan_resolved` and one `skill_step:planned` per plan node and per dead-end. Each resolve
+increments `plan_revision`; all planned events for that revision form one complete snapshot (each
 `skill_step` also carries `depends_on`, the CSV of prerequisite plan positions, so the DAG edges are
 reconstructable). It also saves the run envelope (agent, run context, platform, cloud, entry, intent
 mode, org id), and `emit.py` re-attaches it and an `emitted_at` (ms) timestamp to **every** event. The
-agent is detected from its environment, and the org id is read with the OAuth token that
-`dd-account-setup` leaves in place.
+agent is detected from its environment. Org lookup uses the validated API/app-key pair from the
+environment or parsed `.env.local` / `.env` and the run-owned copy of the OAuth token. If both
+identify different organizations, it omits `org_id` instead of guessing. The emitter refuses unknown
+sites before sending credentials. `record run-finished` releases this run's token claim and removes
+the shared handoff token only after the final concurrent claim ends.
 
 Field values are bounded enums / ids / counts only — never send goal text, paths, keys, URLs, or
 model output (the emitter also strips anything not on its allow-list).

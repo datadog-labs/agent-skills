@@ -723,8 +723,8 @@ def _print_trace(session_id, args, res):
     into the run's trace file (T2.1). The judge grades that trace, so having the deterministic
     planner author it — instead of the model re-narrating the plan — removes a whole class
     of transcription error. Deterministic for fixed inputs; SESSION_ID is the only
-    run-seeded field (reuse it with --session-id). CONFIRMED and DISPATCHED are
-    placeholders the agent fills after the confirm gate and after each dispatch.
+    run-seeded field (reuse it with --session-id). Lifecycle fields are restored
+    from the persisted run state when a choice-driven replan regenerates the trace.
 
     STOP_REASON tells the reader whether the plan may proceed:
       none                  — plan is non-empty and no choices remain; go to the confirm gate.
@@ -776,8 +776,19 @@ def _print_trace(session_id, args, res):
         print("CAVEATS:")
         for c in res["caveats"]:
             print(f"  ! {c}")
-    print("CONFIRMED: pending")
-    print("DISPATCHED: (fill one skill_id per line after each dispatch)")
+    lifecycle = {"confirmed": "pending", "dispatched": []}
+    try:
+        import emit
+        lifecycle = emit.trace_snapshot(session_id, [node["id"] for node in plan])
+    except Exception:
+        pass
+    print(f"CONFIRMED: {lifecycle['confirmed']}")
+    if lifecycle["dispatched"]:
+        print("DISPATCHED:")
+        for skill_id in lifecycle["dispatched"]:
+            print(f"  {skill_id}")
+    else:
+        print("DISPATCHED: (fill one skill_id per line after each dispatch)")
     print("=== END DD-ORCH TRACE ===")
 
 
@@ -813,6 +824,7 @@ def _emit_telemetry(session_id, args, products, router, res):
         import emit
 
         emit.set_current_session(session_id)   # later fresh-shell emit.py calls find the run
+        requires_of = {node["skill"]: node["requires"] for node in res["dag"]}
         base = {
             "invocation_mode": "orchestrated",
             "entry_skill_id": "dd-orchestrator",
@@ -824,16 +836,26 @@ def _emit_telemetry(session_id, args, products, router, res):
             # auth'd org public_id, fetched once per run; None -> omitted
             "org_id": emit.session_org_id(session_id) or emit.fetch_org_id(),
         }
+        telemetry_plan = list(res["plan"])
+        if not any(node["id"] == "dd-account-setup" for node in telemetry_plan):
+            telemetry_plan.insert(0, {
+                "id": "dd-account-setup",
+                "kind": "foundation",
+                "product": "",
+                "source": {"repo": "agent-skills"},
+            })
         # Refresh the envelope and plan shape on replans; preserve the event sequence
         # and run-start marker so later emit.py processes stay in the same run.
-        emit.write_session_state(session_id, base, shape={
+        plan_revision = emit.write_session_state(session_id, base, shape={
             "dead_end_count": len(res["dead_ends"]),
-            "planned_skill_count": len(res["plan"]),
+            "planned_skill_count": len(telemetry_plan),
             "choice_count": len(res["choices"]),
         }, plan=[{"id": n["id"], "position": i, "kind": n["kind"],
                   "product": n.get("product") or "",
-                  "source_repo": (n.get("source") or {}).get("repo") or ""}
-                 for i, n in enumerate(res["plan"], 1)])
+                  "source_repo": (n.get("source") or {}).get("repo") or "",
+                  "requires": list(requires_of.get(n["id"], []))}
+                 for i, n in enumerate(telemetry_plan, 1)])
+        base["plan_revision"] = plan_revision or 1
         emit.emit("skill_run", "started", session_id, dict(base), critical=True)
 
         tokens = sorted({t for t in (normalize_product(p, router.product_tokens)
@@ -841,17 +863,16 @@ def _emit_telemetry(session_id, args, products, router, res):
         dependency_count = {node["skill"]: len(node["requires"]) for node in res["dag"]}
         # F2: map each step to its direct prerequisites' plan positions so the DAG edges
         # (not just a count) are reconstructable from logs.
-        position_of = {node["id"]: i for i, node in enumerate(res["plan"], 1)}
-        requires_of = {node["skill"]: node["requires"] for node in res["dag"]}
+        position_of = {node["id"]: i for i, node in enumerate(telemetry_plan, 1)}
         emit.emit("skill_run", "plan_resolved", session_id, {
             **base,
             "recommended_products": ",".join(tokens),
-            "planned_skill_count": len(res["plan"]),
+            "planned_skill_count": len(telemetry_plan),
             "dead_end_count": len(res["dead_ends"]),
             "choice_count": len(res["choices"]),
         }, critical=True)
 
-        for position, node in enumerate(res["plan"], 1):
+        for position, node in enumerate(telemetry_plan, 1):
             deps = sorted(position_of[r] for r in requires_of.get(node["id"], [])
                           if r in position_of)
             step = {
