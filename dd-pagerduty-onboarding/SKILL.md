@@ -101,6 +101,21 @@ Read** (`integrations_read`) is view-only and is **not** sufficient. `test-page`
 skip the test page and have the user confirm the connect in PagerDuty. Reference:
 <https://docs.datadoghq.com/account_management/rbac/permissions/>.
 
+### Confirm the logged-in Datadog org
+
+Before gathering anything else, ask whether to set up the integration for the
+Datadog org the user is currently logged in to. Read the org's name from the
+same pup session and site this run uses with `pup api /api/v2/current_user`
+(the `name` of the `orgs` entry under `included`; the site is the one `pup auth
+status` reported). Then ask once with the host's native selector:
+
+> Do you want to set up this integration for the Datadog org **<org name>** on
+> **<site>**?
+
+- **Yes** → continue.
+- **No** → stop. Have the user sign pup into the right org (see the pup step
+  above), then ask again. Never continue on an org the user did not confirm.
+
 ## Phase 1: Determine Scope
 
 Before minting anything, find out whether the org already has a PagerDuty integration —
@@ -222,7 +237,7 @@ DD_SITE=<site> python3 -I -B <skill>/scripts/pagerduty_setup.py test-page '<serv
   send a test page** / **No, skip it**. If several services were connected, ask which
   one to page instead (plus a skip option). Never run it without a yes; on no, skip
   ahead to the final message. Use the name exactly as the poll or `services` reported it.
-- It creates a throwaway monitor (tagged `dd-pagerduty-onboarding:test`) whose message is
+- It creates a throwaway event monitor (tagged `dd-pagerduty-onboarding:test`) whose message is
   `@pagerduty-<service>`, waits for it to alert — that is the page — then flips it so it
   recovers, which resolves the PagerDuty incident, and deletes the monitor. The monitor
   needs no data, so this works on a brand-new org. It usually takes a few minutes (each

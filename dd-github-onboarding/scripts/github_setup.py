@@ -99,18 +99,10 @@ CATALOG_BRANCH = "datadog/software-catalog"
 CLEANUP_BRANCH = "datadog/software-catalog-removal"
 CATALOG_TAG = "source:dd-github-onboarding"
 
-# GitHub App slug per Datadog site, for the fallback when the mint is
-# unavailable: GitHub's public install screen at
-# https://github.com/apps/<slug>/installations/new. Verified against each
-# app's github.com/apps/<slug> page.
-SITE_APP_SLUGS = {
-    "datadoghq.com": "datadog",
-    "us3.datadoghq.com": "datadog-us3",
-    "us5.datadoghq.com": "datadog-us5",
-    "ap1.datadoghq.com": "datadog-ap1",
-    "datadoghq.eu": "datadog-eu",
-    "datad0g.com": "datadog-staging",
-}
+# The Datadog GitHub App, for every Datadog site. Used for the fallback when
+# the mint is unavailable: GitHub's public install screen at
+# https://github.com/apps/<slug>/installations/new.
+APP_SLUG = "datadog-official"
 
 LINKABLE = "NOT_LINKED_LINKABLE"
 # The installations list answers 422 with one of these `failure` codes until
@@ -368,23 +360,12 @@ def link_installation(pup, site, installation_id, org=None):
 
 
 def install_url(site, app_slug=None):
-    """GitHub's install screen for the Datadog GitHub App of `site`.
+    """GitHub's install screen for the Datadog GitHub App.
 
     The screen is public — GitHub sends a not-logged-in visitor through login
-    and back to it — so the URL carries no Datadog-issued state. The slug
-    comes from the site map; `app_slug` overrides it for a site that is not
-    in the map (the slug is the github.com/apps/<slug> page of the site's
-    Datadog app)."""
-    site = normalize_site(site)
-    slug = app_slug or SITE_APP_SLUGS.get(site)
-    if not slug:
-        raise GitHubError(
-            f"no Datadog GitHub App slug is known for site {site!r} — pass "
-            "--app-slug <slug> (the slug from the github.com/apps/<slug> page "
-            "of this site's Datadog app), or connect from the GitHub integration tile "
-            "in Datadog; do not guess a slug"
-        )
-    return f"https://github.com/apps/{slug}/installations/new"
+    and back to it — so the URL carries no Datadog-issued state. Every Datadog
+    site uses the same app; `app_slug` overrides it."""
+    return f"https://github.com/apps/{app_slug or APP_SLUG}/installations/new"
 
 
 PUP_MISSING = "install the Datadog pup CLI (https://github.com/DataDog/pup) and run `pup auth login`"
@@ -1406,7 +1387,7 @@ def main(argv=None):
     authz.add_argument("--open", action="store_true", help="open the install URL in the user's browser")
     authz.add_argument(
         "--app-slug",
-        help="GitHub App slug for this site's Datadog app (default: derived from the site)",
+        help=f"GitHub App slug to install (default: {APP_SLUG})",
     )
     authz.add_argument(
         "--continue", dest="continue_setup", action="store_true",

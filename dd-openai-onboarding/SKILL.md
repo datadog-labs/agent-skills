@@ -101,6 +101,21 @@ create the admin key and paste it into the prompt, or run the setup themselves.
 **Cost data.** Appears in Cloud Cost Management only if the Datadog org uses
 CCM.
 
+### Confirm the logged-in Datadog org
+
+Before gathering anything else, ask whether to set up the integration for the
+Datadog org the user is currently logged in to. Read the org's name from the
+same pup session and site this run uses with `pup api /api/v2/current_user`
+(the `name` of the `orgs` entry under `included`; the site is the one `pup auth
+status` reported). Then ask once with the host's native selector:
+
+> Do you want to set up this integration for the Datadog org **<org name>** on
+> **<site>**?
+
+- **Yes** → continue.
+- **No** → stop. Have the user sign pup into the right org (see the pup step
+  above), then ask again. Never continue on an org the user did not confirm.
+
 ## Workflow
 
 ```markdown
@@ -134,7 +149,16 @@ CCM.
 3. **Ask for approval.** Use the interactive question tool once:
 
    - **Title:** `Approve OpenAI integration setup`
-   - **Question:** `May I run the interactive setup? It will open the OpenAI admin keys page, ask you to paste an OpenAI admin key into a hidden prompt in a new terminal, check the key with OpenAI, and register the named Datadog integration account with cost data ingestion on. The key is never visible to the agent, and will not be printed, passed as a command argument, stored in a file, or returned in output.`
+   - **Question:** ask this, with each step on its own line:
+
+     > May I run the interactive setup? It will:
+     >
+     > - Open the OpenAI admin keys page.
+     > - Ask you to paste an OpenAI admin key into a hidden prompt in a new terminal.
+     > - Check the key with OpenAI.
+     > - Register the named Datadog integration account, with cost data ingestion on.
+     >
+     > The key is never visible to the agent, and will not be printed, passed as a command argument, stored in a file, or returned in output.
    - **Approve option:** `Approve and open the secure key prompt`
    - **Cancel option:** `Cancel without making changes`
 

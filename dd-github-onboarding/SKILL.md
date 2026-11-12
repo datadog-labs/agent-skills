@@ -95,6 +95,21 @@ and prints the URL for the user to open where they are logged in.
 
 **Permission.** A `403` means the session lacks `manage_integrations`; see **Important Notes**.
 
+### Confirm the logged-in Datadog org
+
+Before gathering anything else, ask whether to set up the integration for the
+Datadog org the user is currently logged in to. Read the org's name from the
+same pup session and site this run uses with `pup api /api/v2/current_user`
+(the `name` of the `orgs` entry under `included`; the site is the one `pup auth
+status` reported). Then ask once with the host's native selector:
+
+> Do you want to set up this integration for the Datadog org **<org name>** on
+> **<site>**?
+
+- **Yes** → continue.
+- **No** → stop. Have the user sign pup into the right org (see the pup step
+  above), then ask again. Never continue on an org the user did not confirm.
+
 ## Phase 1: Determine Scope
 
 One check comes before anything is opened: whether the org already has a
@@ -152,9 +167,7 @@ python3 -I -B <skill>/scripts/github_setup.py authorize --open
 - It mints a state-bearing install URL through the Datadog API and opens it
   (`--json`: `url`, `minted`, `mint_error`, `existing_accounts`). If the mint
   is unavailable it falls back to GitHub's public install screen and reports
-  `minted: false`; if it then asks for `--app-slug <slug>` because no slug is
-  known for the site, stop and send the user to the GitHub integration tile in
-  Datadog — never guess a slug.
+  `minted: false`.
 - Headless, or exit 3 (no browser opened): drop `--open` and give the user the
   URL.
 

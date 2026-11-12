@@ -256,6 +256,11 @@ def api_ok(proc, what):
 
 def fetch_services(pup, site, org=None):
     proc = pup_api(pup, site, "GET", INTEGRATION_BASE, org=org)
+    # A fresh org that never installed PagerDuty 404s with "pagerduty not found":
+    # that is "no services connected", not an error.
+    out = (proc.stdout or "") + (proc.stderr or "")
+    if proc.returncode != 0 and "HTTP 404" in out and "pagerduty not found" in out:
+        return []
     return parse_services(api_json(proc, "listing the PagerDuty integration"))
 
 
@@ -376,23 +381,25 @@ def wait_for_service(fetch, interval=5.0, timeout=300.0, site=None):
 
 
 def test_monitor(service, nonce, firing):
-    """A throwaway log monitor that pages `service` without needing any data.
+    """A throwaway event monitor that pages `service` without needing any data.
 
-    It counts logs matching a nonce that never occurs, so the count is always 0:
+    It counts events matching a nonce that never occurs, so the count is always 0:
     `>= 0` holds (the monitor alerts and pages) and `> 0` does not (it recovers,
-    which resolves the PagerDuty incident). No logs or events are required, so
-    it works on a brand-new org; the session needs `monitors_write`.
+    which resolves the PagerDuty incident). Events are part of every Datadog org,
+    so it needs no data and works on a brand-new org; the
+    session needs `monitors_write`. A metric monitor would not work: a metric
+    with no data is No Data, not 0.
 
     The empty count is evaluated as 0 only under the legacy `notify_no_data:
     false`. Do not set `on_missing_data` (not even to "default"): verified live,
     it leaves the monitor in No Data and it never fires."""
     query = (
-        f'logs("dd-pagerduty-onboarding-test-{nonce}").index("*").rollup("count").last("5m") '
+        f'events("dd-pagerduty-onboarding-test-{nonce}").rollup("count").last("5m") '
         + (">= 0" if firing else "> 0")
     )
     return {
         "name": f"[Datadog onboarding] PagerDuty test page ({nonce})",
-        "type": "log alert",
+        "type": "event-v2 alert",
         "query": query,
         "message": (
             "Test page from the Datadog PagerDuty onboarding — safe to ignore: it resolves and "

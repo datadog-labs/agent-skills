@@ -91,6 +91,21 @@ Check these before step 1; when a required one fails, stop with its fix:
 - GitHub shows the token only once.
 - Costs appear in Datadog only if the Datadog org uses Cloud Cost Management.
 
+### Confirm the logged-in Datadog org
+
+Before gathering anything else, ask whether to set up the integration for the
+Datadog org the user is currently logged in to. Read the org's name from the
+same pup session and site this run uses with `pup api /api/v2/current_user`
+(the `name` of the `orgs` entry under `included`; the site is the one `pup auth
+status` reported). Then ask once with the host's native selector:
+
+> Do you want to set up this integration for the Datadog org **<org name>** on
+> **<site>**?
+
+- **Yes** → continue.
+- **No** → stop. Have the user sign pup into the right org (see the pup step
+  above), then ask again. Never continue on an org the user did not confirm.
+
 ## Workflow
 
 ### 1. Enterprise or organization
@@ -151,7 +166,16 @@ token requirements from Phase 0.
 Then use the interactive question tool once for approval:
 
 - **Title:** `Approve GitHub Costs integration setup`
-- **Question:** `May I run the interactive setup? It will open GitHub's token page pre-filled for <TARGET>, ask you to paste the token into a hidden prompt in a new terminal, check with GitHub that it can read <TARGET>'s billing, and register the named Datadog GitHub Costs account. The token is never visible to the agent, and will not be printed, passed as a command argument, stored in a file, or returned in output.`
+- **Question:** ask this, with each step on its own line:
+
+  > May I run the interactive setup? It will:
+  >
+  > - Open GitHub's token page, pre-filled for <TARGET>.
+  > - Ask you to paste the token into a hidden prompt in a new terminal.
+  > - Check with GitHub that the token can read <TARGET>'s billing.
+  > - Register the named Datadog GitHub Costs account.
+  >
+  > The token is never visible to the agent, and will not be printed, passed as a command argument, stored in a file, or returned in output.
 - **Approve option:** `Approve and open the secure token prompt`
 - **Cancel option:** `Cancel without making changes`
 

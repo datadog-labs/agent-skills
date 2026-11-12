@@ -119,6 +119,25 @@ https://docs.nebius.com/cli/install or to Cloud Shell in the Nebius web console.
 If profile authentication is missing or expired later, run `nebius profile
 create` again on the user's behalf, as above.
 
+### Confirm the logged-in Datadog org and Nebius tenant
+
+Before gathering anything else, ask whether to set up the integration for the
+accounts the user is currently logged in to. Read the Datadog org's name from
+the same pup session and site this run uses with `pup api /api/v2/current_user`
+(the `name` of the `orgs` entry under `included`; the site is the one `pup auth
+status` reported). Read the Nebius tenant from the active profile's tenant (`nebius profile current`, then `nebius iam whoami`).
+
+Then ask once with the host's native selector:
+
+> Do you want to set up this integration for the Nebius tenant **<tenant>** and the Datadog org
+> **<org name>** on **<site>**?
+
+- **Yes** → continue.
+- **No, a different Datadog org** → stop. Have the user sign pup into the right
+  org (see the pup step above), then ask again. Never continue on an org the
+  user did not confirm.
+- **No, a different Nebius tenant** → have the user switch with `nebius profile activate <name>` (or create a profile), then ask again.
+
 ## Workflow
 
 ```
@@ -154,13 +173,18 @@ create` again on the user's behalf, as above.
 3. **Approve.** Use the interactive question tool once for approval:
 
    - **Title:** `Approve complete Nebius integration setup`
-   - **Question:** `May I run the setup script? It will use your active Nebius CLI
-     profile's tenant and parent project; reuse the uniquely named datadog-integration service account in that project or
-     create it there; ensure admins membership; generate a fresh
-     authorized/private key and OBSERVABILITY static key with one-year expiration; enable the selected log
-     streams plus resource and service quota collection; register the
-     Datadog integration account under a script-derived name; verify it; refuse a suspended
-     tenancy; and delete local secrets on success.`
+   - **Question:** ask this, with each step on its own line:
+
+     > May I run the setup script? It will:
+     >
+     > - Use your active Nebius CLI profile's tenant and parent project.
+     > - Reuse the uniquely named `datadog-integration` service account in that project, or create it there.
+     > - Make sure it is a member of the tenant's admins group.
+     > - Generate a fresh authorized (private) key and an OBSERVABILITY static key, both expiring in one year.
+     > - Enable the selected log streams, plus resource and service quota collection.
+     > - Register the Datadog integration account under a script-derived name, and verify it.
+     > - Refuse a suspended tenancy.
+     > - Delete the local secrets on success.
    - **Approve option:** `Approve and run the complete setup`
    - **Cancel option:** `Cancel without making changes`
 

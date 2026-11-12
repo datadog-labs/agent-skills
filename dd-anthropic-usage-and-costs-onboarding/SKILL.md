@@ -109,6 +109,21 @@ running the script.
 Both: the key is shown only once, and cost data appears in Cloud Cost
 Management only if the Datadog org uses CCM.
 
+### Confirm the logged-in Datadog org
+
+Before gathering anything else, ask whether to set up the integration for the
+Datadog org the user is currently logged in to. Read the org's name from the
+same pup session and site this run uses with `pup api /api/v2/current_user`
+(the `name` of the `orgs` entry under `included`; the site is the one `pup auth
+status` reported). Then ask once with the host's native selector:
+
+> Do you want to set up this integration for the Datadog org **<org name>** on
+> **<site>**?
+
+- **Yes** → continue.
+- **No** → stop. Have the user sign pup into the right org (see the pup step
+  above), then ask again. Never continue on an org the user did not confirm.
+
 ## Workflow
 
 ```markdown
@@ -157,7 +172,16 @@ Management only if the Datadog org uses CCM.
 4. **Get approval** with the interactive question tool, once:
 
    - **Title:** `Approve Anthropic integration setup`
-   - **Question:** `May I run the interactive setup? It will open the Anthropic key page for your plan, ask you to paste the key into a hidden prompt in a new terminal, check the key with Anthropic, and register the named Datadog integration account with cost data ingestion <on|off>. The key is never visible to the agent, and will not be printed, passed as a command argument, stored in a file, or returned in output.`
+   - **Question:** ask this, with each step on its own line:
+
+     > May I run the interactive setup? It will:
+     >
+     > - Open the Anthropic key page for your plan.
+     > - Ask you to paste the key into a hidden prompt in a new terminal.
+     > - Check the key with Anthropic.
+     > - Register the named Datadog integration account, with cost data ingestion <on|off>.
+     >
+     > The key is never visible to the agent, and will not be printed, passed as a command argument, stored in a file, or returned in output.
    - **Approve option:** `Approve and open the secure key prompt`
    - **Cancel option:** `Cancel without making changes`
 
