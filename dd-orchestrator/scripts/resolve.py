@@ -47,6 +47,10 @@ PRODUCT_TOKENS = {
     "network device monitoring": "ndm", "sensitive data scanner": "sds",
     "slo": "slo", "monitors": "monitors", "opentelemetry": "otel", "otel": "otel",
     "studio": "studio", "storage": "storage", "agent observability": "agent-observability",
+    "storage management": "storage", "advanced s3 monitoring": "storage",
+    "confluent cloud": "confluent-cloud",
+    "source map uploads": "source-maps", "source maps": "source-maps", "sourcemaps": "source-maps",
+    "source map": "source-maps",
     "mobile rum": "rum-mobile", "rum mobile": "rum-mobile", "mobile monitoring": "rum-mobile",
     "datadog app": "apps", "datadog apps": "apps", "dashboards app": "apps",
 }
@@ -776,6 +780,10 @@ def _print_trace(session_id, args, res):
             print(f"  + {s['id']} {s['kind']} (by {s['suggested_by']}) {s['url']}")
     else:
         print("SUGGESTED: (none)")
+    if res.get("caveats"):
+        print("CAVEATS:")
+        for c in res["caveats"]:
+            print(f"  ! {c}")
     print("CONFIRMED: pending")
     print("DISPATCHED: (fill one skill_id per line after each dispatch)")
     print("=== END DD-ORCH TRACE ===")

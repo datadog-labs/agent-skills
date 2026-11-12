@@ -83,10 +83,10 @@ def _fetch_github_dir(org_repo, dir_path, dest):
 
 def _node(catalog_path, skill_id):
     with open(catalog_path) as f:
-        for n in json.load(f)["nodes"]:
-            if n["id"] == skill_id:
-                return n
-    raise RuntimeError(f"skill id {skill_id!r} not in catalog {catalog_path}")
+        matches = [n for n in json.load(f)["nodes"] if n["id"] == skill_id]
+    if not matches:
+        raise RuntimeError(f"skill id {skill_id!r} not in catalog {catalog_path}")
+    return min(matches, key=lambda n: (not n.get("enabled", True), n.get("status") != "canonical"))
 
 
 def fetch(skill_id, dest=None, catalog_path=CATALOG):
