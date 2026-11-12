@@ -68,6 +68,7 @@
     "./dd-instrument-llmo/",
     "./dd-instrument-product-analytics/",
     "./dd-instrument-rum/",
+    "./dd-instrument-test-optimization/",
     "./dd-logs/",
     "./dd-monitors/",
     "./dd-oci-ccm/",
