@@ -70,6 +70,7 @@
     "./dd-github-costs-onboarding/",
     "./dd-github-onboarding/",
     "./dd-instrument-llmo/",
+    "./dd-instrument-product-analytics/",
     "./dd-instrument-rum/",
     "./dd-logs/",
     "./dd-monitors/",

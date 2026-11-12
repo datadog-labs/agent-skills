@@ -19,6 +19,7 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 | **dd-product-recommender** | Recommend the right Datadog products for a codebase and/or goal (recommendation only) |
 | **dd-profiler-setup** | Set up Datadog Continuous Profiler for a service — Java, Python, Go, Ruby, Node.js, .NET, PHP |
 | **dd-instrument-llmo** | Instrument Python & Node.js/Next.js AI backends with Datadog LLM Observability — SDK init, agent/workflow spans, RUM↔LLMO session linking |
+| **dd-instrument-product-analytics** | Turn on Datadog Product Analytics for browser apps running the RUM Browser SDK — application switch, `setUser` identity, click collection |
 | **dd-instrument-rum** | Instrument browser apps with Datadog Browser RUM — React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla |
 
 ## Install
@@ -121,6 +122,7 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-github-costs-onboarding \
   --skill dd-github-onboarding \
   --skill dd-instrument-llmo \
+  --skill dd-instrument-product-analytics \
   --skill dd-instrument-rum \
   --skill dd-nebius-integration \
   --skill dd-oci-ccm \

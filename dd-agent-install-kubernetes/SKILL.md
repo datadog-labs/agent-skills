@@ -2,7 +2,7 @@
 name: dd-agent-install-kubernetes
 description: Install the Datadog Agent on a Kubernetes cluster - Amazon EKS (standard or Fargate profiles), Azure AKS, Google GKE (standard or Autopilot), OpenShift, Oracle OKE, VMware Tanzu (TKG), Rancher (RKE2/K3s), or self-managed - through the Datadog Operator (kubectl/Helm), the Datadog Helm chart, or Terraform, with metrics, logs, and APM trace intake on by default, Single Step Instrumentation off unless the user asks, and optional products; for an SSI-first install use `dd-apm/k8s-ssi` `agent-install`. Use when the user is running a Kubernetes cluster on GKE, EKS, AKS, OpenShift, OKE, or TKG, asks to install or set up the Datadog Agent on Kubernetes, wants to install the Agent with Terraform, or wants to monitor their Kubernetes pods. Does not connect a cloud provider integration or install the Agent on standalone hosts or plain Docker. Requires a Datadog account with a valid API key and application key; run `dd-account-setup` first if they are missing.
 metadata:
-  version: "1.0.2"
+  version: "1.0.3"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,agent,kubernetes,k8s,eks,aks,gke,openshift,oke,tkg,rancher,terraform
@@ -17,6 +17,10 @@ You are helping a user install the Datadog Agent on a Kubernetes cluster.
 Per-distribution manifest and values changes live in **`references/distributions.md`**, the Terraform
 install path in **`references/terraform.md`**, and FIPS, private registries, APM library pinning, and
 namespace scoping in **`references/advanced.md`**. Read the relevant file when a step below points to it.
+
+## Stopping
+
+Some steps below end in a stop: no target cluster chosen yet when discovery finds more than one candidate, and a current kubectl context or node set that does not match the cluster the user named (Phase 1). Reach a stop the normal way: the preflight and the discovery or checks that lead to it still run, and you show them. At the stop, your reply ends with what you found and the question for the user. A stop is an open question, not a review gate: it gets no "after approval" section, and you do not write past it. Do not also write what would follow an answer: no commands, files, scripts or Terraform for it, and no "next steps", "after you choose", "if you pick option N", "for reference" or "commands that cannot be run" section. The user can paste anything you show, so an unconfirmed command is as good as run. Write the next steps after the user answers.
 
 ## Running another skill
 
@@ -158,6 +162,24 @@ cluster), continue normally, including the current-context check and confirmatio
 between the cluster or distribution the user named and the current kubectl context or the discovered
 nodes is the same kind of stop: report it and ask, and do not draft a manifest for whichever context
 happens to be current.
+
+**Target-choice reply shape.** While the target cluster is not chosen, the whole reply is these parts, in
+order, and nothing else:
+
+1. The Phase 0 preflight and its result.
+2. The read-only discovery commands you ran, each with what it returned: `kubectl config get-contexts` and
+   `kubectl config current-context` (or the `oc` equivalents on OpenShift), and the cluster list of each provider
+   whose CLI is available. Show them even when the user has already described the clusters. Name any discovery a
+   missing CLI blocked.
+3. The Phase 1 intent recap (that infrastructure metrics, logs, and APM trace intake are on by default, and any
+   mode or product the user chose), then the candidates grouped by provider and account, project, or
+   subscription, without treating the current context as the choice.
+4. One numbered list: which cluster to target, plus any question Phase 0 or Phase 1 still needs answered,
+   including identifiers a blocked discovery could not supply.
+
+The reply ends with the questions. It has no manifest, Helm values, Secret, `kubectl apply`, `helm`,
+`use-context`, or credential command (`update-kubeconfig`, `get-credentials`), and no "planned configuration" or
+"next steps after selection" section.
 Never merge provider-specific settings from different clusters into one manifest.
 
 ### Distribution
