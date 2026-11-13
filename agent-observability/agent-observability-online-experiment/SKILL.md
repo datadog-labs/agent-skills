@@ -30,14 +30,68 @@ Do **not** use it for offline experiments over a dataset (use the LLM Observabil
 - **Starting is separate unless already explicit.** Start only if the user explicitly asked to start the experiment. If the original request included starting, include it in the single setup proposal; otherwise finish with a draft and ask no start question until the user requests it.
 - **Go one step at a time and read back.** After each write, read the object back and report what the server actually stored, not what you sent.
 - **Never attach metrics in parallel or alongside other metric edits.** The attach operation sends the experiment's complete metric set to the server, so concurrent edits can overwrite each other.
-- **Report failures plainly.** If a step is refused (permissions, production restrictions), say so and give the user the manual alternative. Do not look for a workaround.
+- **Report failures plainly.** If a step is refused (permissions, production restrictions), say so and give the user the manual alternative. Do not look for a workaround. If the Datadog MCP server is missing, disconnected, unauthenticated, or lacks toolsets, give the user the setup command from the next section.
 - **Do not guess identifiers.** Environment IDs, flag IDs, metric IDs, and variant keys all come from the server.
+
+## Fix the Datadog MCP server setup when it fails
+
+This workflow needs a connected, authenticated Datadog MCP server with the `llmobs`, `experiments`, `feature-flags`, and `core` toolsets. Check for it before anything else. Stop and give the user the setup instructions below, instead of retrying or working around it, when any of these happens:
+
+- No Datadog MCP tools are available in the session.
+- The Datadog MCP server is listed but not connected or needs authentication, or a call fails because the connection is not authenticated (for example HTTP 401, or a missing or expired token).
+- Some of the capabilities Phase 0 checks for are missing, usually because the server was added with only `llmobs,core`.
+
+This applies at any point in the workflow, not only in Phase 0. A Datadog tool call that fails because of the connection or authentication is a setup problem, not a step to retry. A refusal of one operation because the account lacks a permission, or because of a production restriction, is not a setup problem: handle it as the phase describes.
+
+Tell the user what failed and which toolsets are missing, if any. Then give them the command for their coding agent, filled in with their Datadog site. Take the site from the application's `DD_SITE` configuration when there is one, otherwise ask; for example `datadoghq.com` (US1), `us3.datadoghq.com`, `us5.datadoghq.com`, `datadoghq.eu`, `ap1.datadoghq.com`, `ap2.datadoghq.com`, or `uk1.datadoghq.com`. The MCP host is the site with an `mcp.` prefix.
+
+The Datadog MCP server and online experiments are not supported on the government sites `ddog-gov.com` (US1-FED) and `us2.ddog-gov.com` (US2-FED). If the organization is on one of them, tell the user that this workflow is not available on their site and stop. Do not give a setup command, because no MCP endpoint exists for those sites.
+
+**Claude Code.** Run in a terminal, then restart Claude Code and authenticate the server with `/mcp`:
+
+```bash
+claude mcp add --scope user --transport http datadog-online-experiments 'https://mcp.<site>/v1/mcp?toolsets=llmobs,experiments,feature-flags,core'
+```
+
+If a Datadog server already exists under another name with fewer toolsets, remove it first with `claude mcp remove <name>`, so the session does not keep using the incomplete one.
+
+**Codex.** Add to `~/.codex/config.toml`, then authenticate and restart Codex:
+
+```toml
+[mcp_servers.datadog-online-experiments]
+url = "https://mcp.<site>/v1/mcp"
+http_headers = { "X-Datadog-MCP-Toolsets" = "llmobs,experiments,feature-flags,core" }
+```
+
+```bash
+codex mcp login datadog-online-experiments
+```
+
+**Cursor.** Use the Datadog plugin, which includes the Datadog MCP server:
+
+1. Install the Datadog plugin from the Cursor Marketplace, or in Cursor open **Cursor Settings > Plugins**, search for Datadog, and click **Add to Cursor**.
+2. Run `/ddsetup` in the agent chat, select the Datadog site, and complete the login.
+3. Run `/ddtoolsets` and turn on `llmobs`, `experiments`, `feature-flags`, and `core`.
+
+If a Datadog MCP server was added to Cursor by hand, for example under the name `datadog-online-experiments`, remove it from Cursor's MCP configuration so it does not conflict with the plugin.
+
+**Other coding agents.** Add a remote HTTP MCP server, then authenticate when prompted:
+
+```
+Name: datadog-online-experiments
+Transport: HTTP
+URL: https://mcp.<site>/v1/mcp?toolsets=llmobs,experiments,feature-flags,core
+```
+
+For Claude Code, Codex, and other coding agents, also tell the user that Datadog shows the same setup commands for their site, with copy buttons: in LLM Observability, open **Online Experiments** (`https://<app-host>/llm/online-experiments`, using the host rules in Phase 3) and select **New Online Experiment**, or follow the steps on the page when no experiment exists yet. Ask the user to run this skill again once the server is connected. A newly added server is usually only available after the coding agent restarts.
+
+If the server is connected and authenticated but the online experiment tools report that the feature is unavailable, the setup is correct: follow the feature-availability guidance at the top of this skill instead.
 
 ## Phase 0 — Discover, recommend, and confirm once
 
 Do not interrupt the investigation to ask for one input at a time. First perform all available read-only discovery:
 
-- Inspect the active tool list and verify that the session has the `llmobs`, `experiments`, and `feature-flags` capabilities needed by this workflow: environment discovery; flag lookup, creation, enablement, and allocation management; experiment lookup, creation, linking, and start; and experiment-metric lookup, creation, and attachment. The skill's toolset configuration controls its visibility with OR semantics; it does not guarantee that all three toolsets are enabled. If capabilities are missing, report every missing group and the toolset to enable, then stop before any write instead of repeatedly retrying individual operations.
+- Inspect the active tool list and verify that the session has the `llmobs`, `experiments`, and `feature-flags` capabilities needed by this workflow: environment discovery; flag lookup, creation, enablement, and allocation management; experiment lookup, creation, linking, and start; and experiment-metric lookup, creation, and attachment. The skill's toolset configuration controls its visibility with OR semantics; it does not guarantee that all three toolsets are enabled. If capabilities are missing, report every missing group and the toolset to enable, give the setup instructions from [Fix the Datadog MCP server setup when it fails](#fix-the-datadog-mcp-server-setup-when-it-fails), and stop before any write instead of repeatedly retrying individual operations.
 - Inspect the application and its deployment configuration. Confirm it reports to Agent Observability, find where it submits evaluations (if it does), find the code path the treatment changes, and infer its `ml_app`, `DD_ENV`, and stable subject identifier.
 - List environments, look for an existing flag and experiment for the proposed change, and search existing experiment metrics before proposing new objects.
 
