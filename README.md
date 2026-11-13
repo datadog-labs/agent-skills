@@ -4,6 +4,8 @@ Datadog skills for Claude Code, Codex CLI, Gemini CLI, Cursor, Windsurf, OpenCod
 
 ## Skills
 
+The main skills are listed here. The [Install](#install) section lists every skill.
+
 | Skill | Description |
 |-------|-------------|
 | **dd-pup** | Primary CLI - commands, auth, PATH setup |
@@ -169,7 +171,7 @@ The `agent-observability` directory contains ten skills for working with Agent O
 | `agent-observability-experiment-bootstrap` | Bootstrap reproducible experiments through the Python or Node SDK |
 | `agent-observability-trace-rca` | Root-cause production failures using eval judge signal or runtime errors |
 | `agent-observability-eval-bootstrap` | Generate evaluator code from traces, optionally seeded by RCA output. Also emits a dataset from traces in `--emit-dataset` mode. |
-| `agent-observability-eval-pipeline` | Eight-phase pipeline: classify → RCA → bootstrap evaluators → create dataset → publish → generate experiment → run → analyze. Stop early with `--stop-after`. |
+| `agent-observability-eval-pipeline` | Six-phase pipeline: classify → RCA → bootstrap evaluators → dataset → experiment → analyze. Stop early with `--stop-after`, or resume with `--start-at`. |
 | `agent-observability-session-classify` | Classify whether user intent was satisfied in a session (trace + RUM signals) |
 | `agent-observability-auto-experiment` | Local hill-climb: baseline-eval a prompt/file against LLM-Obs data, make one focused change, re-score with the same harness, keep it only if it beats the best, repeat |
 | `agent-observability-build-eval-from-annotations` | Build an evaluator from an annotation queue's human labels: find where the labelled property lives in the trace, draft an LLM judge, score it against the existing labels, hill-climb its errors, publish the winner as a disabled evaluator |
@@ -188,7 +190,7 @@ runtime errors across production traces. Then run `agent-observability-eval-boot
 code that captures those failure patterns. Pass the RCA output directly to `agent-observability-eval-bootstrap`
 to seed it with the discovered failure taxonomy.
 
-Use `agent-observability-eval-pipeline` to run all three steps in sequence with checkpoints between each phase.
+Use `agent-observability-eval-pipeline` to run the whole flow, from traces to experiment results, with a checkpoint between phases.
 
 Use `agent-observability-session-classify` independently to evaluate whether individual assistant sessions
 satisfied user intent, combining Agent Observability trace data with RUM behavioral signals.
@@ -217,6 +219,9 @@ cp -r agent-observability/agent-observability-eval-bootstrap ~/.claude/skills
 cp -r agent-observability/agent-observability-eval-pipeline ~/.claude/skills
 cp -r agent-observability/agent-observability-session-classify ~/.claude/skills
 cp -r agent-observability/agent-observability-online-experiment ~/.claude/skills
+cp -r agent-observability/agent-observability-auto-experiment ~/.claude/skills
+cp -r agent-observability/agent-observability-build-eval-from-annotations ~/.claude/skills
+cp -r agent-observability/agent-observability-replay-trace ~/.claude/skills
 ```
 
 #### MCP Requirements
@@ -388,57 +393,6 @@ What did the Bits AI assistant do in my org this week?
 Show me a governance report for AI tool calls in April
 ```
 
-### Software Delivery (dd-software-delivery)
-
-The `dd-software-delivery` directory contains workflow skills for CI/CD visibility and test reliability:
-
-| Skill | Purpose |
-|-------|---------|
-| `unblock-pr` | Investigate a failing PR CI pipeline — classify each failure as flaky, infra, or regression; fetch code coverage; propose targeted actions |
-| `triage-flaky-test` | Deep-dive on a specific flaky test — get history, blast radius, root cause category, and recommend a code fix or quarantine |
-
-**Workflow:**
-
-```
-unblock-pr → (if flaky failure) → triage-flaky-test → quarantine or fix
-```
-
-Run `unblock-pr` when CI is red on a PR to attribute each failing job. If a failure is classified as **flaky**, the skill hands off to `triage-flaky-test` for deeper investigation and a targeted fix or quarantine via `pup test-optimization flaky-tests update`.
-
-#### Prerequisites
-
-Requires `pup` CLI installed and authenticated (`pup auth login`). See [Setup Pup](#setup-pup).
-
-#### Install
-
-```bash
-# Claude Code — copy any or all skills
-cp -r dd-software-delivery/unblock-pr ~/.claude/skills
-cp -r dd-software-delivery/triage-flaky-test ~/.claude/skills
-```
-
-Or via `npx`:
-
-```bash
-npx skills add datadog-labs/agent-skills \
-  --skill unblock-pr \
-  --skill triage-flaky-test \
-  -y
-```
-
-#### Usage
-
-```
-# Investigate a failing PR
-unblock-pr                                    # auto-detects branch and repo from git
-unblock-pr my-feature-branch                  # explicit branch
-unblock-pr my-feature-branch github.com/org/repo
-
-# Triage a specific flaky test
-triage-flaky-test TestMyFunc
-triage-flaky-test com.example.MyTest github.com/org/repo
-```
-
 ### Datadog Apps (dd-apps)
 
 The `dd-apps` directory contains a skill for building [Datadog Apps](https://docs.datadoghq.com/developers/apps/) — locally-developed web apps built with TypeScript and React that integrate with Datadog surfaces.
@@ -532,7 +486,7 @@ If the browser opens the wrong profile/window, use the one-time URL printed by `
 
 ## More Skills
 
-Additional skills available soon.
+The full list of skills is in the `skills` array of `.claude-plugin/plugin.json`.
 
 ```bash
 # List all available
