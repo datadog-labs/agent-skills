@@ -66,6 +66,7 @@
     "./dd-gcp-ccm/",
     "./dd-gcp-integration/",
     "./dd-gcp-log-forwarding/",
+    "./dd-instrument-error-tracking/",
     "./dd-github-copilot-onboarding/",
     "./dd-github-costs-onboarding/",
     "./dd-github-onboarding/",
