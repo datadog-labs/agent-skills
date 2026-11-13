@@ -104,6 +104,7 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-agent-install-windows \
   --skill dd-android-sdk \
   --skill dd-android-sdk-v3-upgrade \
+  --skill dd-anthropic-usage-and-costs-onboarding \
   --skill datadog-app \
   --skill dd-aws-ccm \
   --skill dd-aws-integration \
@@ -120,14 +121,21 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-gcp-integration \
   --skill dd-gcp-log-forwarding \
   --skill dd-instrument-error-tracking \
+  --skill dd-github-copilot-onboarding \
+  --skill dd-github-costs-onboarding \
+  --skill dd-github-onboarding \
   --skill dd-instrument-llmo \
   --skill dd-instrument-product-analytics \
   --skill dd-instrument-rum \
   --skill dd-instrument-test-optimization \
+  --skill dd-nebius-integration \
   --skill dd-oci-ccm \
   --skill dd-oci-integration \
+  --skill dd-openai-onboarding \
   --skill dd-orchestrator \
+  --skill dd-pagerduty-onboarding \
   --skill dd-product-recommender \
+  --skill dd-slack-integration \
   --skill triage-flaky-test \
   --skill unblock-pr \
   --full-depth -y
