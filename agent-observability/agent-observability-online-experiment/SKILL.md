@@ -43,7 +43,9 @@ This workflow needs a connected, authenticated Datadog MCP server with the `llmo
 
 This applies at any point in the workflow, not only in Phase 0. A Datadog tool call that fails because of the connection or authentication is a setup problem, not a step to retry. A refusal of one operation because the account lacks a permission, or because of a production restriction, is not a setup problem: handle it as the phase describes.
 
-Tell the user what failed and which toolsets are missing, if any. Then give them the command for their coding agent, filled in with their Datadog site. Take the site from the application's `DD_SITE` configuration when there is one, otherwise ask; for example `datadoghq.com` (US1), `us3.datadoghq.com`, `us5.datadoghq.com`, `datadoghq.eu`, or `ap1.datadoghq.com`. The MCP host is the site with an `mcp.` prefix.
+Tell the user what failed and which toolsets are missing, if any. Then give them the command for their coding agent, filled in with their Datadog site. Take the site from the application's `DD_SITE` configuration when there is one, otherwise ask; for example `datadoghq.com` (US1), `us3.datadoghq.com`, `us5.datadoghq.com`, `datadoghq.eu`, `ap1.datadoghq.com`, `ap2.datadoghq.com`, or `uk1.datadoghq.com`. The MCP host is the site with an `mcp.` prefix.
+
+The Datadog MCP server and online experiments are not supported on the government sites `ddog-gov.com` (US1-FED) and `us2.ddog-gov.com` (US2-FED). If the organization is on one of them, tell the user that this workflow is not available on their site and stop. Do not give a setup command, because no MCP endpoint exists for those sites.
 
 **Claude Code.** Run in a terminal, then restart Claude Code and authenticate the server with `/mcp`:
 
@@ -65,7 +67,15 @@ http_headers = { "X-Datadog-MCP-Toolsets" = "llmobs,experiments,feature-flags,co
 codex mcp login datadog-online-experiments
 ```
 
-**Cursor and other coding agents.** Add a remote HTTP MCP server, then authenticate when prompted:
+**Cursor.** Use the Datadog plugin, which includes the Datadog MCP server:
+
+1. Install the Datadog plugin from the Cursor Marketplace, or in Cursor open **Cursor Settings > Plugins**, search for Datadog, and click **Add to Cursor**.
+2. Run `/ddsetup` in the agent chat, select the Datadog site, and complete the login.
+3. Run `/ddtoolsets` and turn on `llmobs`, `experiments`, `feature-flags`, and `core`.
+
+If a Datadog MCP server was added to Cursor by hand, for example under the name `datadog-online-experiments`, remove it from Cursor's MCP configuration so it does not conflict with the plugin.
+
+**Other coding agents.** Add a remote HTTP MCP server, then authenticate when prompted:
 
 ```
 Name: datadog-online-experiments
@@ -73,7 +83,7 @@ Transport: HTTP
 URL: https://mcp.<site>/v1/mcp?toolsets=llmobs,experiments,feature-flags,core
 ```
 
-Also tell the user that Datadog shows the same steps for their site, with copy buttons and a one-click install for Cursor: in LLM Observability, open **Online Experiments** (`https://<app-host>/llm/online-experiments`, using the host rules in Phase 3) and select **New Online Experiment**, or follow the steps on the page when no experiment exists yet. Ask the user to run this skill again once the server is connected. A newly added server is usually only available after the coding agent restarts.
+For Claude Code, Codex, and other coding agents, also tell the user that Datadog shows the same setup commands for their site, with copy buttons: in LLM Observability, open **Online Experiments** (`https://<app-host>/llm/online-experiments`, using the host rules in Phase 3) and select **New Online Experiment**, or follow the steps on the page when no experiment exists yet. Ask the user to run this skill again once the server is connected. A newly added server is usually only available after the coding agent restarts.
 
 If the server is connected and authenticated but the online experiment tools report that the feature is unavailable, the setup is correct: follow the feature-availability guidance at the top of this skill instead.
 
