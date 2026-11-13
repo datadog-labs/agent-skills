@@ -33,7 +33,8 @@ composition is computed from the capability graph in
   preflight (Step 2), because there is no plan to show until an account exists. Nothing else dispatches
   before approval.
 - **The catalog is the source of truth.** `catalog.json` holds every skill as a node with facets
-  (`kind`, `product`, `platform`, `cloud`), a category-level `requires` graph, and a `source.url`.
+  (`kind`, `product`, `platform`, `cloud`), a category-level `requires` graph, optional `after`
+  ordering behind products already in the plan, and a `source.url`.
   `resolve.py` composes the plan from it. Do not hand-maintain a routing table.
 - **Only enabled skills route.** Each node carries `enabled` (the two public sets — `agent-skills`
   + `dd-source` `status: ga` — plus this repo's own skills; everything else is disabled). `resolve.py`

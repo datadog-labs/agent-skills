@@ -2820,6 +2820,47 @@
       "visibility": "public"
     },
     {
+      "key": "dd-instrument-error-tracking@s2",
+      "id": "dd-instrument-error-tracking",
+      "kind": "product-enable",
+      "product": "error-tracking",
+      "action": "enable",
+      "platform": [],
+      "cloud": [],
+      "scope": [
+        "browser"
+      ],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "after": [
+        {
+          "product": "rum"
+        }
+      ],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "This Error Tracking implementation is browser/RUM-specific.",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-error-tracking/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "apm-onboarding-summary-kubernetes@s2",
       "id": "apm-onboarding-summary-kubernetes",
       "kind": "verify-troubleshoot",
