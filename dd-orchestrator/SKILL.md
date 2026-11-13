@@ -33,7 +33,8 @@ composition is computed from the capability graph in
   preflight (Step 2), because there is no plan to show until an account exists. Nothing else dispatches
   before approval.
 - **The catalog is the source of truth.** `catalog.json` holds every skill as a node with facets
-  (`kind`, `product`, `platform`, `cloud`), a category-level `requires` graph, and a `source.url`.
+  (`kind`, `product`, `platform`, `cloud`), a category-level `requires` graph, optional `after`
+  ordering behind products already in the plan, and a `source.url`.
   `resolve.py` composes the plan from it. Do not hand-maintain a routing table.
 - **Only enabled skills route.** Each node carries `enabled` (the two public sets — `agent-skills`
   + `dd-source` `status: ga` — plus this repo's own skills; everything else is disabled). `resolve.py`
@@ -70,7 +71,8 @@ composition is computed from the capability graph in
   onboarding-API render) — nothing is pinned. You may NOT infer, summarize, or hand-author a
   skill's result in its place. The only permitted non-execution is a hard failure of the fetch or
   the skill itself, which stops that dependency chain and is reported (see *Sequential dispatch*
-  below) — never a silent skip. If `fetch_skill.py` exits non-zero (for example, HTTP 404 or a
+  below), or a node removed before the confirm gate because the developer's target is outside its
+  `CAVEATS:` scope (see the PLAN block) — never a silent skip. If `fetch_skill.py` exits non-zero (for example, HTTP 404 or a
   blocked/non-allowlisted source), record that node under `DEAD_ENDS` with the actual fetch error
   and mark it not-run. Stop its dependency chain. Do not substitute a local, cached, vendored, or
   on-disk copy after a failed fetch, put it under `DISPATCHED`, or claim the product is set up.
@@ -224,6 +226,8 @@ developer goal
    "ran and failed", and stop that dependency chain. `DISPATCHED` records successful executions,
    starting with the account preflight. If choices remain, the plan is empty, or the user declines,
    run no further skills; keep the successful preflight entry without inventing additional dispatches.
+   A node removed under the scope rule (see the PLAN block) is not run: record it under `DEAD_ENDS`
+   as `- <skill_id> — out of scope: <the caveat it falls outside>` and keep it out of `DISPATCHED`.
 8. **Summarize — render the SUMMARY block.** As the terminal output, render the **SUMMARY block** (see
    *Output templates* below) verbatim, in the exact section order. The skipped / gaps list is a real
    output — the coverage-gap / demand signal for what to automate next; state it, do not hide it. Emit
@@ -268,12 +272,23 @@ Dependencies: {{root}} → {{chain / branches, one line}}
 - {{choice}}: {{optionA}} / {{optionB}} / {{optionC}}
 > Show "None." when choice_count = 0.
 
+## Scope limits ({{caveat_count}})
+- {{skill_id}}: {{caveat}}
+> Omit this section when the trace has no `CAVEATS:` block.
+
 ## Before you approve — effects
 - ⚠ {{step}} {{mutating / outward-facing effect}}
 - {{step}} {{non-mutating effect}}
 
 Approve?  [Proceed — all {{k}}]  ·  [Cancel]
 ```
+
+When the trace has a `CAVEATS:` block, check each caveat against what the developer asked for and
+the detected context before the confirm gate. If their target is outside a skill's caveat (for
+example a MySQL or Aurora database for an RDS PostgreSQL skill, or a serverless service for the
+profiler), do not dispatch that skill or any prerequisite that only it needs; list the product
+under "Not automated" instead, drop those nodes from the Plan table, and record them in `$TRACE` as
+Step 7 describes.
 
 ### SUMMARY block — Step 8 (terminal output)
 

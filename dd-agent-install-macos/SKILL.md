@@ -45,7 +45,8 @@ to `.env.local` / `.env`) and validate both keys - they fail independently:
 ```bash
 for f in .env.local .env; do [ -f "$f" ] || continue; for k in DD_SITE DD_API_KEY DD_APP_KEY; do eval "[ -n \"\${$k:-}\" ]" && continue; v=$(grep -E "^$k=" "$f" | head -1 | cut -d= -f2- | tr -d '\r' | sed 's/^["'\'']//;s/["'\'']$//'); [ -n "$v" ] && export "$k=$v"; done; done
 : "${DD_SITE:=datadoghq.com}"
-case "$DD_SITE" in datadoghq.com|us3.datadoghq.com|us5.datadoghq.com|datadoghq.eu|ap1.datadoghq.com|ap2.datadoghq.com|uk1.datadoghq.com|ddog-gov.com|us2.ddog-gov.com) ;;
+case "$DD_SITE" in ''|*[!abcdefghijklmnopqrstuvwxyz0123456789.-]*|.*|*..*) echo "DD_SITE=$DD_SITE is not a Datadog site - stopping before any key is sent"; exit 1 ;; esac
+case "$DD_SITE" in datadoghq.com|*.datadoghq.com|datadoghq.eu|*.datadoghq.eu|ddog-gov.com|*.ddog-gov.com|datad0g.com|*.datad0g.com|datad0g.eu|*.datad0g.eu) ;;
   *) echo "DD_SITE=$DD_SITE is not a Datadog site - stopping before any key is sent"; exit 1 ;; esac
 echo "DD_SITE=${DD_SITE}"
 echo "DD_API_KEY=$([ -n "${DD_API_KEY:-}" ] && echo set || echo UNSET)   DD_APP_KEY=$([ -n "${DD_APP_KEY:-}" ] && echo set || echo UNSET)"

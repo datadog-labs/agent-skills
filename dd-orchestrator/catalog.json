@@ -1,6 +1,14 @@
 {
   "_schema_version": 1,
   "_generated_by": "gen_public_catalog.py — public sources only (agent-skills GitHub + dd-source GA onboarding-API renders)",
+  "_source_refs": {
+    "dd-source": "da52e4066d3c753b5382549f4bc09fbe291bb2f1",
+    "agent-skills": "0787c9d95d0c73426f5ccee45f35df7a5479b792",
+    "agentic-onboarding-evals": "main"
+  },
+  "_excluded": [
+    "agent-install-aix@s1"
+  ],
   "url_host_base": "https://github.com",
   "kinds": [
     "foundation",
@@ -395,6 +403,132 @@
       "visibility": "public"
     },
     {
+      "key": "dd-aws-log-forwarding@s2",
+      "id": "dd-aws-log-forwarding",
+      "kind": "cloud-connect",
+      "product": "logs",
+      "action": "log-forward",
+      "platform": [],
+      "cloud": [
+        "aws"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "aws"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [
+        "logs"
+      ],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-aws-log-forwarding/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "duplicate",
+      "duplicate_of": "aws-log-forwarding-setup@s1",
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-azure-log-forwarding@s2",
+      "id": "dd-azure-log-forwarding",
+      "kind": "cloud-connect",
+      "product": "logs",
+      "action": "log-forward",
+      "platform": [],
+      "cloud": [
+        "azure"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "azure"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [
+        "logs"
+      ],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-azure-log-forwarding/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "duplicate",
+      "duplicate_of": "azure-log-forwarding-setup@s1",
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-gcp-log-forwarding@s2",
+      "id": "dd-gcp-log-forwarding",
+      "kind": "cloud-connect",
+      "product": "logs",
+      "action": "log-forward",
+      "platform": [],
+      "cloud": [
+        "gcp"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "gcp"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [
+        "logs"
+      ],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-gcp-log-forwarding/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "duplicate",
+      "duplicate_of": "gcp-log-forwarding-setup@s1",
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "gcp-log-forwarding-setup@s1",
       "id": "gcp-log-forwarding-setup",
       "kind": "cloud-connect",
@@ -460,10 +594,40 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-account-setup/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
+      "status": "canonical",
       "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-orchestrator@s2",
+      "id": "dd-orchestrator",
+      "kind": "foundation",
+      "product": "orchestrate",
+      "action": "",
+      "platform": [],
+      "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-orchestrator/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": "beta",
       "enabled": true,
       "visibility": "public"
     },
@@ -490,7 +654,7 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-product-recommender/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
+      "status": "canonical",
       "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
@@ -622,6 +786,40 @@
       "visibility": "public"
     },
     {
+      "key": "agent-observability.agent-observability-build-eval-from-annotations@s2",
+      "id": "agent-observability.agent-observability-build-eval-from-annotations",
+      "kind": "lifecycle",
+      "product": "agent-observability",
+      "action": "agent-observability-build-eval-from-annotations",
+      "platform": [],
+      "cloud": [],
+      "scope": [],
+      "when": "day-2-on-demand",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/agent-observability/agent-observability-build-eval-from-annotations/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "agent-observability.agent-observability-eval-bootstrap@s2",
       "id": "agent-observability.agent-observability-eval-bootstrap",
       "kind": "lifecycle",
@@ -724,6 +922,40 @@
       "visibility": "public"
     },
     {
+      "key": "agent-observability.agent-observability-online-experiment@s2",
+      "id": "agent-observability.agent-observability-online-experiment",
+      "kind": "lifecycle",
+      "product": "agent-observability",
+      "action": "agent-observability-online-experiment",
+      "platform": [],
+      "cloud": [],
+      "scope": [],
+      "when": "day-2-on-demand",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/agent-observability/agent-observability-online-experiment/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "agent-observability.agent-observability-replay-trace@s2",
       "id": "agent-observability.agent-observability-replay-trace",
       "kind": "lifecycle",
@@ -816,6 +1048,41 @@
       "source": {
         "repo": "agent-skills",
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/agent-observability/agent-observability-trace-rca/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-apm.enable-dsm@s2",
+      "id": "dd-apm.enable-dsm",
+      "kind": "lifecycle",
+      "product": "apm",
+      "action": "enable-dsm",
+      "platform": [],
+      "cloud": [],
+      "scope": [],
+      "when": "day-2-on-demand",
+      "requires": [
+        {
+          "category": "product-enable",
+          "product": "apm"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-apm/enable-dsm/SKILL.md",
         "path_type": "file"
       },
       "status": "canonical",
@@ -1166,6 +1433,78 @@
       "visibility": "public"
     },
     {
+      "key": "dd-android-sdk.upgrade-v3@s2",
+      "id": "dd-android-sdk.upgrade-v3",
+      "kind": "lifecycle",
+      "product": "rum",
+      "action": "upgrade-v3",
+      "platform": [],
+      "cloud": [],
+      "scope": [
+        "android"
+      ],
+      "when": "day-2-on-demand",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-android-sdk/upgrade-v3/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-android-sdk@s2",
+      "id": "dd-android-sdk",
+      "kind": "lifecycle",
+      "product": "rum",
+      "action": "route-sdk-maintenance",
+      "platform": [],
+      "cloud": [],
+      "scope": [
+        "android"
+      ],
+      "when": "day-2-on-demand",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-android-sdk/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "dd-browser-sdk.upgrade-v5@s2",
       "id": "dd-browser-sdk.upgrade-v5",
       "kind": "lifecycle",
@@ -1349,6 +1688,49 @@
       "visibility": "public"
     },
     {
+      "key": "agent-install-docker@s2",
+      "id": "agent-install-docker",
+      "kind": "platform-install",
+      "product": null,
+      "action": "install-agent",
+      "platform": [
+        "docker"
+      ],
+      "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [
+        {
+          "category": "cloud-connect"
+        }
+      ],
+      "delivers": [
+        "infra",
+        "logs"
+      ],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-docker/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "duplicate",
+      "duplicate_of": "agent-install-docker@s1",
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "agent-install-kubernetes@s1",
       "id": "agent-install-kubernetes",
       "kind": "platform-install",
@@ -1390,6 +1772,49 @@
         "dangling requires:orchestrator remapped to category:foundation"
       ],
       "lifecycle": "ga",
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "agent-install-kubernetes@s2",
+      "id": "agent-install-kubernetes",
+      "kind": "platform-install",
+      "product": null,
+      "action": "install-agent",
+      "platform": [
+        "kubernetes"
+      ],
+      "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [
+        {
+          "category": "cloud-connect"
+        }
+      ],
+      "delivers": [
+        "infra",
+        "logs"
+      ],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-kubernetes/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "duplicate",
+      "duplicate_of": "agent-install-kubernetes@s1",
+      "issues": [],
+      "lifecycle": null,
       "enabled": true,
       "visibility": "public"
     },
@@ -1439,6 +1864,49 @@
       "visibility": "public"
     },
     {
+      "key": "agent-install-linux@s2",
+      "id": "agent-install-linux",
+      "kind": "platform-install",
+      "product": null,
+      "action": "install-agent",
+      "platform": [
+        "linux"
+      ],
+      "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [
+        {
+          "category": "cloud-connect"
+        }
+      ],
+      "delivers": [
+        "infra",
+        "logs"
+      ],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-linux/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "duplicate",
+      "duplicate_of": "agent-install-linux@s1",
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "agent-install-macos@s1",
       "id": "agent-install-macos",
       "kind": "platform-install",
@@ -1484,6 +1952,49 @@
       "visibility": "public"
     },
     {
+      "key": "agent-install-macos@s2",
+      "id": "agent-install-macos",
+      "kind": "platform-install",
+      "product": null,
+      "action": "install-agent",
+      "platform": [
+        "macos"
+      ],
+      "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [
+        {
+          "category": "cloud-connect"
+        }
+      ],
+      "delivers": [
+        "infra",
+        "logs"
+      ],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-macos/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "duplicate",
+      "duplicate_of": "agent-install-macos@s1",
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "agent-install-windows@s1",
       "id": "agent-install-windows",
       "kind": "platform-install",
@@ -1525,6 +2036,49 @@
         "dangling requires:orchestrator remapped to category:foundation"
       ],
       "lifecycle": "ga",
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "agent-install-windows@s2",
+      "id": "agent-install-windows",
+      "kind": "platform-install",
+      "product": null,
+      "action": "install-agent",
+      "platform": [
+        "windows"
+      ],
+      "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [
+        {
+          "category": "cloud-connect"
+        }
+      ],
+      "delivers": [
+        "infra",
+        "logs"
+      ],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-windows/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "duplicate",
+      "duplicate_of": "agent-install-windows@s1",
+      "issues": [],
+      "lifecycle": null,
       "enabled": true,
       "visibility": "public"
     },
@@ -1770,16 +2324,14 @@
       "visibility": "public"
     },
     {
-      "key": "dd-instrument-rum@s2",
-      "id": "dd-instrument-rum",
+      "key": "dd-confluent-cloud-integration@s2",
+      "id": "dd-confluent-cloud-integration",
       "kind": "product-enable",
-      "product": "rum",
+      "product": "confluent-cloud",
       "action": "enable",
       "platform": [],
       "cloud": [],
-      "scope": [
-        "browser"
-      ],
+      "scope": [],
       "when": "day-1-required",
       "requires": [
         {
@@ -1795,7 +2347,210 @@
       "caveat": "",
       "source": {
         "repo": "agent-skills",
-        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-rum/SKILL.md",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-confluent-cloud-integration/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-aws-ccm@s2",
+      "id": "dd-aws-ccm",
+      "kind": "product-enable",
+      "product": "cost",
+      "action": "enable",
+      "platform": [],
+      "cloud": [
+        "aws"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "aws"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-aws-ccm/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-azure-ccm@s2",
+      "id": "dd-azure-ccm",
+      "kind": "product-enable",
+      "product": "cost",
+      "action": "enable",
+      "platform": [],
+      "cloud": [
+        "azure"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "azure"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-azure-ccm/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-gcp-ccm@s2",
+      "id": "dd-gcp-ccm",
+      "kind": "product-enable",
+      "product": "cost",
+      "action": "enable",
+      "platform": [],
+      "cloud": [
+        "gcp"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "gcp"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-gcp-ccm/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-oci-ccm@s2",
+      "id": "dd-oci-ccm",
+      "kind": "product-enable",
+      "product": "cost",
+      "action": "enable",
+      "platform": [],
+      "cloud": [
+        "oci"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "oci"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-oci-ccm/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-dbm-rds-postgres@s2",
+      "id": "dd-dbm-rds-postgres",
+      "kind": "product-enable",
+      "product": "dbm",
+      "action": "enable",
+      "platform": [],
+      "cloud": [
+        "aws"
+      ],
+      "scope": [
+        "aws-rds-postgresql"
+      ],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [
+        {
+          "category": "cloud-connect",
+          "cloud": "aws"
+        }
+      ],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "Only a standalone, writable, single-instance PostgreSQL database on AWS RDS is automated; read replicas, Multi-AZ DB clusters, Aurora, and other engines/hosts are not yet covered.",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-dbm-rds-postgres/SKILL.md",
         "path_type": "file"
       },
       "status": "canonical",
@@ -1810,7 +2565,7 @@
       "id": "dd-instrument-llmo",
       "kind": "product-enable",
       "product": "llm-obs",
-      "action": "enable",
+      "action": "enable-code",
       "platform": [],
       "cloud": [],
       "scope": [
@@ -1850,6 +2605,114 @@
       "action": "enable",
       "platform": [],
       "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "product-enable",
+          "product": "rum"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-product-analytics/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-profiler-setup@s2",
+      "id": "dd-profiler-setup",
+      "kind": "product-enable",
+      "product": "profiler",
+      "action": "enable",
+      "platform": [],
+      "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "Covers Java, Python, Go, Ruby, Node.js, .NET, and PHP services on hosts and containers; serverless platforms (including AWS Lambda), JRuby/TruffleRuby, Ruby via SSI, and C/C++/Rust are not automated.",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-profiler-setup/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-instrument-rum@s2",
+      "id": "dd-instrument-rum",
+      "kind": "product-enable",
+      "product": "rum",
+      "action": "enable",
+      "platform": [],
+      "cloud": [],
+      "scope": [
+        "browser"
+      ],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-rum/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-browser-sdk.setup-sourcemaps@s2",
+      "id": "dd-browser-sdk.setup-sourcemaps",
+      "kind": "product-enable",
+      "product": "source-maps",
+      "action": "upload-source-maps",
+      "platform": [],
+      "cloud": [],
       "scope": [
         "browser"
       ],
@@ -1872,7 +2735,122 @@
       "caveat": "",
       "source": {
         "repo": "agent-skills",
-        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-product-analytics/SKILL.md",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-browser-sdk/setup-sourcemaps/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-aws-storage-management@s2",
+      "id": "dd-aws-storage-management",
+      "kind": "product-enable",
+      "product": "storage",
+      "action": "enable",
+      "platform": [],
+      "cloud": [
+        "aws"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "aws"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-aws-storage-management/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-instrument-test-optimization@s2",
+      "id": "dd-instrument-test-optimization",
+      "kind": "product-enable",
+      "product": "test-optimization",
+      "action": "enable",
+      "platform": [],
+      "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-test-optimization/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-instrument-error-tracking@s2",
+      "id": "dd-instrument-error-tracking",
+      "kind": "product-enable",
+      "product": "error-tracking",
+      "action": "enable",
+      "platform": [],
+      "cloud": [],
+      "scope": [
+        "browser"
+      ],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "after": [
+        {
+          "product": "rum"
+        }
+      ],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "This Error Tracking implementation is browser/RUM-specific.",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-error-tracking/SKILL.md",
         "path_type": "file"
       },
       "status": "canonical",
