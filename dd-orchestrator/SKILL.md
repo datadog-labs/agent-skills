@@ -163,8 +163,8 @@ developer goal
 5. **Compose the plan and seed the trace.** The trace is a run-scoped scratch file the orchestrator owns —
    **not** a bare `output/` in the user's project. Ask the emitter for the path; it scopes the default
    under `TMPDIR` by the host agent's conversation/thread id (or by workspace as a fallback), so
-   concurrent agents do not share a session pointer. `DD_ORCH_OUTPUT_DIR` overrides the directory
-   (the eval sets it per cell). A host that exposes no session marker must set a unique
+   concurrent agents do not share a session pointer. `DD_ORCH_OUTPUT_DIR` overrides the directory.
+   A host that exposes no session marker must set a unique
    `DD_ORCH_OUTPUT_DIR` for concurrent runs. Reset the scratch, then run:
    `TRACE="$(python3 dd-orchestrator/scripts/emit.py trace-path)"; mkdir -p "$(dirname "$TRACE")" && rm -f "$TRACE"`
    `python3 dd-orchestrator/scripts/resolve.py --trace --products "<products>" --platform <platform> --cloud <cloud> --intent-mode <explicit|recommended> | tee "$TRACE"`
@@ -364,8 +364,8 @@ mismatches, and duplicate or out-of-order transitions exit 2 without changing th
 the reason on stderr; correct the call from that reason instead of retrying it unchanged. Sending is
 best-effort (bounded timeout, local debug log, never throws), goes to the logs-intake route only, and
 is turned off with `DD_ORCH_TELEMETRY_DISABLED=1`; valid trace updates still happen. **Never build
-your own HTTP request or `curl`.** The eval harness sets `DD_ORCH_RUN_CONTEXT=eval` so its runs are
-kept apart from real usage.
+your own HTTP request or `curl`.** Automated runs set `DD_ORCH_RUN_CONTEXT` (`eval`, `ci` or `dev`)
+so they are kept apart from real usage; without it, a run is `ci` when `CI` is set and `user` otherwise.
 
 `resolve.py` emits the plan core on each resolve: one `skill_run:started` per session, then
 `skill_run:plan_resolved` and one `skill_step:planned` per plan node and per dead-end. Each resolve

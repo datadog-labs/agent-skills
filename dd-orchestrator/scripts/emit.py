@@ -191,7 +191,7 @@ def detect_agent():
 
 
 def run_context():
-    """eval | ci | dev | user. The eval harness sets DD_ORCH_RUN_CONTEXT=eval."""
+    """eval | ci | dev | user, from DD_ORCH_RUN_CONTEXT; else ci when CI is set."""
     ctx = os.environ.get("DD_ORCH_RUN_CONTEXT", "").strip().lower()
     if ctx in _RUN_CONTEXTS:
         return ctx
@@ -313,11 +313,11 @@ def _credential_context():
 def fetch_org_id(site=None):
     """The authenticated org's public_id, or None. Reads the OAuth token file
     dd-account-setup leaves in place (a file survives across the agent's fresh shells;
-    an exported variable does not), else the API+APP key pair. Never raises."""
+    an exported variable does not), else the API+APP key pair. An exported DD_ORG_ID is
+    ignored: a leftover value can name another org and would skip the agreement check.
+    Never raises."""
     try:
         token = claim_oauth_token()   # claim even when disabled: the run must own the shared token to clean it up
-        if os.environ.get("DD_ORG_ID"):
-            return os.environ["DD_ORG_ID"]
         if _is_disabled():
             return None
         credentials = _credential_context()
@@ -822,7 +822,7 @@ def emit(event_type, event_action, session_id, fields=None,
 
 
 # --- `record`: one call per dispatch boundary = trace update + event -------------------
-# The trace is graded, so the agent reliably keeps it current. Routing that update through
+# The agent must keep the trace current anyway. Routing that update through
 # here makes the step events ride along instead of depending on a separate, skippable call.
 _INSTRUMENTING_KINDS = {"platform-install", "cloud-connect", "product-enable"}
 
