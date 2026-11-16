@@ -25,6 +25,7 @@ The main skills are listed here. The [Install](#install) section lists every ski
 | **dd-instrument-product-analytics** | Turn on Datadog Product Analytics for browser apps running the RUM Browser SDK — application switch, `setUser` identity, click collection |
 | **dd-instrument-rum** | Instrument browser apps with Datadog Browser RUM — React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla |
 | **dd-instrument-test-optimization** | Set up Datadog Test Optimization in CI pipelines — auto-instrumentation for GitHub Actions, GitLab, CircleCI; manual tracers; container forwarding; JUnit XML |
+| **Integration onboarding skills** | Connect third-party services to Datadog via pup — Slack (`dd-slack-integration`), PagerDuty, GitHub, GitHub Copilot, GitHub Costs, Anthropic usage & costs, OpenAI, Nebius Cloud |
 
 ## Install
 
