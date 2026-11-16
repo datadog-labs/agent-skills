@@ -44,7 +44,7 @@ This workflow needs a connected, authenticated Datadog MCP server with the `llmo
 |---|---|---|
 | `feature-flags` | `list-environments`, `list-feature-flags`, `get-feature-flag`, `list-allocations-for-feature-flag` | `create-feature-flag`, `update-feature-flag-environment`, `sync-experiment-allocations-for-feature-flag-environment` |
 | `experiments` | `list-experiments`, `get-experiment`, `list-metrics`, `get-metric`, `list-subject-types`, `get-subject-type`, `get-experiment-diagnostics` | `create-experiment`, `link-feature-flag-to-experiment`, `create-metric`, `update-metric`, `attach-metric-to-experiment`, `start-experiment` |
-| `llmobs` | `search_llmobs_spans`, `list_llmobs_evals_by_ml_app`, `list_llmobs_experiments`, `get_llmobs_experiment_summary`, `get_llmobs_experiment_dimension_values` | none |
+| `llmobs` | `search_llmobs_spans`, `list_llmobs_evals_by_ml_app`, `list_llmobs_experiments`, `get_llmobs_experiment_summary` | none |
 
 Coding agents often prefix tool names with the server name (for example `mcp__datadog-online-experiments__create-experiment`), so match on the name at the end. Then stop, before any write or further discovery, in whichever of these cases applies:
 
@@ -111,34 +111,25 @@ If the server is connected and authenticated but the online experiment tools rep
 
 ## Start from an offline experiment
 
-Users often test a change offline against a dataset first, and then ask for an online experiment on "the code changes from offline experiment `<experiment-id>`". An offline experiment stores results, not code. No field names the branch, diff, or prompt it ran, and its task function may call the application differently from production. Identifying the tested change is part of Phase 0's read-only discovery. Never guess it.
+Users often test a change offline against a dataset first, and then ask for an online experiment on "the code changes from offline experiment `<experiment-id>`". An offline experiment stores results, not the code it tested, and what Datadog records about that code is unreliable. The Git commit tagged on an experiment's spans is whatever was checked out when it ran, which is often an unrelated trunk commit because the change under test was never committed. Do not try to work out the change from the experiment, its Git tags, its `config`, or the repository. Always ask the user to describe it, and test what they describe.
 
-**1. Read the experiment.**
-- Call `get_llmobs_experiment_summary` with the experiment ID. It returns the dataset ID, the evaluation results, and the dimensions available on the experiment's spans. If the experiment is not found, ask the user to check the ID and that the MCP server is connected to the organization that ran it.
-- Call `list_llmobs_experiments` with that `dataset_id` and `experiment_ids` set to the experiment ID. The tool requires a dataset or project ID, which is why the summary comes first; if the summary has no dataset ID, resolve the project with `list_llmobs_projects` and pass `project_id` instead. The result gives the run name, the logical experiment name shared by all its runs, the author, creation time, `metadata`, `config`, and `parent_experiment_id`.
+**1. Read the experiment for context.**
+- Call `get_llmobs_experiment_summary` with the experiment ID. It returns the dataset ID and the evaluation results. If the experiment is not found, ask the user to check the ID and that the MCP server is connected to the organization that ran it.
+- Call `list_llmobs_experiments` with that `dataset_id` and `experiment_ids` set to the experiment ID, for the experiment's name and author. The tool requires a dataset or project ID, which is why the summary comes first; if the summary has no dataset ID, resolve the project with `list_llmobs_projects` and pass `project_id` instead.
 
-**2. Look for the commit it ran from.** The Python SDK, from ddtrace 4.11, records the Git commit and repository an experiment ran from. It takes them from `DD_GIT_COMMIT_SHA` and `DD_GIT_REPOSITORY_URL` (or `git.*` entries in `DD_TAGS`), otherwise from the package metadata, otherwise from `git` in the directory where the experiment ran. Older versions and other SDKs may record nothing. Look in this order:
-- the experiment's `metadata.tags`, for `git.commit.sha:<sha>` and `git.repository_url:<url>`;
-- the span dimensions, through `get_llmobs_experiment_dimension_values`, for `git.commit.sha` and `git.repository_url`; an SDK exporting in agentless APM mode writes them with underscores, as `git_commit_sha` and `git_repository_url`;
-- keys the user's own experiment code added to `metadata` or tags, such as a branch, commit, or pull request.
+Use what you read only for the hypothesis and the choice of metric, never to identify the change.
 
-If the spans carry more than one commit, the run mixed code versions. Ask the user which one to test.
+**2. Ask the user to describe the change.** Ask right away, before the rest of Phase 0 discovery. The answer is needed to design the treatment, so this is an exception to asking one question at the end of Phase 0. Name the experiment and its ID so the user can confirm it is the right one, and ask for:
+- what the change does to the application's behavior, for example a new prompt, model, parameter, tool, or retrieval strategy;
+- where the code for it is, if it exists anywhere: a branch, commit, pull request, uncommitted changes in the workspace, or a file path. The change may also exist only in the offline experiment's task code and still need to be written into the application.
 
-**3. Trace the commit to a code change.**
-- Confirm that the recorded repository URL matches a remote of the local repository (`git remote -v`). If it names another repository, ask the user where that checkout is.
-- Check that the commit exists locally with `git cat-file -e <sha>^{commit}`. If it does not, run `git fetch` and check again. Do not check out the commit or change the user's working tree.
-- Find where the commit lives with `git branch -a --contains <sha>` and, when GitHub CLI is available, `gh pr list --search <sha> --state all`.
-- Read the change as the diff from the commit's merge base with the branch the application deploys from: `git diff $(git merge-base origin/<trunk> <sha>) <sha>`. Separate changes to the application's behavior (prompts, models, tools, retrieval, parameters) from changes to the offline harness (task function, dataset, evaluators). Only the application changes belong in the online treatment.
+Do not offer a guessed answer for the user to confirm, such as a commit from the experiment's tags or a recent diff in the repository. Wait for their description before continuing.
 
-The recorded commit is the checked-out commit at run time, so uncommitted changes are not in it. If the commit is already on the trunk, or its diff contains nothing that could explain the offline results, the tested change was probably uncommitted or made elsewhere. Treat the code as unidentified and continue with step 4.
+**3. Build the treatment from the description.** The user's description defines the treatment. Use the code location they give to implement it, and include only what they described. If that code contains changes they did not mention, or does not match their description, ask which changes belong in the treatment instead of choosing yourself. Leave out changes that only served the offline run, such as the dataset, evaluators, or task-function plumbing. If the change was applied only inside the offline task code, for example by passing a new prompt, port it into the application's production code path behind the flag.
 
-**4. Without a usable commit, look locally.** Search the local repository for the code that ran the experiment: the experiment or run name passed to the SDK, the dataset name, and the evaluator names in the summary. Check the current branch, its uncommitted changes, and branches the author worked on around the experiment's creation time. Use `config` to corroborate a candidate, since it often records the model, prompt, or parameters of the run. A run started from the Datadog Playground has `config.run_from` set to `playground` and stores `model_config` and the prompt messages. Its treatment is that configuration rather than code, and it has to be mapped onto the application's code path.
-
-**5. Ask unless the evidence is concrete.** Continue only when you can name a specific commit, branch, or local diff and say what ties it to the experiment: a recorded commit that matches, or experiment code that creates a run with this name and calls the changed code. Otherwise stop and ask the user where the code they tested is: a branch, commit, pull request, or path. Show what you found: the experiment's name, author, creation time, any Git tags, and the relevant `config`. This is a blocking ambiguity, so ask right away rather than waiting for the Phase 0 proposal. Do not reconstruct the change from the experiment's name, results, or a plausible-looking recent commit.
-
-**6. Carry the result into the proposal.**
+**4. Carry the result into the proposal.**
 - **Control:** the code currently deployed in the target environment, usually the trunk. Do not use the offline experiment's parent or baseline run as the control unless the user asks.
-- **Treatment:** the identified application change, placed behind the flag in the production code path. If the offline task function applied the change directly, for example by passing a new prompt, port that change into the application.
+- **Treatment:** the change as the user described it, with the code changes you will make to put it behind the flag.
 - **Hypothesis:** base it on the offline result, for example the evaluation that improved and by how much on which dataset.
 - **Primary metric:** offline evaluators score experiment spans only, so the offline score does not exist on live traffic. Prefer an existing online evaluation for the `ml_app` that measures the same thing. If none exists, say so in the proposal and recommend how to report one (see Phase 2).
 
@@ -147,7 +138,7 @@ The recorded commit is the checked-out commit at run time, so uncommitted change
 Do not interrupt the investigation to ask for one input at a time. First perform all available read-only discovery:
 
 - Confirm that [the Datadog MCP server check](#check-the-datadog-mcp-server-before-anything-else) passed: every read and write tool in its table is available. If not, stop as that section describes instead of repeatedly retrying individual operations.
-- If the user pointed to an offline experiment, identify the code it tested, as described in [Start from an offline experiment](#start-from-an-offline-experiment), before you design the treatment.
+- If the user pointed to an offline experiment, read it and ask the user to describe the change it tested, as described in [Start from an offline experiment](#start-from-an-offline-experiment), before you design the treatment.
 - Inspect the application and its deployment configuration. Confirm it reports to Agent Observability, find where it submits evaluations (if it does), find the code path the treatment changes, and infer its `ml_app`, `DD_ENV`, and stable subject identifier.
 - List environments, look for an existing flag and experiment for the proposed change, and search existing experiment metrics before proposing new objects.
 
@@ -170,7 +161,7 @@ Present one compact confirmation request containing:
 
 - application and `ml_app`;
 - control, treatment, and hypothesis;
-- when starting from an offline experiment: its name and ID, the commit or diff identified as the treatment, and the evidence that ties the two together;
+- when starting from an offline experiment: its name and ID, the change as the user described it, and the code that will implement it;
 - proposed flag key and Boolean variants;
 - subject identifier and code location where the flag will be evaluated;
 - target environment and 50/50 or proposed split;
@@ -317,7 +308,7 @@ For reading the results once enough data has arrived, use `agent-observability-e
 ## Pitfalls checklist
 
 - Continuing when the MCP server's write tools are missing, instead of sending the user to enable MCP write access.
-- Guessing which code an offline experiment tested, or treating changes to its harness as the application change.
+- Working out which code an offline experiment tested from its Git tags, `config`, or the repository, instead of asking the user to describe the change.
 - Subject identifier mismatch between the flag, the evaluation, and the spans.
 - Subject tag missing from the root span, so the cost and token metrics cannot join to exposures.
 - Subject type mapped to an attribute other than `@usr.id`.
