@@ -25,7 +25,14 @@ The main skills are listed here. The [Install](#install) section lists every ski
 | **dd-instrument-product-analytics** | Turn on Datadog Product Analytics for browser apps running the RUM Browser SDK — application switch, `setUser` identity, click collection |
 | **dd-instrument-rum** | Instrument browser apps with Datadog Browser RUM — React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla |
 | **dd-instrument-test-optimization** | Set up Datadog Test Optimization in CI pipelines — auto-instrumentation for GitHub Actions, GitLab, CircleCI; manual tracers; container forwarding; JUnit XML |
-| **Integration onboarding skills** | Connect third-party services to Datadog via pup — Slack (`dd-slack-integration`), PagerDuty, GitHub, GitHub Copilot, GitHub Costs, Anthropic usage & costs, OpenAI, Nebius Cloud |
+| **dd-anthropic-usage-and-costs-onboarding** | Connect Anthropic to Datadog — Claude usage (org-wide on the Platform plan, per-user on Enterprise) and costs in Cloud Cost Management |
+| **dd-github-onboarding** | Connect GitHub via the Datadog GitHub App — source code in stack traces, pull-request comments |
+| **dd-github-copilot-onboarding** | Connect GitHub Copilot to Datadog — usage and license metrics for the orgs you own |
+| **dd-github-costs-onboarding** | Bring a GitHub enterprise/org bill — Actions, Packages, Copilot, storage — into Cloud Cost Management |
+| **dd-nebius-integration** | Connect a Nebius Cloud tenant to Datadog — log streams through the Nebius Cloud integration |
+| **dd-openai-onboarding** | Connect OpenAI to Datadog — org-wide API usage metrics and costs in Cloud Cost Management |
+| **dd-pagerduty-onboarding** | Connect PagerDuty to Datadog — monitors trigger and resolve incidents on PagerDuty services |
+| **dd-slack-integration** | Connect a commercial Slack workspace to Datadog — alerts and notifications in a channel, talk to @Datadog |
 
 ## Install
 
