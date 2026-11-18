@@ -2,7 +2,7 @@
 name: dd-instrument-shipdog
 description: Datadog Shipdog backend setup. Gets one service's traces and logs into Datadog, turns on Live Debugger (logpoints that capture variable values from running code), and proves it with a real logpoint. Supports Python and Node.js today, sending straight to Datadog with no Agent (agentless mode) or through an existing working Agent. Use when the user wants to add logpoints to their app, see variable values from a running or production service without print statements or redeploys, set up or fix Live Debugger ("service isn't available", logpoints never capture), send traces and logs to Datadog without an Agent, or set up or onboard to Shipdog. Not for installing the Datadog Agent on hosts, frontend RUM, or adding log statements to code.
 metadata:
-  version: "0.4.0"
+  version: "0.5.0"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,shipdog,live-debugger,apm,logs,agentless,python,nodejs
@@ -39,7 +39,16 @@ Live Debugger places logpoints by file and line, so Datadog must see the service
   - An Agent answers locally but the project doesn't use it: a local Agent says nothing about where the service deploys. Go agentless and mention it in the report.
 - **Logging library:** Node.js `winston`/`pino`/`bunyan` or only `console.log`; Python `logging`/`structlog`, `loguru`, or only `print`.
 - **Existing values** of the variables in step 2. Reuse them.
-- **MCP tools:** if `discover_datadog_logpoint` isn't in your tool list, ask the user once, now, to connect them, using the steps in `references/mcp-setup.md`; their reload and sign-in can happen while you edit. Don't wait on it. If the tools still aren't there by step 4, verify with **No MCP tools** below and list the connection steps as a follow-up. Missing tools never stop the setup.
+- **MCP tools:** if `discover_datadog_logpoint` isn't in your tool list, run the `dd-coding-agent-mcp` skill now with Shipdog's toolsets (below). If that skill isn't installed, or there's no local coding agent whose MCP config you can change, don't set up MCP yourself: finish the setup, verify with **No MCP tools**, and add a warning to the report's follow-ups (`Warning: the dd-coding-agent-mcp skill is missing, so the Datadog MCP tools weren't connected. Install it from https://github.com/datadog-labs/agent-skills and rerun.`, or say no local coding agent could be configured). The user's reload and sign-in can happen while you edit; don't wait on them. If the tools still aren't there by step 4, verify with **No MCP tools** below and list the steps that skill reported as a follow-up. Missing tools never stop the setup.
+
+  | Shipdog product | Toolset |
+  |---|---|
+  | Logs search and verification | `core` |
+  | Traces | `apm` |
+  | Errors from the service | `error-tracking` |
+  | Live Debugger logpoints and snapshots | `live-debugger` |
+
+  Ask for all four: `core,apm,error-tracking,live-debugger`.
 
 ## 2. Configure
 

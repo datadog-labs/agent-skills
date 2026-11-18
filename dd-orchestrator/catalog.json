@@ -662,6 +662,36 @@
       "visibility": "public"
     },
     {
+      "key": "dd-coding-agent-mcp@s2",
+      "id": "dd-coding-agent-mcp",
+      "kind": "internal",
+      "product": null,
+      "action": "",
+      "platform": [],
+      "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-coding-agent-mcp/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "internal",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": "beta",
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "dd-docs@s2",
       "id": "dd-docs",
       "kind": "internal",

@@ -13,6 +13,7 @@ The main skills are listed here. The [Install](#install) section lists every ski
 | **dd-logs** | Search logs |
 | **dd-apm** | Traces, services, performance, Single-Step Instrumentation |
 | **dd-docs** | Search Datadog documentation |
+| **dd-coding-agent-mcp** | Connect your coding agent (Claude Code, Codex, Gemini CLI, OpenCode, Cursor, Copilot CLI) to the Datadog MCP server with the right toolsets |
 | **agent-observability** | Agent Observability: experiments, eval RCA, evaluator generation, session classification |
 | **dd-browser-sdk** | Browser SDK: RUM, Logs, Session Replay, profiling, product analytics, error tracking, version migration |
 | **dd-audit** | Audit Trail investigations: who changed what, key compromise, cost spike root cause, compliance evidence (SOC 2/PCI), AI activity auditing |
