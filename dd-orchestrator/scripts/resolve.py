@@ -32,6 +32,7 @@ PRODUCT_TOKENS = {
     "apm": "apm", "application performance monitoring": "apm",
     "llm observability": "llm-obs", "llmo": "llm-obs", "llm obs": "llm-obs",
     "rum": "rum", "real user monitoring": "rum", "session replay": "rum",
+    "shipdog": "shipdog", "ship dog": "shipdog",
     "error tracking": "error-tracking", "product analytics": "product-analytics",
     "infrastructure monitoring": "infra", "infra": "infra", "container monitoring": "infra",
     "log management": "logs", "logs": "logs",
