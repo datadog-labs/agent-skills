@@ -49,6 +49,7 @@ PRODUCT_TOKENS = {
     "studio": "studio", "storage": "storage", "agent observability": "agent-observability",
     "storage management": "storage", "advanced s3 monitoring": "storage",
     "confluent cloud": "confluent-cloud",
+    "coreweave": "coreweave", "coreweave cloud": "coreweave",
     "source map uploads": "source-maps", "source maps": "source-maps", "sourcemaps": "source-maps",
     "source map": "source-maps",
     "mobile rum": "rum-mobile", "rum mobile": "rum-mobile", "mobile monitoring": "rum-mobile",
