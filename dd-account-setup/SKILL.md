@@ -152,8 +152,7 @@ lands in the transcript permanently. Same guards the script uses: `.env` not git
   that Bearer token to provision resources a plain API key can't create (notably a RUM
   application). The onboarding caller removes it once setup finishes; running instrumentation
   standalone, delete it when done.
-- Hand back: "Account is ready. You can now run the setup / instrumentation step." (e.g.
-  `studio-setup`, `browser-rum-setup`, `llm-observability-setup`, or any other `*-setup` skill).
+- Hand back: "Account is ready. You can now run the setup / instrumentation step."
 
 ## Headless
 
