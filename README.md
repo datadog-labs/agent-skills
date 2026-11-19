@@ -13,6 +13,7 @@ The main skills are listed here. The [Install](#install) section lists every ski
 | **dd-logs** | Search logs |
 | **dd-apm** | Traces, services, performance, Single-Step Instrumentation |
 | **dd-docs** | Search Datadog documentation |
+| **dd-coding-agent-mcp** | Connect your coding agent (Claude Code, Codex, Gemini CLI, OpenCode, Cursor, Copilot CLI) to the Datadog MCP server with the right toolsets |
 | **agent-observability** | Agent Observability: experiments, eval RCA, evaluator generation, session classification |
 | **dd-browser-sdk** | Browser SDK: RUM, Logs, Session Replay, profiling, product analytics, error tracking, version migration |
 | **dd-audit** | Audit Trail investigations: who changed what, key compromise, cost spike root cause, compliance evidence (SOC 2/PCI), AI activity auditing |
@@ -24,6 +25,8 @@ The main skills are listed here. The [Install](#install) section lists every ski
 | **dd-instrument-llmo** | Instrument Python & Node.js/Next.js AI backends with Datadog LLM Observability — SDK init, agent/workflow spans, RUM↔LLMO session linking |
 | **dd-instrument-product-analytics** | Turn on Datadog Product Analytics for browser apps running the RUM Browser SDK — application switch, `setUser` identity, click collection |
 | **dd-instrument-rum** | Instrument browser apps with Datadog Browser RUM — React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla |
+| **dd-git-tagging** | Tag a service's traces with its Git commit and repository URL, the telemetry half of source code integration — any tracer language, agentless or through an Agent |
+| **dd-instrument-shipdog** | ShipDog backend setup for Python and Node.js — agentless traces and logs, Live Debugger, and a verifying logpoint |
 | **dd-instrument-test-optimization** | Set up Datadog Test Optimization in CI pipelines — auto-instrumentation for GitHub Actions, GitLab, CircleCI; manual tracers; container forwarding; JUnit XML |
 | **dd-anthropic-usage-and-costs-onboarding** | Connect Anthropic to Datadog — Claude usage (org-wide on the Platform plan, per-user on Enterprise) and costs in Cloud Cost Management |
 | **dd-github-onboarding** | Connect GitHub via the Datadog GitHub App — source code in stack traces, pull-request comments |
