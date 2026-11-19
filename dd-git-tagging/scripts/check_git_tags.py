@@ -92,10 +92,15 @@ def search_pup(pup, body):
     return payload
 
 
+DATADOG_DOMAINS = ("datadoghq.com", "datadoghq.eu", "ddog-gov.com", "datad0g.com")
+
+
 def search_keys(site, body):
     api_key, app_key = os.environ.get("DD_API_KEY"), os.environ.get("DD_APP_KEY")
     if not (api_key and app_key and site):
         raise CheckError("no pup session and DD_API_KEY, DD_APP_KEY, DD_SITE are not all set")
+    if not any(site == d or site.endswith("." + d) for d in DATADOG_DOMAINS):
+        raise CheckError(f"DD_SITE {site!r} is not a Datadog site")
     req = urllib.request.Request(
         f"https://api.{site}{SEARCH_PATH}", data=json.dumps(body).encode(), method="POST",
         headers={"DD-API-KEY": api_key, "DD-APPLICATION-KEY": app_key, "Content-Type": "application/json"},

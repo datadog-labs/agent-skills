@@ -3232,6 +3232,9 @@
       "requires": [
         {
           "category": "foundation"
+        },
+        {
+          "skill": "dd-git-tagging"
         }
       ],
       "suggests": [],

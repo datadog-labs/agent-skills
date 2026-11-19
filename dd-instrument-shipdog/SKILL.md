@@ -13,11 +13,12 @@ metadata:
 
 Shipdog gives a team traces, logs, and Live Debugger for their backend. This skill sets up one service for it. Today that means Python or Node.js in agentless mode: the tracer sends straight to Datadog with no Agent ([Node.js](https://docs.datadoghq.com/tracing/trace_collection/library_config/nodejs/#agentless-mode), [Python](https://docs.datadoghq.com/tracing/trace_collection/library_config/python/#agentless-mode)).
 
-Dynamic Instrumentation is out of scope for Shipdog: don't enable, configure, or verify it, and don't suggest it in the report.
+Live Debugger is the only Dynamic Instrumentation feature in scope. Its tracer switch is `DD_DYNAMIC_INSTRUMENTATION_ENABLED` (step 2); don't set up other Dynamic Instrumentation probes or suggest them in the report.
 
 ## Rules
 
 - Read the entrypoint, manifests, and deploy files before editing.
+- Live Debugger isn't available on the US1-FED or US2-FED sites. If `DD_SITE` is `ddog-gov.com` or `us2.ddog-gov.com`, stop before editing anything: reply `Not set up: Shipdog isn't available on <site>.`
 - Never write the API key value into a committed file, and never print it.
 - One tracer init. If the project already loads `ddtrace`/`dd-trace`, keep that load and fix its version and settings, so the tracer's settings come from one place.
 - Add dependencies to the manifest the deploy installs from, not only the local environment. Keep `node_modules/` and virtualenvs in `.gitignore`.
@@ -107,8 +108,8 @@ Open Live Debugger in Datadog, start a Debug Session on the service and env, add
 You can still confirm that traces and logs arrive through the public API, with `DD_API_KEY` and an application key in `DD_APP_KEY`; never print either. `dd-account-setup` can leave `DD_APP_KEY` unset after an OAuth sign-in; if it's missing, skip these checks. Use [Search logs](https://docs.datadoghq.com/api/latest/logs/#search-logs-post) with `service:<DD_SERVICE> -source:dd_debugger` for app logs, and [Search spans](https://docs.datadoghq.com/api/latest/spans/#search-spans) (`/api/v2/spans/events/search`, body wrapped as `{"data":{"type":"search_request","attributes":{...}}}`) for traces:
 
 ```sh
-curl -s -X POST "https://api.$DD_SITE/api/v2/logs/events/search" \
-  -H "DD-API-KEY: $DD_API_KEY" -H "DD-APPLICATION-KEY: $DD_APP_KEY" -H "Content-Type: application/json" \
+printf 'DD-API-KEY: %s\nDD-APPLICATION-KEY: %s\n' "$DD_API_KEY" "$DD_APP_KEY" | \
+curl -s -X POST "https://api.$DD_SITE/api/v2/logs/events/search" -H @- -H "Content-Type: application/json" \
   -d '{"filter":{"query":"service:<DD_SERVICE> -source:dd_debugger","from":"now-15m"},"page":{"limit":5}}'
 ```
 
