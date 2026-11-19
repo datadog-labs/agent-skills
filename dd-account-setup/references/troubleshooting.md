@@ -7,24 +7,31 @@ return to the step that failed.
 
 | Problem | Fix |
 |---------|-----|
-| `403` from `/api/v1/validate` with a key you know is valid | Wrong region. The key belongs to a different `DD_SITE`. Set `DD_SITE` to the key's region (Step 2) and re-validate. |
-| `403` from `current_user` but `/validate` is `200` | The **application key** is wrong or from another region, not the api key. |
-| `DD_SITE` rejected as unrecognized | It must match the allowed list exactly (no `https://`, no trailing slash, no `app.` prefix). Use the `DD_SITE` column in `references/regions.md`. |
-| Headless run exits immediately | A non-interactive run needs `DD_API_KEY`, `DD_APP_KEY`, and `DD_SITE` all set. Neither OAuth nor signup works without a browser. |
-| Browser shows "localhost … can't connect" after approving | The auto-capture listener isn't running (no `python3`, or it timed out after 180s). A busy port 8080 no longer blocks it — the listener auto-selects a free port and matches the `redirect_uri`. Copy the full address-bar URL and paste it into Path B Step 2's `PASTE_REDIRECT_URL`. |
-| Auto-capture never returns / "no callback in 180s" | `python3` missing, or the browser never redirected. (A busy port 8080 is handled automatically — the listener picks a free port and matches the `redirect_uri`.) Re-run Path B Step 1; if it persists, use the paste fallback. |
-| OAuth `state mismatch` (Path B Step 2) | The pasted URL's `state` didn't match the statefile (stale tab / CSRF, or Step 1 wasn't run). Re-run Path B Step 1 and paste the fresh redirect URL. |
-| `bad code or state mismatch` | The pasted URL had no `code`, or the statefile was cleared. Re-run Path B Step 1, approve again, paste the new URL. |
-| `openssl: command not found` (OAuth PKCE) | Install openssl (macOS/Linux usually ship it). On Windows, run under WSL or Git Bash. |
-| Authenticated, but key creation returns `403` | The OAuth token / app key lacks `api_keys_write`, or is for another region. Create one at `organization-settings/api-keys` (you're already logged in) and paste it. |
+| `403` from `/api/v1/validate` with a key you know is valid | Wrong region. The key belongs to a different `DD_SITE`. Set `DD_SITE` to the key's region (step 1) and re-run the script. |
+| `403` from `current_user` but `/validate` is `200` | The **application key** is wrong or from another region, not the api key. The script retries for a few seconds (permission propagation); if it persists, provision fresh. |
+| `DD_SITE` rejected as unrecognized | It must match the allowed list exactly (no `https://`, no trailing slash, no `app.` prefix). Run the script with `--regions` and use a `DD_SITE` from that list. |
+| Headless run (`--no-browser`) exits 7 | A non-interactive run needs a valid `DD_API_KEY` + `DD_APP_KEY` pair for `DD_SITE` (shell, `.env.local`, or `.env`). Neither sign-in nor signup works without a browser. |
+| Script exits 6: "git still does not ignore …" | The env file's path could not be matched by a `.gitignore` entry (unusual characters in the name). Add it to the repo's `.gitignore` yourself, or pick a plain `--env-file`, and re-run — nothing was written. |
+| Script's OAuth path: "no OAuth callback captured (180s timeout)" | The browser could not reach the local callback. Over SSH, forward the printed localhost port from the browser machine before retrying, use a current `pup`, or create keys through the UI handoff in `SKILL.md` step 3 and validate with `--no-browser`. |
+| Provisioning failed after creating a key | The script prints the new key's name and site. Remove that unused key in Organization Settings → API Keys / Application Keys before retrying. Retrieved existing keys are not reported as newly created. |
+| New pair fails validation | The existing env file is preserved; only a pair that validates is saved. Check the site, org and permissions, and clean up any unused new keys named in the failure output. |
+| Script's OAuth path: "bad code or state mismatch" | Stale authorization (an old tab was re-approved). Re-run the script for a fresh URL and approve that one. |
+| `openssl: command not found` (OAuth PKCE) | Install openssl (macOS/Linux usually ship it). On Windows, run under WSL or Git Bash. Or install `pup`, which takes the pup path instead. |
+| Authenticated, but key creation returns `403` | The token/role lacks `api_keys_write`, or is for another region. The script falls back to retrieving the most-recent key; if that is also denied, use the UI handoff in `SKILL.md` step 3. |
+| User needs a brand-new account | The script assumes an existing account or a working browser login. Sign up at `<app-base>/signup` (the `APP_BASE` column of `--regions`), then run the script with `--fresh` and sign in with the new credentials. |
 | User pasted a key but validation still fails | Check for surrounding whitespace / quotes, and that it's an **API key** (32 hex) not an app key (40 hex). |
-| Path C: `.env is git-tracked` | Refusing to write a secret to a tracked file. Use `.env.local` (or `git rm --cached .env` first), then re-run C2. |
-| Path C: `signup unavailable (no CSRF token)` | Signup API unreachable or rate-limited. Retry shortly; if it persists, use the browser `<base>/signup` page. |
-| Path C: signup rejected with a field `detail` | Datadog rejected an input (email already registered, or the generated password hit a policy). Surface the `detail`; for a policy miss, regenerate (C2) and retry. |
-| Path C: verify returns `error=2` (invalid code) | Wrong 8-digit code. Re-enter it (C4), or resend a code. |
 
 ## Reference
 
-- **No bundled scripts.** All auth/signup runs as small inline `bash` + `curl` commands (OAuth PKCE also uses `openssl`) in these files — nothing to install beyond a normal shell (Windows: WSL/Git Bash).
-- **Design decisions:** generated password → `.env` (a new-account password is a credential the skill controls, so it's *generated* off-context rather than prompted — masking needs a real TTY the tool lacks), inline/no-scripts, OAuth redirect caught by a one-shot stdlib `python3 http.server` listener on `localhost` (port 8080 if free, else a free port it selects, with the `redirect_uri` matched; paste fallback when `python3` is absent or it times out), and the token→API-key step. On an **OAuth session** it only **retrieves** the most-recent existing key (minting a key with an OAuth token is server-blocked); an **empty org** or a role that can't list keys falls back to **manual UI paste**. Key **creation** (`POST /api/v2/api_keys`) happens only on the **API+APP-key** path, never on an OAuth token.
-- Temp state (fixed paths): `${TMPDIR:-/tmp}/dd-signup-$(id -u).{jar,jwt}` and `${TMPDIR:-/tmp}/dd-oauth-$(id -u).state` are removed in Step 5; `${TMPDIR:-/tmp}/dd-oauth-$(id -u).token` (the Bearer token, `0600`) is **kept** as the downstream instrumentation handoff and removed by the onboarding caller when setup finishes (see Step 5).
+- **The script is the implementation.** All detection, validation, sign-in (pup or PKCE OAuth),
+  and key provisioning runs inside `scripts/account-setup.sh` — inline copies are forbidden
+  because they drift. Account creation is the one thing it deliberately does not do: use the
+  browser `<base-url>/signup` page, then run the script.
+- **Design decisions:** the OAuth token carries the api+app key scopes so it can **create** both
+  keys directly, falling back to retrieving the most-recent key when creation is denied
+  (application-key creation, listing and retrieval are limited to the signed-in user; minting
+  with a plain OAuth token is server-blocked on role-restricted orgs); an empty org or a role that
+  can neither create nor list keys falls back to the **manual UI handoff** (`SKILL.md` step 3).
+- Temp state (fixed paths): the script removes its own OAuth `state`/callback files;
+  `${TMPDIR:-/tmp}/dd-oauth-$(id -u).token` (the Bearer token, `0600`) is **kept** as the
+  downstream instrumentation handoff and removed by the onboarding caller when setup finishes.
