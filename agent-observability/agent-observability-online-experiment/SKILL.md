@@ -5,8 +5,10 @@ description: >-
   LLM application instrumented with Agent Observability: compare two versions of a prompt, model,
   or behavior using a Datadog feature flag, score metrics from evaluations, and cost and token
   metrics. Covers creating the flag, wiring the app, creating the experiment, attaching metrics,
-  setting the traffic split, and starting it. Triggers: online experiment, A/B test an LLM app,
-  test a prompt change on live traffic, experiment with feature flag and evaluation score.
+  setting the traffic split, and starting it, including taking the change tested in an offline
+  experiment onto live traffic. Triggers: online experiment, A/B test an LLM app, test a prompt
+  change on live traffic, experiment with feature flag and evaluation score, start an online
+  experiment from an offline experiment.
 ---
 
 # Set up an online experiment on an LLM application
@@ -20,8 +22,9 @@ Online experiments for Agent Observability may require the feature to be enabled
 - The user wants to test a change (prompt, model, retrieval strategy, tool set) on real traffic rather than a fixed dataset.
 - The user has a change on a branch and wants to know whether it is better, cheaper, or both in production.
 - The user wants an experiment whose metrics come from Agent Observability evaluations, token counts, or cost.
+- The user tested a change in an offline experiment and now wants to test the same change on live traffic, for example `Start an online experiment to test the code changes from offline experiment <experiment-id>`. See [Start from an offline experiment](#start-from-an-offline-experiment).
 
-Do **not** use it for offline experiments over a dataset (use the LLM Observability experiment tooling), for analyzing an experiment that already ran (`agent-observability-experiment-analyzer` or the Datadog experiments tooling), or for promoting an existing offline experiment.
+Do **not** use it for running offline experiments over a dataset (use the LLM Observability experiment tooling) or for analyzing an experiment that already ran (`agent-observability-experiment-analyzer` or the Datadog experiments tooling).
 
 ## Ground rules
 
@@ -30,18 +33,37 @@ Do **not** use it for offline experiments over a dataset (use the LLM Observabil
 - **Starting is separate unless already explicit.** Start only if the user explicitly asked to start the experiment. If the original request included starting, include it in the single setup proposal; otherwise finish with a draft and ask no start question until the user requests it.
 - **Go one step at a time and read back.** After each write, read the object back and report what the server actually stored, not what you sent.
 - **Never attach metrics in parallel or alongside other metric edits.** The attach operation sends the experiment's complete metric set to the server, so concurrent edits can overwrite each other.
-- **Report failures plainly.** If a step is refused (permissions, production restrictions), say so and give the user the manual alternative. Do not look for a workaround. If the Datadog MCP server is missing, disconnected, unauthenticated, or lacks toolsets, give the user the setup command from the next section.
+- **Report failures plainly.** If a step is refused (permissions, production restrictions), say so and give the user the manual alternative. Do not look for a workaround. If the Datadog MCP server is missing, disconnected, unauthenticated, lacks toolsets, or has no write tools, stop and follow the next section.
 - **Do not guess identifiers.** Environment IDs, flag IDs, metric IDs, and variant keys all come from the server.
 
-## Fix the Datadog MCP server setup when it fails
+## Check the Datadog MCP server before anything else
 
-This workflow needs a connected, authenticated Datadog MCP server with the `llmobs`, `experiments`, `feature-flags`, and `core` toolsets. Check for it before anything else. Stop and give the user the setup instructions below, instead of retrying or working around it, when any of these happens:
+This workflow needs a connected, authenticated Datadog MCP server with the `llmobs`, `experiments`, `feature-flags`, and `core` toolsets, and with MCP write access enabled. Check the active tool list against the table below before any other step, including before reading the application code or looking up an offline experiment. The skill being visible does not prove the tools are there: a coding agent can show it when only some of the toolsets are connected.
 
-- No Datadog MCP tools are available in the session.
-- The Datadog MCP server is listed but not connected or needs authentication, or a call fails because the connection is not authenticated (for example HTTP 401, or a missing or expired token).
-- Some of the capabilities Phase 0 checks for are missing, usually because the server was added with only `llmobs,core`.
+| Toolset | Read tools | Write tools |
+|---|---|---|
+| `feature-flags` | `list-environments`, `list-feature-flags`, `get-feature-flag`, `list-allocations-for-feature-flag` | `create-feature-flag`, `update-feature-flag-environment`, `sync-experiment-allocations-for-feature-flag-environment` |
+| `experiments` | `list-experiments`, `get-experiment`, `list-metrics`, `get-metric`, `list-subject-types`, `get-subject-type`, `get-experiment-diagnostics` | `create-experiment`, `link-feature-flag-to-experiment`, `create-metric`, `update-metric`, `attach-metric-to-experiment`, `start-experiment` |
+| `llmobs` | `search_llmobs_spans`, `list_llmobs_evals_by_ml_app`, `list_llmobs_experiments`, `get_llmobs_experiment_summary` | none |
 
-This applies at any point in the workflow, not only in Phase 0. A Datadog tool call that fails because of the connection or authentication is a setup problem, not a step to retry. A refusal of one operation because the account lacks a permission, or because of a production restriction, is not a setup problem: handle it as the phase describes.
+Coding agents often prefix tool names with the server name (for example `mcp__datadog-online-experiments__create-experiment`), so match on the name at the end. Then stop, before any write or further discovery, in whichever of these cases applies:
+
+- **Server missing or unauthenticated.** No Datadog MCP tools are available, the server is listed but not connected or needs authentication, or a call fails because the connection is not authenticated (for example HTTP 401, or a missing or expired token). Give the setup instructions in [Connect the Datadog MCP server](#connect-the-datadog-mcp-server).
+- **Toolsets missing.** Read tools from one or more of the toolsets are absent, usually because the server was added with only `llmobs,core`. Name the missing toolsets and give the setup instructions in [Connect the Datadog MCP server](#connect-the-datadog-mcp-server).
+- **Write tools missing.** The read tools for all three toolsets are present but some or all of the write tools are not. The server is connected; the Datadog organization or the user's role does not allow MCP writes. Follow [Enable MCP write access](#enable-mcp-write-access). Do not send the user through the setup commands in this case, since reconnecting does not fix it.
+
+These checks apply at any point in the workflow, not only at the start. A Datadog tool call that fails because of the connection or authentication is a setup problem, not a step to retry. A write call refused because MCP write access or the `mcp_write` permission is missing is the write-access case. A refusal of one operation because the account lacks a resource permission, such as Feature Flags or Experiments write, or because of a production restriction, is not a setup problem: handle it as the phase describes.
+
+### Enable MCP write access
+
+Datadog organizations allow only read-only MCP tools by default, and the MCP server hides write tools from the tool list when writes are not allowed. Two settings control this, and both are managed by a Datadog administrator:
+
+- **MCP Write Access** for the organization, in Organization Settings at `https://<app-host>/organization-settings/mcp`. When it is off, no user in the organization sees MCP write tools, whatever their role.
+- The **`mcp_write`** permission on the user's role, in `https://<app-host>/organization-settings/roles`. Datadog Standard Role includes it; custom roles need it added.
+
+Build `<app-host>` with the host rules in Phase 3, taking the site from the application's `DD_SITE` configuration or the MCP server URL. Tell the user that the Datadog MCP server is connected but its write tools are unavailable, list the missing write tools, and give them both links together with the [Required permissions](https://docs.datadoghq.com/mcp_server/setup/#required-permissions) guide. Ask them to have an administrator enable access, then reconnect or restart the MCP server so the coding agent loads the new tool list, and run this skill again. Do not create the flag, experiment, or metrics through another route in the meantime.
+
+### Connect the Datadog MCP server
 
 Tell the user what failed and which toolsets are missing, if any. Then give them the command for their coding agent, filled in with their Datadog site. Take the site from the application's `DD_SITE` configuration when there is one, otherwise ask; for example `datadoghq.com` (US1), `us3.datadoghq.com`, `us5.datadoghq.com`, `datadoghq.eu`, `ap1.datadoghq.com`, `ap2.datadoghq.com`, or `uk1.datadoghq.com`. The MCP host is the site with an `mcp.` prefix.
 
@@ -87,11 +109,36 @@ For Claude Code, Codex, and other coding agents, also tell the user that Datadog
 
 If the server is connected and authenticated but the online experiment tools report that the feature is unavailable, the setup is correct: follow the feature-availability guidance at the top of this skill instead.
 
+## Start from an offline experiment
+
+Users often test a change offline against a dataset first, and then ask for an online experiment on "the code changes from offline experiment `<experiment-id>`". An offline experiment stores results, not the code it tested, and what Datadog records about that code is unreliable. The Git commit tagged on an experiment's spans is whatever was checked out when it ran, which is often an unrelated trunk commit because the change under test was never committed. Do not try to work out the change from the experiment, its Git tags, its `config`, or the repository. Always ask the user to describe it, and test what they describe.
+
+**1. Read the experiment for context.**
+- Call `get_llmobs_experiment_summary` with the experiment ID. It returns the dataset ID and the evaluation results. If the experiment is not found, ask the user to check the ID and that the MCP server is connected to the organization that ran it.
+- Call `list_llmobs_experiments` with that `dataset_id` and `experiment_ids` set to the experiment ID, for the experiment's name and author. The tool requires a dataset or project ID, which is why the summary comes first; if the summary has no dataset ID, resolve the project with `list_llmobs_projects` and pass `project_id` instead.
+
+Use what you read only for the hypothesis and the choice of metric, never to identify the change.
+
+**2. Ask the user to describe the change.** Ask right away, before the rest of Phase 0 discovery. The answer is needed to design the treatment, so this is an exception to asking one question at the end of Phase 0. Name the experiment and its ID so the user can confirm it is the right one, and ask for:
+- what the change does to the application's behavior, for example a new prompt, model, parameter, tool, or retrieval strategy;
+- where the code for it is, if it exists anywhere: a branch, commit, pull request, uncommitted changes in the workspace, or a file path. The change may also exist only in the offline experiment's task code and still need to be written into the application.
+
+Do not offer a guessed answer for the user to confirm, such as a commit from the experiment's tags or a recent diff in the repository. Wait for their description before continuing.
+
+**3. Build the treatment from the description.** The user's description defines the treatment. Use the code location they give to implement it, and include only what they described. If that code contains changes they did not mention, or does not match their description, ask which changes belong in the treatment instead of choosing yourself. Leave out changes that only served the offline run, such as the dataset, evaluators, or task-function plumbing. If the change was applied only inside the offline task code, for example by passing a new prompt, port it into the application's production code path behind the flag.
+
+**4. Carry the result into the proposal.**
+- **Control:** the code currently deployed in the target environment, usually the trunk. Do not use the offline experiment's parent or baseline run as the control unless the user asks.
+- **Treatment:** the change as the user described it, with the code changes you will make to put it behind the flag.
+- **Hypothesis:** base it on the offline result, for example the evaluation that improved and by how much on which dataset.
+- **Primary metric:** offline evaluators score experiment spans only, so the offline score does not exist on live traffic. Prefer an existing online evaluation for the `ml_app` that measures the same thing. If none exists, say so in the proposal and recommend how to report one (see Phase 2).
+
 ## Phase 0 — Discover, recommend, and confirm once
 
 Do not interrupt the investigation to ask for one input at a time. First perform all available read-only discovery:
 
-- Inspect the active tool list and verify that the session has the `llmobs`, `experiments`, and `feature-flags` capabilities needed by this workflow: environment discovery; flag lookup, creation, enablement, and allocation management; experiment lookup, creation, linking, and start; and experiment-metric lookup, creation, and attachment. The skill's toolset configuration controls its visibility with OR semantics; it does not guarantee that all three toolsets are enabled. If capabilities are missing, report every missing group and the toolset to enable, give the setup instructions from [Fix the Datadog MCP server setup when it fails](#fix-the-datadog-mcp-server-setup-when-it-fails), and stop before any write instead of repeatedly retrying individual operations.
+- Confirm that [the Datadog MCP server check](#check-the-datadog-mcp-server-before-anything-else) passed: every read and write tool in its table is available. If not, stop as that section describes instead of repeatedly retrying individual operations.
+- If the user pointed to an offline experiment, read it and ask the user to describe the change it tested, as described in [Start from an offline experiment](#start-from-an-offline-experiment), before you design the treatment.
 - Inspect the application and its deployment configuration. Confirm it reports to Agent Observability, find where it submits evaluations (if it does), find the code path the treatment changes, and infer its `ml_app`, `DD_ENV`, and stable subject identifier.
 - List environments, look for an existing flag and experiment for the proposed change, and search existing experiment metrics before proposing new objects.
 
@@ -114,6 +161,7 @@ Present one compact confirmation request containing:
 
 - application and `ml_app`;
 - control, treatment, and hypothesis;
+- when starting from an offline experiment: its name and ID, the change as the user described it, and the code that will implement it;
 - proposed flag key and Boolean variants;
 - subject identifier and code location where the flag will be evaluated;
 - target environment and 50/50 or proposed split;
@@ -259,6 +307,8 @@ For reading the results once enough data has arrived, use `agent-observability-e
 
 ## Pitfalls checklist
 
+- Continuing when the MCP server's write tools are missing, instead of sending the user to enable MCP write access.
+- Working out which code an offline experiment tested from its Git tags, `config`, or the repository, instead of asking the user to describe the change.
 - Subject identifier mismatch between the flag, the evaluation, and the spans.
 - Subject tag missing from the root span, so the cost and token metrics cannot join to exposures.
 - Subject type mapped to an attribute other than `@usr.id`.
