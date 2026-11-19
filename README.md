@@ -32,6 +32,7 @@ The main skills are listed here. The [Install](#install) section lists every ski
 | **dd-github-onboarding** | Connect GitHub via the Datadog GitHub App — source code in stack traces, pull-request comments |
 | **dd-github-copilot-onboarding** | Connect GitHub Copilot to Datadog — usage and license metrics for the orgs you own |
 | **dd-github-costs-onboarding** | Bring a GitHub enterprise/org bill — Actions, Packages, Copilot, storage — into Cloud Cost Management |
+| **dd-coreweave-integration** | Connect a CoreWeave namespace to Datadog — metrics and logs through the CoreWeave Cloud integration |
 | **dd-nebius-integration** | Connect a Nebius Cloud tenant to Datadog — log streams through the Nebius Cloud integration |
 | **dd-openai-onboarding** | Connect OpenAI to Datadog — org-wide API usage metrics and costs in Cloud Cost Management |
 | **dd-pagerduty-onboarding** | Connect PagerDuty to Datadog — monitors trigger and resolve incidents on PagerDuty services |
@@ -129,6 +130,7 @@ npx skills add datadog-labs/agent-skills \
   --skill upgrade-browser-sdk-v5 \
   --skill upgrade-browser-sdk-v6 \
   --skill dd-confluent-cloud-integration \
+  --skill dd-coreweave-integration \
   --skill dd-dbm-rds-postgres \
   --skill dd-gcp-ccm \
   --skill dd-gcp-integration \
