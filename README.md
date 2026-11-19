@@ -118,6 +118,7 @@ npx skills add datadog-labs/agent-skills \
   --skill upgrade-browser-sdk-v5 \
   --skill upgrade-browser-sdk-v6 \
   --skill dd-confluent-cloud-integration \
+  --skill dd-coreweave-agent-fleet-installation-on-clusters \
   --skill dd-dbm-rds-postgres \
   --skill dd-gcp-ccm \
   --skill dd-gcp-integration \
@@ -130,6 +131,7 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-instrument-product-analytics \
   --skill dd-instrument-rum \
   --skill dd-instrument-test-optimization \
+  --skill dd-nebius-agent-fleet-installation-on-clusters \
   --skill dd-nebius-integration \
   --skill dd-oci-ccm \
   --skill dd-oci-integration \
