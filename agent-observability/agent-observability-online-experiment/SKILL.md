@@ -4,11 +4,11 @@ description: >-
   Load this skill when the user wants to run an online experiment (live-traffic A/B test) on an
   LLM application instrumented with Agent Observability: compare two versions of a prompt, model,
   or behavior using a Datadog feature flag, score metrics from evaluations, and cost and token
-  metrics. Covers creating the flag, wiring the app, creating the experiment, attaching metrics,
-  setting the traffic split, and starting it, including taking the change tested in an offline
-  experiment onto live traffic. Triggers: online experiment, A/B test an LLM app, test a prompt
-  change on live traffic, experiment with feature flag and evaluation score, start an online
-  experiment from an offline experiment.
+  metrics. Covers creating or reusing the flag, wiring the app, creating the experiment, attaching
+  metrics, setting the traffic split, and starting it, including managed prompts and taking the
+  change tested in an offline experiment onto live traffic. Triggers: online experiment, A/B test
+  an LLM app, test a prompt change on live traffic, experiment with feature flag and evaluation
+  score, start an online experiment from a managed prompt or offline experiment.
 ---
 
 # Set up an online experiment on an LLM application
@@ -22,6 +22,7 @@ Online experiments for Agent Observability may require the feature to be enabled
 - The user wants to test a change (prompt, model, retrieval strategy, tool set) on real traffic rather than a fixed dataset.
 - The user has a change on a branch and wants to know whether it is better, cheaper, or both in production.
 - The user wants an experiment whose metrics come from Agent Observability evaluations, token counts, or cost.
+- The user starts from a Datadog managed prompt, for example `Run an online experiment on version 3 of managed prompt checkout-assistant (ID: <uuid>). Reuse its managed feature flag.` See [Start from a managed prompt](#start-from-a-managed-prompt).
 - The user tested a change in an offline experiment and now wants to test the same change on live traffic, for example `Start an online experiment to test the code changes from offline experiment <experiment-id>`. See [Start from an offline experiment](#start-from-an-offline-experiment).
 
 Do **not** use it for running offline experiments over a dataset (use the LLM Observability experiment tooling) or for analyzing an experiment that already ran (`agent-observability-experiment-analyzer` or the Datadog experiments tooling).
@@ -35,6 +36,7 @@ Do **not** use it for running offline experiments over a dataset (use the LLM Ob
 - **Never attach metrics in parallel or alongside other metric edits.** The attach operation sends the experiment's complete metric set to the server, so concurrent edits can overwrite each other.
 - **Report failures plainly.** If a step is refused (permissions, production restrictions), say so and give the user the manual alternative. Do not look for a workaround. If the Datadog MCP server is missing, disconnected, unauthenticated, lacks toolsets, or has no write tools, stop and follow the next section.
 - **Do not guess identifiers.** Environment IDs, flag IDs, metric IDs, and variant keys all come from the server.
+- **Managed prompts own their flag.** When the request names a managed prompt, follow [Start from a managed prompt](#start-from-a-managed-prompt). Never create a second flag or add a Boolean code gate for that prompt.
 
 ## Check the Datadog MCP server before anything else
 
@@ -133,6 +135,28 @@ Do not offer a guessed answer for the user to confirm, such as a commit from the
 - **Hypothesis:** base it on the offline result, for example the evaluation that improved and by how much on which dataset.
 - **Primary metric:** offline evaluators score experiment spans only, so the offline score does not exist on live traffic. Prefer an existing online evaluation for the `ml_app` that measures the same thing. If none exists, say so in the proposal and recommend how to report one (see Phase 2).
 
+## Start from a managed prompt
+
+A Datadog managed prompt already has a versioned feature flag. Each prompt version is a flag variant, and the managed-prompt SDK lookup evaluates that flag. This path replaces the generic flag creation and Boolean application gate in Phases 1 and 2; the experiment, metrics, allocation, start, and verification phases still apply with the adaptations below.
+
+Treat the request as a managed-prompt request when it explicitly says `managed prompt`, supplies a prompt registry UUID, or points to a prompt-version page in Datadog. The version named in the request is the intended **treatment**. Do not silently substitute the latest version.
+
+**Discover the existing prompt flag.** Its key follows `__llmobs__.prompt.<prompt_id>`, where `<prompt_id>` is the SDK prompt ID/name and is not necessarily the registry UUID copied from the URL. Resolve the SDK prompt ID from the application's `LLMObs.get_prompt(...)` call, the prompt information in the request, and the server's flag list. Then read the exact flag and its variants. Confirm that the requested version exists as a variant. Do not infer a flag ID or variant ID from the prompt UUID.
+
+**Choose the control from deployed state.** Read the flag's configuration in the target environment. The control is the prompt version currently served as that environment's default before the experiment; the requested version is the treatment. If the environment has no deployed/default prompt version, stop and ask the user to deploy a baseline from the managed prompt page first. Do not bootstrap the prompt by creating another flag or manually reconstructing registry-owned configuration. If the requested version is already the only/default version, explain that it cannot be compared with itself and ask which other version should be the treatment or control.
+
+**Check application readiness.** Inspect the live code path and deployment configuration before proposing changes:
+
+- It must fetch the prompt through the managed-prompt SDK API, for example Python's `LLMObs.get_prompt(prompt_id, targeting_key=subject_identifier)`, rather than embedding the prompt text or evaluating a separate Boolean flag.
+- The lookup must not pin an exact `version`; pinning bypasses experiment assignment. Propose removing the pin only as part of the approval checkpoint, and preserve the application's existing fallback prompt and error handling.
+- The installed SDK version must support targeted managed-prompt resolution. For Python, use `ddtrace[openfeature]>=4.15`; for another language, verify support in that SDK rather than translating the Python API by guesswork.
+- For this Python setup, require a reachable Datadog Agent and leave agentless mode disabled. If the application sets `DD_LLMOBS_AGENTLESS_ENABLED=1`, propose removing that setting as part of the approval checkpoint. Check tracer startup or debug logs for Agent connection errors. Successful prompt retrieval does not prove exposures are recorded: retrieval can continue directly with API and application keys, but the Agent-based setup does not automatically fall back to agentless exposure reporting. See [Prompt Experimentation setup](https://docs.datadoghq.com/llm_observability/improve/online_experiments/prompt_experimentation/#connect-the-application).
+- `DD_ENV` must match the experiment environment, the Datadog Agent/provider must be reachable as required by that SDK, and `targeting_key` must be the same stable subject identifier used on evaluation scores and root spans.
+
+These are one-time application prerequisites, not per-experiment treatment code. If they are already satisfied, make no code change. Never create a second flag, add a Boolean branch around `get_prompt`, copy prompt contents into source, or mutate the managed flag outside the experiment allocation workflow.
+
+**Adapt the approval checkpoint.** For this path, the single Phase 0 proposal must name the managed prompt and registry UUID, requested treatment version, deployed control version, existing managed flag key and ID, exact control/treatment variant keys, target environment, readiness findings and any one-time code changes, subject, metrics, allocation, writes, and whether start is included. Replace the generic proposal's “new flag and Boolean variants” fields with these managed-prompt fields.
+
 ## Phase 0 — Discover, recommend, and confirm once
 
 Do not interrupt the investigation to ask for one input at a time. First perform all available read-only discovery:
@@ -141,6 +165,7 @@ Do not interrupt the investigation to ask for one input at a time. First perform
 - If the user pointed to an offline experiment, read it and ask the user to describe the change it tested, as described in [Start from an offline experiment](#start-from-an-offline-experiment), before you design the treatment.
 - Inspect the application and its deployment configuration. Confirm it reports to Agent Observability, find where it submits evaluations (if it does), find the code path the treatment changes, and infer its `ml_app`, `DD_ENV`, and stable subject identifier.
 - List environments, look for an existing flag and experiment for the proposed change, and search existing experiment metrics before proposing new objects.
+- For a managed prompt, perform all discovery in [Start from a managed prompt](#start-from-a-managed-prompt), including reading the existing managed flag, variants, and deployed control before proposing any write.
 
 Then establish the complete proposal. Infer from context and use the defaults below wherever reasonable:
 
@@ -152,7 +177,7 @@ Then establish the complete proposal. Infer from context and use the defaults be
 | Score metric(s) | Recommend the most relevant existing numeric evaluation score, including its desired-change direction. See Phase 4. |
 | Environment | Infer from deployment configuration and the user's live-traffic goal. An experiment links to exactly one environment. |
 | Traffic split | Default 50/50 control/treatment. |
-| Flag name | Default to a short, descriptive, kebab-case name. |
+| Flag name | For a managed prompt, use its existing `__llmobs__.prompt.<prompt_id>` flag. Otherwise default to a short, descriptive, kebab-case name. |
 | Subject | What counts as one subject. See Phase 2. |
 
 When metric-name search is needed, try naming variants before concluding that no metric exists: spaces, hyphens, underscores, and a meaningful substring. Inspect duplicate definitions rather than choosing by name alone. Prefer a definition already used by active experiments only when its source, columns, filters, aggregation, and desired-change direction match the proposal. Do not infer ML-app scope from a metric's name. If the user's requested existing metric lacks an ML-app filter or otherwise differs from the recommended definition, disclose that in the proposal and recommend whether to reuse or replace it.
@@ -162,8 +187,8 @@ Present one compact confirmation request containing:
 - application and `ml_app`;
 - control, treatment, and hypothesis;
 - when starting from an offline experiment: its name and ID, the change as the user described it, and the code that will implement it;
-- proposed flag key and Boolean variants;
-- subject identifier and code location where the flag will be evaluated;
+- proposed flag key and variants (for a managed prompt, the existing managed flag and exact prompt-version variants);
+- subject identifier and code location where the flag or managed prompt will be evaluated;
 - target environment and 50/50 or proposed split;
 - primary evaluation metric, stored definition or proposed definition, and desired-change direction;
 - token and cost secondary metrics;
@@ -173,7 +198,11 @@ Present one compact confirmation request containing:
 
 End with one question: **Confirm this complete setup, or tell me what to change.** Use follow-up questions only for a genuinely blocking ambiguity that cannot be resolved from code, server state, or a safe default.
 
-## Phase 1 — Create the feature flag
+## Phase 1 — Create or reuse the feature flag
+
+For a managed prompt, **do not create a feature flag**. Read back the existing `__llmobs__.prompt.<prompt_id>` flag identified during discovery and record its ID plus the exact variant IDs and keys for the deployed control version and requested treatment version. Stop if the flag or either version variant cannot be resolved. Continue to Phase 2 without changing the prompt flag's defaults, targeting rules, or ordinary serving allocations.
+
+For every other experiment, create a flag as follows.
 
 Create a **Boolean** flag with two variants: `control` = `false` and `treatment` = `true`. Make `control` the default variant.
 
@@ -188,6 +217,8 @@ Listing environments gives the available ones (typically Production, Staging, De
 
 The application must do three things for every subject: evaluate the flag, run the matching behavior, and report the score and spans under the same subject identifier.
 
+For a managed prompt, the managed-prompt SDK lookup is both the flag evaluation and the variant application. Apply the readiness rules in [Start from a managed prompt](#start-from-a-managed-prompt): call the prompt by SDK prompt ID without an exact version, pass the stable subject as `targeting_key`, and preserve fallback behavior. Do not add the Boolean evaluation or treatment branch described below. The score and span tagging requirements in this phase still apply.
+
 **Choose the subject identifier.** It must be stable across the whole interaction being measured.
 - Application with signed-in users: a stable user ID.
 - No users, but sessions: the session ID.
@@ -195,7 +226,7 @@ The application must do three things for every subject: evaluate the flag, run t
 
 Use the same value in three places: the feature flag evaluation context's `targetingKey`, the `subject_identifier` tag on the evaluation score (the join key the Datadog online experiments guide requires), and the `subject_identifier` tag on the root span of each trace, which is what the cost and token metrics read. If these differ, Datadog cannot join exposure to outcome and the experiment shows missing metric data.
 
-**Evaluate the flag.** Follow the Feature Flags SDK for the application's language. For Python this means a recent `ddtrace` plus the OpenFeature SDK, registering the Datadog provider once, and evaluating a Boolean flag with `targeting_key` set to the subject identifier. The SDK needs the Datadog API key, site, and `DD_ENV` set. Default the evaluation to `false` (control) and catch failures so a flag outage degrades to control instead of breaking the app.
+**Evaluate a generic flag.** For experiments that do not use a managed prompt, follow the Feature Flags SDK for the application's language. For Python this means a recent `ddtrace` plus the OpenFeature SDK, registering the Datadog provider once, and evaluating a Boolean flag with `targeting_key` set to the subject identifier. The SDK needs the Datadog API key, site, and `DD_ENV` set. Default the evaluation to `false` (control) and catch failures so a flag outage degrades to control instead of breaking the app.
 
 Feature-flag management guidance may point to a React integration resource regardless of the application's language. Treat that as generic tool guidance, not as an instruction to add React code. Follow the SDK for the application's actual language and prefer an existing working provider/evaluation pattern in the repository.
 
@@ -212,7 +243,7 @@ The code must be **deployed** for the experiment to collect anything. Tell the u
 ## Phase 3 — Create the experiment and link the flag
 
 1. Create a draft experiment with a clear name and the hypothesis. The primary metric can be attached afterwards, so it is fine to create the draft before the metrics exist.
-2. Link the flag from Phase 1 to the experiment.
+2. Link the flag from Phase 1 to the experiment. For a managed prompt, link the existing managed-prompt flag; never create or link a second flag for the prompt.
 3. Read the experiment back. A draft may report an incomplete set-up state until it is started; that alone is not an error. The start step reports concrete blockers if there are any.
 4. Resolve the draft's subject type and verify that its Product Analytics attribute is `@usr.id`, matching the field produced from Phase 2's `subject_identifier` tag. Starting requires a subject type, but do not accept an arbitrary server-selected default: subject types mapped to another field cannot join these Agent Observability outcomes. Explicitly select an `@usr.id`-compatible subject type before proceeding. If the available capabilities cannot inspect or configure the mapping, direct the user to the Datadog UI and stop until it is confirmed.
 
@@ -280,6 +311,8 @@ An experiment links to **exactly one** environment through one allocation.
 4. If the experiment is already linked to an allocation in another environment, read that environment's complete allocation set and remove only the allocation linked to this experiment, preserving every other allocation and its settings, before creating the new allocation. Do not replace an environment with an empty list unless the approved setup explicitly removes all of its allocations. If an allocation key already exists, identify the conflicting allocation: reuse it only when it belongs to the approved setup; otherwise choose a new unique key. Ask again if this recovery differs materially from the approved proposal.
 5. Read the allocations back and confirm the environment, the weights, and the experiment link.
 
+For a managed prompt, the flag must already have a deployed baseline in the target environment. Preserve its registry-owned serving configuration and every unrelated allocation. In the experiment-linked allocation, use the exact prompt-version variant keys read in Phase 1: the deployed version is control and the requested version is treatment. Never use Boolean `control`/`treatment` variants for a managed prompt, and never change its default version merely to create the experiment.
+
 Production allocation changes take effect immediately. If the environment requires approval for flag changes, the change may wait for that approval instead of applying. The approved Phase 0 proposal is the environment and production confirmation; do not ask again unless the existing allocation set differs materially from what that proposal said would be replaced.
 
 ## Phase 6 — Start the experiment
@@ -324,3 +357,8 @@ For reading the results once enough data has arrived, use `agent-observability-e
 - Metric `desired change` set the wrong way round.
 - Attaching metrics in parallel.
 - Starting before the user has asked, or before the flag is enabled where the app runs.
+- Creating a second feature flag or Boolean code gate for a managed prompt.
+- Using the prompt registry UUID as a flag ID or assuming it is the SDK prompt ID.
+- Pinning `LLMObs.get_prompt` to an exact version, which bypasses managed-prompt experiment assignment.
+- Treating the requested managed prompt version as control instead of the treatment, or changing the deployed default to make it so.
+- Reconstructing managed-prompt serving configuration when no baseline is deployed instead of asking the user to deploy one from the prompt page.
