@@ -70,8 +70,8 @@ run starts** (see the Mandatory intake gate below).
 | `annotation_label_map` | **`annotation_queue_id` sources only**: which of the queue's labels means what — `expected_output` (the label whose value is the datapoint's ground truth, or `null` if the queue carries no such label) and an optional `filter` (`{label, equals}`) restricting which annotated interactions enter the corpus. A queue's schema is user-defined and arbitrary, so this cannot be inferred. | **must ask** when the source is a queue; read the candidate labels from the queue's `annotation_schema` first and offer them |
 | `project_id` | the LLM-Obs **project** the run's datasets are created in (UUID). Every dataset write needs it on both backends (`create_llmobs_dataset`, `pup llm-obs datasets create --project-id`). | **must ask** unless unambiguously derivable (see the intake gate); resolve a project *name* with `get_llmobs_project` / `pup llm-obs projects list` |
 | `datadog_backend` | `mcp` or `pup` — which client reaches Datadog for **every** call the run makes (dataset reads, span/trace reads, and the experiment create/update/event-submit writes). See **Datadog backend** below. | **must ask** — no default; the two backends are not interchangeable (provenance + dataset-loading differ), so the user picks |
-| `max_iterations` | how many changes to try (clamp **1–50**) | _default_ **2** |
-| `max_runs` | ceiling on the derived `runs` — how many times the harness may repeat the eval per candidate to beat variance (clamp **3–20**; the pilot already runs 3×, so 3 is the floor) | _default_ **3** |
+| `max_iterations` | how many changes to try (clamp **1–50**) | _default_ **8** |
+| `max_runs` | ceiling on the derived `runs` — how many times the harness may repeat the eval per candidate to beat variance (clamp **3–20**; the pilot already runs 3×, so 3 is the floor) | _default_ **5** |
 | `runtime` | which harness language to use (`python` \| `node`) — the harness must run in whatever can import/run `files_to_optimize` | _default_: **auto-detected** from `files_to_optimize` (see Step 2); the user may override |
 | `model` | judge model id | _default_: the Claude model selected in this session (see rubric) |
 | `base_branch` | branch the baseline is measured on | _default_: current branch / `main` |
@@ -179,7 +179,15 @@ Before writing any config or touching git:
    `config.json`, do not create the scratch branch, do not run the harness — ask (use
    `AskUserQuestion`) and wait.
 2. Fill the **default** fields (`max_iterations`, `max_runs`, `model`, `base_branch`) with their
-   defaults above. `datadog_backend` is **not** among them — it is must-ask, per step 1. Do **not**
+   defaults above. **These two defaults are a budget, and they are set where the loop can actually
+   work.** A 2-iteration run cannot hill-climb — it makes two attempts at the largest census
+   bucket and stops, and a real run's wins routinely come from the fifth or eighth attempt (and
+   from levers that only pay off once an earlier change is in place). A `max_runs` of 3 likewise
+   leaves most noisy metrics unable to resolve their own `min_delta` (Step 2.4), so every gain
+   stays permanently unconfirmable. Show the cost estimate next to them (it scales linearly with
+   both) and let the user lower them deliberately rather than discovering a crippled run later.
+   On a **deterministic** metric (ground-truth checker, `stdev == 0` expected) `max_runs: 3` is
+   genuinely enough — say so and propose it, since extra runs there buy nothing but spend. `datadog_backend` is **not** among them — it is must-ask, per step 1. Do **not**
    touch `runs`/`min_delta` here — they are derived in Step 2.4, not intake params (`max_runs` only
    caps that derivation).
 
@@ -246,8 +254,8 @@ the run's state + audit trail):
   "per_case_events": null,
   "backend_version": null,
   "backend_fallback": false,
-  "max_iterations": 2,
-  "max_runs": 3,
+  "max_iterations": 8,
+  "max_runs": 5,
   "runtime": null,
   "harness_path": null,
   "runs": null,
@@ -1041,7 +1049,7 @@ are surfaced only in the final report, with reasoning):
   size `min_delta` to be *confirmable as significant* (clear the band at ~2·SE), you need
   `SE_diff ≲ min_delta / 2`, i.e. **`runs ≥ 8 · (baseline_stdev / min_delta)²`**. Compute that; if it
   exceeds the current `runs`, **you MUST raise `runs` to it** (clamp **3–`max_runs`**, default
-  `max_runs = 3`) and **re-run the baseline** at the new `runs` (the re-run's `mean`/`stdev` replace
+  `max_runs = 5`) and **re-run the baseline** at the new `runs` (the re-run's `mean`/`stdev` replace
   the pilot's). This is not advisory — an underpowered run leaves every moderate gain permanently
   **unconfirmable**: it is still *kept* as best (the keep only needs a higher-in-direction point
   estimate + the mechanism audit), but can never be *labeled significant* — the classic case, a true
