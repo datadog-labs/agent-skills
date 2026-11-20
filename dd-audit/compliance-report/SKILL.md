@@ -55,11 +55,12 @@ If the requested time window exceeds 90 days and no archive is confirmed, surfac
 
 ```bash
 pup audit-logs search \
-  --query "@evt.name:\"Access Management\" @asset.type:user @action:(created OR deleted OR modified)" \
+  --query "@evt.name:\"Access Management\" @asset.type:user" \
   --from PERIOD_START --to PERIOD_END --limit 500 -o json \
   | jq '[.data[] | {
       timestamp: .attributes.timestamp,
       actor: .attributes.attributes.usr.email,
+      actor_type: .attributes.attributes.evt.actor.type,
       action: .attributes.attributes.action,
       affected_user: .attributes.attributes.asset.id
     }]'
