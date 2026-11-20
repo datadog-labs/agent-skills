@@ -4,10 +4,11 @@ description: >-
   Run an iterative code-improvement hill-climb against real Datadog LLM-Obs data, locally, with
   Claude Code as the agent. Establishes a baseline eval, makes one focused change, re-scores with
   the same harness, keeps the change if it improves the score in the goal's direction (labeling
-  within-noise gains tentative), and repeats. Use when the user
-  says "run an auto experiment", "hill-climb this code", "iteratively improve X and measure the
-  delta", "optimize this prompt/file against my traces", "auto-optimize against LLM-Obs", or wants
-  the local equivalent of the auto_experiments worker. Works from an ml_app, a dataset_id, an
+  within-noise gains tentative), and repeats. This is the skill published as "Autoresearch" in
+  Datadog Agent Observability. Use when the user
+  says "run an auto experiment", "run autoresearch", "hill-climb this code", "iteratively improve X
+  and measure the delta", "optimize this prompt/file against my traces", "auto-optimize against
+  LLM-Obs", or wants the local equivalent of the auto_experiments worker. Works from an ml_app, a dataset_id, an
   annotation_queue_id (a queue of human-labelled interactions), a list of trace_ids, or (by
   exception) a local dataset file. The corpus and its val/test splits live in
   Datadog LLM-Obs Datasets, created once per run with a timestamp in their names.
