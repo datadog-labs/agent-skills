@@ -70,6 +70,41 @@ const RUNS = Math.max(3, parseInt(process.env.AUTO_EXP_RUNS || "3", 10));
 const EVALUATORS =
   process.env.AUTO_EXP_EVALUATORS || "<paste the config `evaluators` rubric here>";
 
+// Which iteration this invocation is scoring, stamped onto every per-case row so
+// `eval_results.jsonl` and the per-case LLM-Obs events agree on which attempt produced a score
+// (SKILL.md "Report per-case scores to LLM-Obs"). Optional: manual invocations may leave it unset.
+const ITERATION = /^\d+$/.test(process.env.AUTO_EXP_ITERATION || "")
+  ? parseInt(process.env.AUTO_EXP_ITERATION, 10)
+  : null;
+
+/**
+ * Best-effort link from this case's score to the trace the code under test just produced.
+ *
+ * When the code under test is instrumented with LLM-Obs, the tracer can hand back the
+ * `{traceId, spanId}` of the span that just finished. Carrying that pair into
+ * `eval_results.jsonl` is what makes "open the case, see why it scored that" true: the per-case
+ * LLM-Obs event (submitted by the orchestrator) cites the same ids, so a reader can jump from a
+ * score straight to the model and tool calls behind it.
+ *
+ * Returns null when the app is not instrumented or no span is in scope — an unlinked case is
+ * reported as unlinked, never with a fabricated id.
+ *
+ * @returns {Promise<{trace_id: string, span_id: string}|null>}
+ */
+async function exportSpanLink() {
+  try {
+    const { default: tracer } = await import("dd-trace");
+    const span = tracer.scope().active();
+    if (!span) return null;
+    const ctx = span.context();
+    const traceId = String(ctx.toTraceId());
+    const spanId = String(ctx.toSpanId());
+    return traceId && spanId ? { trace_id: traceId, span_id: spanId } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Run the REAL code under test on ONE datapoint and return its output.
  *
@@ -135,6 +170,7 @@ async function evaluateLine(line) {
   const inputText =
     typeof line.input === "string" ? line.input : JSON.stringify(line.input);
   const [score, justification] = await judge(inputText, output);
+  const link = await exportSpanLink();
   return {
     // Stable eval-set id FIRST — required so eval_results.jsonl can be diffed and cited by id
     // in the census / result reasoning / mechanism audit / LLM-Obs reasoning (see rubrics.md
@@ -146,6 +182,13 @@ async function evaluateLine(line) {
     output: String(output).slice(0, 500),
     score: Number(score),
     justification,
+    // Iteration stamp + trace linkage: the orchestrator replays these into one per-case LLM-Obs
+    // event per scored datapoint, so every case in every iteration is inspectable in the
+    // experiment instead of only the iteration mean. Both may be null (no iteration env var,
+    // uninstrumented code under test) — report them absent, never invented.
+    iteration: ITERATION,
+    trace_id: link ? link.trace_id : null,
+    span_id: link ? link.span_id : null,
   };
 }
 

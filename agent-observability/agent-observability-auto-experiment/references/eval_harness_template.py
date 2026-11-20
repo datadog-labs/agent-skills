@@ -70,6 +70,35 @@ RUNS = max(3, int(os.environ.get("AUTO_EXP_RUNS", "3")))
 # score against `goal`.
 EVALUATORS = os.environ.get("AUTO_EXP_EVALUATORS", "<paste the config `evaluators` rubric here>")
 
+# Which iteration this invocation is scoring, stamped onto every per-case row so
+# `eval_results.jsonl` and the per-case LLM-Obs events agree on which attempt produced a score
+# (SKILL.md "Report per-case scores to LLM-Obs"). Optional: manual invocations may leave it unset.
+ITERATION = os.environ.get("AUTO_EXP_ITERATION")
+
+
+def _export_span_link() -> "dict | None":
+    """Best-effort link from this case's score to the trace the code under test just produced.
+
+    When the code under test is instrumented with LLM-Obs, `LLMObs.export_span()` returns the
+    `{trace_id, span_id}` of the span that is active/last-finished in this process. Carrying that
+    pair into `eval_results.jsonl` is what makes "open the case, see why it scored that" true: the
+    per-case LLM-Obs event (submitted by the orchestrator) cites the same ids, so a reader can jump
+    from a score straight to the model and tool calls behind it.
+
+    Returns None when the app is not instrumented, ddtrace is absent, or no span is in scope — an
+    unlinked case is reported as unlinked, never with a fabricated id.
+    """
+    try:
+        from ddtrace.llmobs import LLMObs  # type: ignore
+
+        link = LLMObs.export_span()
+    except Exception:
+        return None
+    if not isinstance(link, dict):
+        return None
+    trace_id, span_id = link.get("trace_id"), link.get("span_id")
+    return {"trace_id": trace_id, "span_id": span_id} if trace_id and span_id else None
+
 def _load_domain_notes() -> str:
     """Read the config `domain_notes` (see SKILL.md "Domain notes") and render them for the prompt.
 
@@ -223,6 +252,7 @@ def evaluate_line(line: dict) -> "dict | None":
         return None  # non-target / non-scoreable line — excluded from the mean
     input_text = line.get("input") if isinstance(line.get("input"), str) else json.dumps(line.get("input"))
     score, justification = judge(input_text, output)
+    link = _export_span_link()
     return {
         # Stable eval-set id FIRST — required so eval_results.jsonl can be diffed and cited by id
         # in the census / result reasoning / mechanism audit / LLM-Obs reasoning (see rubrics.md
@@ -234,6 +264,13 @@ def evaluate_line(line: dict) -> "dict | None":
         "output": output[:500],
         "score": float(score),
         "justification": justification,
+        # Iteration stamp + trace linkage: the orchestrator replays these into one per-case LLM-Obs
+        # event per scored datapoint, so every case in every iteration is inspectable in the
+        # experiment instead of only the iteration mean. Both may be None (no iteration env var,
+        # uninstrumented code under test) — report them absent, never invented.
+        "iteration": int(ITERATION) if ITERATION and ITERATION.isdigit() else None,
+        "trace_id": (link or {}).get("trace_id"),
+        "span_id": (link or {}).get("span_id"),
     }
 
 

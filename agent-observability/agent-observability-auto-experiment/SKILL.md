@@ -230,6 +230,7 @@ the run's state + audit trail):
   "estimated_run_cost_range": null,
   "datadog_backend": null,
   "backend_used": null,
+  "per_case_events": null,
   "backend_version": null,
   "backend_fallback": false,
   "max_iterations": 2,
@@ -1299,8 +1300,11 @@ Example arguments for iteration 5 whose harness computed a score of `0.72`:
 
 Rules:
 
-- **One metric per iteration, plus at most one correction.** Submit exactly one metric per
-  iteration at the time it is scored, and never batch several iterations into one call. The **only**
+- **One `auto_experiment_score` metric per iteration, plus at most one correction.** Submit exactly
+  one *iteration-level* metric per iteration at the time it is scored, and never batch several
+  iterations into one call. This rule governs the `auto_experiment_score` label only — the per-case
+  `auto_experiment_case_score` events below are a different label and are expected to be many per
+  iteration (see **Report per-case scores to LLM-Obs**). The **only**
   second event allowed for the same iteration is a **promotion correction** (see final-report
   Higher-power confirmation): re-submitting that iteration with `decision:kept` +
   `basis:promoted` + `promoted:higher_power_confirmation` after a `within_noise` best is confirmed
@@ -1315,6 +1319,56 @@ Rules:
 - The value you submit is the same computed `after_score` recorded in `result.json`; the two must
   always agree — **except a `no_change` iteration**, which has no computed `after_score` and instead
   carries forward `best_score` as a `decision:no_change` marker (see **No-change iterations**).
+
+### Report per-case scores to LLM-Obs (every scored iteration)
+
+An iteration mean says a change helped; it cannot say **which cases moved and why**. Right after the
+iteration-level metric, submit **one event per scored datapoint** so every case in every iteration
+is inspectable in the experiment — that is what makes "open any case in any iteration and see what
+produced its score" true rather than aspirational. Without this step the per-case detail exists only
+in `.auto_experiment/eval_results.jsonl` in one person's checkout, and a teammate cannot review the
+run in Datadog at all.
+
+The source is **that iteration's `eval_results.jsonl`**, as written by the harness — copy the
+numbers, never re-derive or round them, and never submit a case the harness did not score.
+
+- `label`: the literal string `auto_experiment_case_score` (deliberately distinct from
+  `auto_experiment_score`, so a consumer can aggregate iteration means without double-counting
+  cases; **never mix the two labels in one aggregate**).
+- `metric_type`: `score`; `score_value`: that case's `score` from `eval_results.jsonl`.
+- `span_id`: the case's experiment span id **when one exists** (discover ids with
+  `list_llmobs_experiment_events`); attaching the metric to the span is what lets the UI open the
+  case directly. With no experiment span, **omit `span_id`** — the event is still submitted and the
+  case is still identified by its `case_id` tag. Never invent a span id to force attachment.
+- `tags`: `["iteration:<n>", "case_id:<eval-set id>", "git.commit.sha:<sha>"]`, plus
+  `trace_id:<id>` / `case_span_id:<id>` when the harness captured the code-under-test's trace
+  linkage (the `trace_id`/`span_id` fields it writes per row — present only when the code under test
+  is instrumented). Those two tags are the jump-off point from a score to the model and tool calls
+  behind it. Tag-normalization rules apply unchanged (lowercase, no leading `+`).
+- `reasoning`: the case's `justification` from `eval_results.jsonl`, truncated to a sane length —
+  the judge's or checker's own words, never a summary you wrote.
+- `timestamp_ms`: the submission time (the same instant for the whole batch is fine).
+
+Mechanics and guards:
+
+- **Batch, but stay within one iteration.** `submit_llmobs_experiment_events` takes an array, so
+  send the cases in batches (~50 per call is a reasonable size). Never mix two iterations' cases in
+  one call, and never re-submit a case already submitted for that iteration.
+- **Cap the volume.** `cases x iterations` grows fast. If `val_case_count x (max_iterations + 1)`
+  exceeds **2000** events, submit per-case events for the **baseline, every kept iteration, and the
+  final held-out comparison** only, and say so in the final report — a partial per-case record that
+  states its scope beats an unbounded one that stalls the run.
+- **Verify the first batch landed**, the same way the iteration metric is verified: the tool's
+  accepted-count response must match the number of metrics sent. If per-case submission fails,
+  **do not fail the run** — record `per_case_events: "failed: <reason>"` in `config.json` and carry
+  on; the iteration-level metric is the load-bearing one.
+- Record `per_case_events` in `config.json` as `"submitted"`, `"partial: <scope>"`, `"failed:
+  <reason>"` or `"skipped: <reason>"` for every run, so the report never claims per-case
+  inspectability the run did not actually deliver.
+- A `no_change` iteration has no scored cases, so it submits **no** per-case events.
+
+Pass the iteration number into the harness as `AUTO_EXP_ITERATION=<n>` on every eval invocation, so
+the rows it writes carry the iteration they belong to (both templates read it).
 
 ### No-change iterations — emit a carried-forward marker, not a measurement
 
