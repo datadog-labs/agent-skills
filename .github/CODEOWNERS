@@ -1,0 +1,3 @@
+# Default owner for everything in this repo.
+# See https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+*       @datadog-labs/agent-skills

@@ -1,6 +1,8 @@
 .*
 !.gitignore
 !.claude-plugin/
+!.github/
+!.github/**
 
 __pycache__/
 *.py[cod]
