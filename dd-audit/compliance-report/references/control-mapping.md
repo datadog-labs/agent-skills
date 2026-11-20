@@ -5,7 +5,7 @@
 Datadog Audit Trail documents actions **within the Datadog platform**:
 - Who logged in, from where
 - Who changed monitors, dashboards, log pipelines, integrations, roles, API keys
-- What the Bits AI assistant did on behalf of users
+- What the Datadog MCP server did (`is_mcp_call:true`) and what Bits AI agents did (`@evt.actor.mode:*`)
 
 It does **not** document:
 - Actions within systems that Datadog monitors (AWS, GCP, application servers)
@@ -17,7 +17,7 @@ It does **not** document:
 | Control | Description | Audit Trail Query | Fields Used |
 |---------|-------------|-------------------|-------------|
 | CC6.1 | Logical access controls implemented | Review role assignments | `@evt.name:"Access Management" @asset.type:role` |
-| CC6.2 | User registration and deprovisioning | User lifecycle events | `@evt.name:"Access Management" @asset.type:user @action:(created OR deleted)` |
+| CC6.2 | User registration and deprovisioning | User email lifecycle events | `@evt.name:"Access Management" @asset.type:user` |
 | CC6.3 | Role-based access | Permission change log | `@evt.name:"Access Management" @asset.type:role` |
 | CC6.6 | Logical access boundaries | Failed logins, geo anomalies | `@evt.name:Authentication @action:login @status:error` |
 | CC6.8 | Prevent unauthorized access | API key management | `@evt.name:Authentication @asset.type:api_key` |
