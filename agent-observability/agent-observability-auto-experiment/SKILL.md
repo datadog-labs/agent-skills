@@ -407,7 +407,7 @@ estimate its token usage from that template plus the datapoint content. A determ
   page the full corpus just to count it); `annotation_queue_id` → the queue's **annotated** count
   (`annotated_count` on mcp; on pup, count the interactions with a non-empty `annotations` array —
   never `total_interactions`, since the pending backlog is not scoreable); `ml_app` / `trace_ids` → the count of `trace_ids` if
-  explicit, else the ~30-trace default Step 1 would fetch (state which); `local_dataset_path` →
+  explicit, else the ~100-trace default Step 1 would fetch (state which); `local_dataset_path` →
   count the rows/lines directly. If none of these is determinable cheaply, say so and skip the whole
   estimate rather than guess a count. **Each scored pass reads only the val split (~70%)**, so state
   the estimate as an upper bound on the corpus count, or refine it once Step 1 records
@@ -905,7 +905,9 @@ traces — and materialize it:
    `get_llmobs_span_content`, then **create a corpus dataset** from the extracted datapoints. This is
    new: a trace-derived corpus used to exist only as a local file, so nobody could re-run it: now the
    run's own datapoints are addressable by dataset id afterwards.
-5. **else `ml_app`** → fetch the last ~30 LLM traces for `ml_app` (search LLM-Obs spans), and record the
+5. **else `ml_app`** → fetch the last ~**100** LLM traces for `ml_app` (search LLM-Obs spans; take
+   fewer only if fewer exist, and widen the time window before settling for a thin corpus — see
+   **Corpus size gate**), and record the
    trace IDs you used back into `config.json` `trace_ids` so later iterations reuse the SAME
    corpus. Then **create a corpus dataset** from the extracted datapoints, exactly as for
    `trace_ids`.
@@ -936,12 +938,33 @@ both with the timestamped names above and insert each side's records, then:
 
 - record `val_dataset_id`, `test_dataset_id`, `split_dataset_names`, `split_created_at`,
   `val_case_count`, `test_case_count` in `config.json` — this is the create-once record;
+- apply the **Corpus size gate** below *before* creating the split — a corpus too small to support
+  a conclusion is cheapest to catch here;
 - **assert `val_case_count + test_case_count` equals the corpus count** before proceeding. A
   mismatch means records were dropped or double-inserted; fix it now, not after three iterations of
   scores measured on a corpus that isn't the one you think.
 
 Every iteration scores on **val** (`AUTO_EXP_DATASET_ID=<val_dataset_id>`); `test` is read only in
 the final report.
+
+#### Corpus size gate — check it BEFORE splitting
+
+Every statistic this run produces is bounded by how many cases it scores, and a thin corpus fails
+quietly: a 30-trace pull splits into 21 val / 9 test, where a single flipped case moves the test
+score by 11 points and no held-out claim means anything. Count the scoreable corpus (after the
+exclusions above) and act on it:
+
+| corpus | action |
+|---|---|
+| **< 10 scoreable cases** | **STOP.** Report the count and what was excluded, and ask the user for a larger window, more `trace_ids`, a dataset, or a queue. Do not split, do not score — a 7-case val split cannot support any keep/discard decision, and running anyway manufactures a number the user will quote. |
+| **10–49** | **Warn explicitly and ask** (`AskUserQuestion`) whether to proceed: state the val/test sizes this yields, that one flipped case is worth `1/test_count` of the headline, and offer "widen the source" as the first option. Proceed only on an explicit answer, and record `data_note: "small corpus (N cases) — user confirmed"`. |
+| **≥ 50** | Proceed. Still record the counts; the final report states them next to the headline. |
+
+This gate is about **scoreable** cases, so run it after exclusions, not on the raw trace count — 30
+traces of which 18 have no scoreable target span is a 12-case corpus, and that is the number that
+matters. When the source is an `ml_app`, prefer widening the time window or raising the trace
+limit over accepting the gate's warning: more real traffic is nearly always available and is the
+cheapest fix.
 
 ### Step 1.5 — Hydrate the local cache (the harness cannot call Datadog)
 
