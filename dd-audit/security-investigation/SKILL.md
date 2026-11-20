@@ -26,6 +26,7 @@ pup auth login   # OAuth2 (recommended)
 2. Run the most specific query first; broaden only if results are empty.
 3. If results are large, pipe to `jq` to group or summarize.
 4. Highlight anomalies: bulk operations, unusual geo, off-hours activity, support user actions.
+5. A user's own actions are `@usr.id:<USER_ID>`. When a Datadog AI agent acts for that user, `@usr.*` is the agent and the user is `@delegator.id`. `@delegator.name` is the full name, not the email. Use `(@usr.id:<USER_ID> OR @delegator.id:<USER_ID>)` for the user's complete activity. `@evt.actor.mode` and Bits agent attribution are not available on GovCloud.
 
 ## Common Investigation Queries
 
@@ -140,6 +141,8 @@ pup audit-logs search --query "@evt.name:Authentication @asset.type:api_key" --f
 
 ## Event Category Reference
 
+This is not the full catalog. Names and asset types are defined in the [events reference](https://docs.datadoghq.com/account_management/audit_trail/events/).
+
 | Category (`@evt.name`) | What it covers |
 |------------------------|----------------|
 | `Authentication` | Logins, API key create/delete/modify |
@@ -151,9 +154,11 @@ pup audit-logs search --query "@evt.name:Authentication @asset.type:api_key" --f
 | `Metrics` | Custom metric create/modify/delete |
 | `Organization Management` | Child org creation, org settings |
 | `Notebook` | Create, modify, delete |
-| `APM` | Retention filters, sampling config |
+| `Application Performance Monitoring (APM)` | Retention filters, custom metrics, `samplerconfig` |
+| `AI Guard` | Activation, tool policies, blocking, and allowlists |
 | `Cloud Security Platform` | CWS rules, security signal state changes |
-| `Bits AI SRE` | MCP tool calls, AI investigations |
+| `MCP Server` | MCP connections and tool, resource, or prompt calls (`@asset.type:mcp @action:executed`) |
+| `Bits AI SRE` | Bits SRE investigations and tool calls. Not MCP |
 
 ## Anomaly Flags to Surface
 
