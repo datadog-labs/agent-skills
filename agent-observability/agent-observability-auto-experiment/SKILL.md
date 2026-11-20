@@ -1041,25 +1041,37 @@ The pilot baseline (3 runs) gives a **real** noise floor (`stdev`, `run_means`).
 `min_delta` are **computed from it**, not chosen — derive both here, silently (no user prompt; they
 are surfaced only in the final report, with reasoning):
 
-- **`min_delta`** (compute first — `runs` depends on it) — set it **relative to measured noise**:
-  `min_delta = max(0.02, k · baseline_stdev)` (e.g. `k ≈ 0.5`), so the floor tracks how noisy this
-  metric actually is — a noisy metric gets a higher bar, a rock-steady one keeps the small floor.
+The two numbers are **one derivation, not two independent ones** — `min_delta` is the smallest
+effect this run can actually confirm at its run ceiling, and `runs` is what it takes to confirm it.
+Deriving them independently is what used to make the whole mechanism inert: with
+`min_delta = max(0.02, 0.5·σ)`, any metric noisier than `σ = 0.04` lands on the `0.5·σ` branch,
+where `runs ≥ 8·(σ/0.5σ)² = 32` **always** — above any allowed `max_runs`, so every such run was
+flagged underpowered forever and no gain could ever be labeled significant. The fix is to pick
+`min_delta` **at** the resolution the budget affords instead of below it.
+
+- **`min_delta`** (compute first — `runs` depends on it) — the smallest effect resolvable at the
+  run ceiling, floored at the practical minimum:
+  **`min_delta = max(0.02, baseline_stdev · sqrt(8 / max_runs))`**.
+  The `sqrt(8/max_runs)` term is the derivation below solved for the effect size rather than for
+  the run count: a noisy metric gets a higher bar (because that is the smallest difference the
+  budget can actually tell from noise), a rock-steady one keeps the `0.02` floor. Nothing here is
+  chosen by hand — both terms are measured or an intake budget.
 - **`runs`** — the confidence t-test compares a *difference of two means*, so the noise that matters
   is the standard error of that difference: `SE_diff ≈ stdev · sqrt(2 / runs)`. For a real gain of
   size `min_delta` to be *confirmable as significant* (clear the band at ~2·SE), you need
-  `SE_diff ≲ min_delta / 2`, i.e. **`runs ≥ 8 · (baseline_stdev / min_delta)²`**. Compute that; if it
-  exceeds the current `runs`, **you MUST raise `runs` to it** (clamp **3–`max_runs`**, default
-  `max_runs = 5`) and **re-run the baseline** at the new `runs` (the re-run's `mean`/`stdev` replace
-  the pilot's). This is not advisory — an underpowered run leaves every moderate gain permanently
-  **unconfirmable**: it is still *kept* as best (the keep only needs a higher-in-direction point
-  estimate + the mechanism audit), but can never be *labeled significant* — the classic case, a true
-  +0.05 that can never clear a 0.055 band at `runs=3`, stays a tentative `within_noise` best forever.
-  Only if the pilot is already tight enough that the formula yields `≤ 3` does `runs` stay `3`. If the
-  formula wants more than `max_runs`, set `runs = max_runs` and **record in `config.json` that the
-  metric is too noisy to fully resolve `min_delta` at `max_runs` runs** (so near-band candidates are
-  labeled tentative under known-underpowered conditions, not confidently significant — see the
-  **Higher-power confirmation** rule in the rubric). The user can raise `max_runs` at intake to spend
-  more compute on noisy metrics.
+  `SE_diff ≲ min_delta / 2`, i.e. **`runs = clamp(ceil(8 · (baseline_stdev / min_delta)²), 3, max_runs)`**.
+  Because `min_delta` was chosen at exactly that resolution, this now **always lands inside the
+  clamp**: a noisy metric resolves to `runs = max_runs`, a quiet one stays at `3`. If the derived
+  `runs` exceeds the pilot's 3, **re-run the baseline** at the new `runs` (the re-run's
+  `mean`/`stdev` replace the pilot's).
+- **Report the resolution, do not hide it.** When `min_delta` lands above the `0.02` floor, the run
+  is not underpowered — it is honestly coarse: record in `config.json` and state in the final
+  report that *"this metric's noise means the run can only confirm effects of ≥ `<min_delta>`;
+  raising `max_runs` to N would tighten that to `<value>`"*. Smaller real gains are still **kept**
+  (the keep needs only a higher-in-direction point estimate plus the mechanism audit) — they are
+  labeled `within_noise`, which is the truth about what this budget can see, not a defect.
+- **Deterministic metrics short-circuit it.** With `baseline_stdev == 0` (ground-truth checker, no
+  judge), `min_delta = 0.02` and `runs = 3`; the extra runs would re-measure the same number.
 
 Write the derived `runs` and `min_delta` into `config.json` (they started `null`) alongside the raw
 baseline `stdev` + `run_means` you derived them from (audit trail). Every downstream iteration uses
@@ -1450,7 +1462,10 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
    iterations, what worked, what didn't, why the winner won). `noise_calibration` records the
    Step 2.4 derivation — **this is where `runs`/`min_delta` are first shown to the user**, since
    they were never intake params:
-   `{ "runs_pilot", "runs_final", "baseline_stdev", "run_means", "min_delta" }`. State in the
+   `{ "runs_pilot", "runs_final", "baseline_stdev", "run_means", "min_delta",
+   "resolution_note" }` — where `resolution_note` is the plain-language statement of what this
+   budget could see ("effects below `min_delta` cannot be confirmed at `max_runs` runs; raising it
+   to N would resolve `<value>`"), per Step 2.4. State in the
    summary that `runs`/`min_delta` were **computed from the measured baseline noise** (not chosen),
    with the reasoning, so the user sees the confidence labeling that accompanied every keep/discard
    decision.
