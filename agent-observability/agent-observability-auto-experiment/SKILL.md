@@ -1123,8 +1123,10 @@ each iteration's score to LLM-Obs**; this is the only submission with `iteration
 Before changing anything, decompose **where the baseline loses** per the rubric's **Baseline
 failure census**. Two phases, in order, and they must stay separate:
 
-- **Phase A — describe.** Fan out parallel describer sub-agents over the failing datapoints (batch
-  several per agent). Each returns a factual sentence or two about what its datapoints actually did
+- **Phase A — describe.** Fan out parallel describer sub-agents over **every** failing datapoint
+  (batch several per agent; cap at a random 200 if there are more — rubric: *The census file*).
+  Full coverage is the default: describing is parallel, read-only and cheap, and a census drawn
+  from whichever failures were convenient ranks buckets by the sample rather than by the problem. Each returns a factual sentence or two about what its datapoints actually did
   versus what the reference wanted. **Hand them no category list** — describers that are shown
   candidate labels fit everything into those labels, and the census stops being able to surface a
   failure mode you had not already guessed. Parallel is safe because the task is purely descriptive:
@@ -1134,7 +1136,8 @@ failure census**. Two phases, in order, and they must stay separate:
 
 Write `.auto_experiment/census.json` (descriptions + emergent buckets + `failing_total`/`described`
 coverage counts — schema in the rubric), commit it, and surface the ranked buckets **with their
-coverage** ("12 of 47 failures inspected"). This tells you which lever is worth pulling — and whether
+coverage** ("47 of 47 failures inspected", or "200 of 612, randomly sampled" at the cap). Anything
+short of full coverage needs a stated reason in the census file. This tells you which lever is worth pulling — and whether
 the dominant failure mode is even reachable by editing `files_to_optimize`.
 
 ### Step 3 — Improve

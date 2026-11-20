@@ -258,11 +258,17 @@ taxonomy without paying to re-describe:
 }
 ```
 
+- **Describe EVERY failing case, up to a hard cap of 200.** Full coverage is the default, not an
+  aspiration: describing is parallel, cheap and read-only, and a census built on a convenience
+  sample ranks buckets by what happened to be sampled. Above 200 failures, describe a **random**
+  200 (never the first 200 — corpus order correlates with time, source and difficulty) and record
+  `"sampling": "random-200"`.
 - **`failing_total` and `described` are both required, and every claim states its coverage.** If you
   described 15 of 47 failures, the census says `"described": 15` and the ranked buckets are reported
   as "15 of 47 failures inspected" — a bucket count drawn from a partial sample must never be
-  presented as if it covered the whole set. Describe all of them when you can; when you cannot, say
-  what you skipped.
+  presented as if it covered the whole set. **A partial census is an exception that needs a stated
+  reason** (the cap, a describer that failed), recorded in the census file; "it was quicker" is not
+  one.
 - Bucket `count`s are over described datapoints only. `count` sums across buckets must not exceed
   `described`.
 
