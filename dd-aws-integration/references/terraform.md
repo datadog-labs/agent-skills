@@ -1,7 +1,9 @@
 # AWS integration Terraform template
 
 The standalone configuration to emit when the user has no existing Terraform project. When they do,
-take only the resources below the `provider` blocks and add them to what they already have.
+take only the resources below the `provider` blocks and add them to what they already have. If the
+project already declares `data "aws_caller_identity" "current"`, keep that one and skip the copy below:
+a second block with the same address is a Terraform error.
 
 Placeholders to replace before writing the file:
 
@@ -106,12 +108,15 @@ data "aws_iam_policy_document" "datadog_aws_integration" {
 resource "aws_iam_policy" "datadog_aws_integration" {
   count = length(local.permission_chunks)
 
-  name   = "DatadogAWSIntegrationPolicy-${count.index + 1}"
+  # Named after the role, so a different role name never collides with policies left by an earlier install.
+  name   = "datadog-aws-integration-role-policy-${count.index + 1}"
   policy = data.aws_iam_policy_document.datadog_aws_integration[count.index].json
 }
 
 resource "aws_iam_role" "datadog_aws_integration" {
-  name               = "DatadogIntegrationRole"
+  # If this role is already in state under another name (older templates used DatadogIntegrationRole),
+  # keep that name: changing it forces Terraform to destroy and re-create the role.
+  name               = "datadog-aws-integration-role"
   description        = "Role for Datadog AWS Integration"
   assume_role_policy = data.aws_iam_policy_document.datadog_aws_integration_assume_role.json
 
@@ -145,7 +150,7 @@ resource "datadog_integration_aws_account" "datadog_integration" {
   }
   auth_config {
     aws_auth_config_role {
-      role_name = "DatadogIntegrationRole"
+      role_name = "datadog-aws-integration-role"
     }
   }
   resources_config {
@@ -169,6 +174,11 @@ resource "datadog_integration_aws_account" "datadog_integration" {
 
 ## Variants
 
+- **Distinct IAM names when the defaults collide.** Policy names derive from the role name:
+  `datadog-aws-integration-role-1119` → `datadog-aws-integration-role-1119-policy-N`. `tf.py gen`
+  applies this automatically via `--role-name`, and `tf.py precheck` resolves default-name collisions
+  by suggesting a verified-free `datadog-aws-integration-role-MMDD` name — don't invent a suffix by
+  hand. When embedding these resources in an existing project, keep the same derivation.
 - **Specific regions instead of all.** Replace the `aws_regions` block's `include_all = true` with
   `include_only = ["us-east-1", "eu-west-1"]` using the regions the user named in Phase 1.
 - **GovCloud or China partitions.** Do **not** reach for this template by flipping `aws_partition`. The

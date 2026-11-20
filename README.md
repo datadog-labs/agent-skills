@@ -13,6 +13,7 @@ The main skills are listed here. The [Install](#install) section lists every ski
 | **dd-logs** | Search logs |
 | **dd-apm** | Traces, services, performance, Single-Step Instrumentation |
 | **dd-docs** | Search Datadog documentation |
+| **dd-coding-agent-mcp** | Connect your coding agent (Claude Code, Codex, Gemini CLI, OpenCode, Cursor, Copilot CLI) to the Datadog MCP server with the right toolsets |
 | **agent-observability** | Agent Observability: experiments, eval RCA, evaluator generation, session classification |
 | **dd-browser-sdk** | Browser SDK: RUM, Logs, Session Replay, profiling, product analytics, error tracking, version migration |
 | **dd-audit** | Audit Trail investigations: who changed what, key compromise, cost spike root cause, compliance evidence (SOC 2/PCI), AI activity auditing |
@@ -24,7 +25,20 @@ The main skills are listed here. The [Install](#install) section lists every ski
 | **dd-instrument-llmo** | Instrument Python & Node.js/Next.js AI backends with Datadog LLM Observability — SDK init, agent/workflow spans, RUM↔LLMO session linking |
 | **dd-instrument-product-analytics** | Turn on Datadog Product Analytics for browser apps running the RUM Browser SDK — application switch, `setUser` identity, click collection |
 | **dd-instrument-rum** | Instrument browser apps with Datadog Browser RUM — React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla |
+| **dd-git-tagging** | Tag a service's traces with its Git commit and repository URL, the telemetry half of source code integration — any tracer language, agentless or through an Agent |
+| **dd-instrument-shipdog** | ShipDog backend setup for Python and Node.js — agentless traces and logs, Live Debugger, and a verifying logpoint |
 | **dd-instrument-test-optimization** | Set up Datadog Test Optimization in CI pipelines — auto-instrumentation for GitHub Actions, GitLab, CircleCI; manual tracers; container forwarding; JUnit XML |
+| **dd-anthropic-usage-and-costs-onboarding** | Connect Anthropic to Datadog — Claude usage (org-wide on the Platform plan, per-user on Enterprise) and costs in Cloud Cost Management |
+| **dd-github-onboarding** | Connect GitHub via the Datadog GitHub App — source code in stack traces, pull-request comments |
+| **dd-github-copilot-onboarding** | Connect GitHub Copilot to Datadog — usage and license metrics for the orgs you own |
+| **dd-github-costs-onboarding** | Bring a GitHub enterprise/org bill — Actions, Packages, Copilot, storage — into Cloud Cost Management |
+| **dd-coreweave-agent-fleet-installation-on-clusters** | Install the Datadog Agent fleet on the CoreWeave CKS clusters of a connected tenancy — one install rule, Datadog rolls out the Operator (preview) |
+| **dd-coreweave-integration** | Connect a CoreWeave namespace to Datadog — metrics and logs through the CoreWeave Cloud integration |
+| **dd-nebius-agent-fleet-installation-on-clusters** | Install the Datadog Agent fleet on the Nebius Managed Kubernetes clusters of a connected tenant — one managed install rule, Operator rollout |
+| **dd-nebius-integration** | Connect a Nebius Cloud tenant to Datadog — log streams through the Nebius Cloud integration |
+| **dd-openai-onboarding** | Connect OpenAI to Datadog — org-wide API usage metrics and costs in Cloud Cost Management |
+| **dd-pagerduty-onboarding** | Connect PagerDuty to Datadog — monitors trigger and resolve incidents on PagerDuty services |
+| **dd-slack-integration** | Connect a commercial Slack workspace to Datadog — alerts and notifications in a channel, talk to @Datadog |
 
 ## Install
 
@@ -118,6 +132,8 @@ npx skills add datadog-labs/agent-skills \
   --skill upgrade-browser-sdk-v5 \
   --skill upgrade-browser-sdk-v6 \
   --skill dd-confluent-cloud-integration \
+  --skill dd-coreweave-agent-fleet-installation-on-clusters \
+  --skill dd-coreweave-integration \
   --skill dd-dbm-rds-postgres \
   --skill dd-gcp-ccm \
   --skill dd-gcp-integration \
@@ -130,6 +146,9 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-instrument-product-analytics \
   --skill dd-instrument-rum \
   --skill dd-instrument-test-optimization \
+  --skill dd-ios-sdk \
+  --skill dd-ios-sdk-v3-upgrade \
+  --skill dd-nebius-agent-fleet-installation-on-clusters \
   --skill dd-nebius-integration \
   --skill dd-oci-ccm \
   --skill dd-oci-integration \
