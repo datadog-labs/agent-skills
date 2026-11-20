@@ -1673,6 +1673,78 @@
       "visibility": "public"
     },
     {
+      "key": "dd-ios-sdk.upgrade-v3@s2",
+      "id": "dd-ios-sdk.upgrade-v3",
+      "kind": "lifecycle",
+      "product": "rum",
+      "action": "upgrade-v3",
+      "platform": [],
+      "cloud": [],
+      "scope": [
+        "ios"
+      ],
+      "when": "day-2-on-demand",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-ios-sdk/upgrade-v3/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-ios-sdk@s2",
+      "id": "dd-ios-sdk",
+      "kind": "lifecycle",
+      "product": "rum",
+      "action": "route-sdk-maintenance",
+      "platform": [],
+      "cloud": [],
+      "scope": [
+        "ios"
+      ],
+      "when": "day-2-on-demand",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-ios-sdk/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "agent-install-docker@s1",
       "id": "agent-install-docker",
       "kind": "platform-install",
