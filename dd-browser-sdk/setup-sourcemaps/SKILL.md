@@ -142,10 +142,13 @@ Do not write a placeholder, a `TODO`, or a guessed hostname even after checking 
 ## Step 3: Install the plugin
 
 ```
-npm install --save-dev @datadog/<bundler>-plugin
+npm install --save-dev @datadog/<bundler>-plugin@^3
 ```
 
-Use the project's package manager: `yarn add -D`, `pnpm add -D`, or `bun add -d`.
+Use the project's package manager: `yarn add -D`, `pnpm add -D`, or `bun add -d`. If you add the
+dependency to `package.json` by hand instead, its version is `"^3.0.0"`. Version 2 does not read
+`DATADOG_API_KEY` from the environment, so with the config from step 5 the build succeeds and
+nothing is ever uploaded.
 
 ## Step 4: Make the bundler emit sourcemaps
 
@@ -174,9 +177,9 @@ plugin uploads then deletes nothing, so the `.map` files still ship unless the d
 Register the plugin **first** in the `plugins` array — the plugin's own README recommends this
 across all five bundlers for complete build reporting.
 
-Do not put the API key in the config file. The plugin reads `DATADOG_API_KEY` (or `DD_API_KEY`)
-from the environment, and the environment takes precedence over the config value. Leaving it out
-keeps credentials out of version control.
+Do not put the API key in the config file. The plugin (version 3 or later, see step 3) reads
+`DATADOG_API_KEY` (or `DD_API_KEY`) from the environment, and the environment takes precedence
+over the config value. Leaving it out keeps credentials out of version control.
 
 **Vite** (`vite.config.js`):
 
@@ -316,6 +319,11 @@ upload," but this is not trustworthy — at least one real published plugin vers
 entirely and makes the live, authenticated upload anyway. Treat `dryRun` as unverified for safety
 purposes; it may or may not actually skip the network call in whatever version is installed.
 
+First check the installed version: `npm ls @datadog/<bundler>-plugin` (or your package manager's
+equivalent) must show 3.x or later. If it shows 2.x, go back to step 3. Version 2 never reads
+`DATADOG_API_KEY` from the environment, so the build below looks exactly the same, and the real
+upload in CI never happens either.
+
 The only way to test discovery that is actually guaranteed not to upload anything: make sure
 `DATADOG_API_KEY`/`DD_API_KEY` are **not set anywhere in the environment the build runs in** —
 check for this explicitly, a key left over from unrelated local tooling (e.g. a personal
@@ -324,10 +332,10 @@ authenticate no matter what `dryRun` does. Then run a normal production build (n
 
 - If it logs `No sourcemaps to upload`, step 4 is not correct — the plugin found no `.map` files.
   This check happens locally before any network call, regardless of credentials.
-- If it does not log that — you may see git-metadata warnings, then the build fails with
-  `No authentication token provided` — that confirms steps 4 and 5 are correct. The plugin found
-  the sourcemaps; it only stopped because no key was reachable, which is the expected, safe
-  outcome when none is set.
+- If it does not log that, and logs `No authentication token provided` instead (you may also see
+  git-metadata warnings), steps 4 and 5 are correct. The build still exits 0: the plugin found the
+  sourcemaps and only skipped the upload because no key was reachable, which is the expected,
+  safe outcome when none is set.
 
 Only move on to testing the real upload path once that passes, and only deliberately — this is a
 live action, not a verification step to run casually. Confirm with the user, explicitly, which key
@@ -370,7 +378,7 @@ Error Tracking is un-minified.
 ## Verification checklist
 
 - [ ] Bundler detected, version in the supported range
-- [ ] Plugin package installed as a dev dependency
+- [ ] Plugin version 3 or later installed as a dev dependency (`npm ls @datadog/<bundler>-plugin`)
 - [ ] Bundler configured to emit sourcemaps (step 4 table)
 - [ ] Plugin registered first in the `plugins` array
 - [ ] `service` matches `datadogRum.init()`'s `service`
