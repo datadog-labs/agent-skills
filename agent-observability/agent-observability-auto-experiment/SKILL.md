@@ -11,7 +11,7 @@ description: >-
   annotation_queue_id (a queue of human-labelled interactions), a list of trace_ids, or (by
   exception) a local dataset file. The corpus and its val/test splits live in
   Datadog LLM-Obs Datasets, created once per run with a timestamp in their names.
-arguments: [experiment-id]
+arguments: [experiment-id?]
 ---
 
 # auto-experiment — local hill-climb improvement loop
@@ -90,11 +90,23 @@ alongside `runs`/`min_delta`'s cousins in the step-3 recap, not collected from a
 
 Before writing any config or touching git:
 
-0. **Validate the `$experiment-id` argument.** Check that `$experiment-id` (the skill argument) is a
-   non-empty string and a valid UUID. If it is not, **abort** and tell the user that invoking this
-   skill requires a valid experiment ID. This id is the LLM-Obs experiment every iteration reports to
-   (it is a skill argument, not read from the environment); persist it into `config.json` as
-   `dd_auto_experiment_id` for the audit trail. Then, if `lapdog` is available on `PATH`, tag the
+0. **Resolve the experiment id — given, or created for the user.** `$experiment-id` (the skill
+   argument) is **optional**. Requiring a user to go and mint an experiment UUID before they can
+   start was the single largest onboarding cliff in front of this skill: the natural invocation is
+   "run an auto experiment on X to improve Y", and that invocation must work.
+   - **If `$experiment-id` is provided**, check it is a valid UUID. If it is not a UUID, **abort**
+     — a malformed id is a mistake to surface, not something to paper over by creating a new one.
+   - **If it is absent**, create the experiment yourself, **after** `project_id` is resolved (step
+     1) and as part of the step-3 recap: `create_llmobs_experiment` (mcp) /
+     `pup llm-obs experiments create` (pup) with `project_id`, an `experiment_name` of
+     `auto-exp-<slug of goal>-<TS>` (the same UTC stamp Step 1 mints), and `is_auto_experiment:
+     true`. Record the returned id, **tell the user the experiment id and name you created**, and
+     treat it as `$experiment-id` everywhere below. If creation fails, **STOP and report** — never
+     run an unreported optimization loop.
+
+   Either way the resolved id is the LLM-Obs experiment every iteration reports to; persist it into
+   `config.json` as `dd_auto_experiment_id` (and `experiment_created_by_run: true` when you minted
+   it) for the audit trail. Then, if `lapdog` is available on `PATH`, tag the
    current Lapdog session with the experiment id (replace `EXPERIMENT_ID` with `$experiment-id`):
 
    ```bash
@@ -210,6 +222,7 @@ the run's state + audit trail):
   "annotation_queue_id": null,
   "annotation_label_map": {"expected_output": null, "filter": null},
   "dd_auto_experiment_id": null,
+  "experiment_created_by_run": false,
   "domain_notes": [],
   "project_id": null,
   "dataset_mode": null,
@@ -500,6 +513,7 @@ implementation detail to be defaulted away.
 | span field inventory | `get_llmobs_span_details` | `spans get-details --trace-id T --span-ids S` | ⏱ |
 | span content (`messages`) | `get_llmobs_span_content` | `spans get-content --trace-id T --span-id S --field messages` | ⏱ |
 | expand a trace's spans | `expand_llmobs_spans` | `spans expand --trace-id T --span-ids S` | ⏱ |
+| **create the experiment** (only when no `$experiment-id` was passed) | `create_llmobs_experiment` | `experiments create --file body.json` | |
 | record run context / status | `update_llmobs_experiment` | `experiments update --file body.json <EXPERIMENT_ID>` | |
 | submit an iteration's score | `submit_llmobs_experiment_events` | `experiments events submit --metrics '[{…}]' <EXPERIMENT_ID>` | |
 
@@ -665,9 +679,10 @@ have inspected an ingested event.
   `pup llm-obs experiments events submit --metrics '[{…}]' <EXPERIMENT_ID>`.
   `pup llm-obs experiments update --file <path> <EXPERIMENT_ID>`.
   A non-zero exit is a failed write.
-- `experiments create` additionally requires `data.attributes.project_id` (it uses the typed v2 route),
-  which the `unstable` REST route does not. The skill never creates an experiment — the id is an
-  input — so this only matters if you are provisioning one by hand.
+- `experiments create` additionally requires `data.attributes.project_id` (it uses the typed v2
+  route), which the `unstable` REST route does not. The skill creates an experiment **only** when
+  the user did not pass `$experiment-id` (intake gate, step 0); when they did, the id is an input
+  and nothing is created.
 
 **Auth.** pup reads whatever credential it is already configured with — an OAuth session from
 `pup auth login`, or `DD_API_KEY`/`DD_APP_KEY`/`DD_SITE` from the environment. Confirm it with
@@ -760,7 +775,7 @@ ran because you intended it to.
 | 1 | clean tree + start SHA | `git rev-parse HEAD` recorded in `config.json` `start_sha`; tree clean or unrelated changes stashed |
 | 2 | scratch branch | `git branch --show-current` equals the scratch branch off `base_branch` |
 | 3 | `config.json` written | file exists with every required field populated (incl. the resolved `files_to_optimize` list, `evaluators` verbatim, data source, `annotation_label_map` with an explicit `expected_output` answer when the source is an `annotation_queue_id`, and `datadog_backend` = the user's explicit `"mcp"`/`"pup"` — `null` or an unasked value means the intake gate was skipped) |
-| 4 | experiment id | `$experiment-id` validated as a UUID at the intake gate and persisted to `config.json` as `dd_auto_experiment_id` |
+| 4 | experiment id | a UUID in `config.json` `dd_auto_experiment_id` — either the validated `$experiment-id` argument, or the id returned by the `create_llmobs_experiment` call the intake gate made on the user's behalf (with `experiment_created_by_run: true` and the id reported to the user) |
 | 5 | run context on experiment | confirm the `update_llmobs_experiment` call (or `pup llm-obs experiments update`) **actually returned a success response in hand** (not merely that you intended to call it). For the us5 MCP that response is `updated_fields` containing `"metadata"` — accept that, or any non-error response acknowledging the metadata write if the tool's shape differs. The check is "the call was made and acknowledged", so do not hard-block on one exact field name; if it errored or was never called, re-run it. |
 | 6 | backend reachable | with `datadog_backend: pup`, `pup auth status` (or `$PUP_BIN auth status`) returned `authenticated: true` for the expected site — run the check, don't assume the binary works. A missing or unauthenticated pup is a **STOP**, not a fallback (see **Datadog backend**). With `datadog_backend: mcp`, step 5's acknowledged response is itself the proof the backend is reachable. Record `backend_used` in `config.json` either way. **Under pup, `experiments update` must exit 0, then read the experiment back** (`pup llm-obs experiments list --filter-project-id …`) and confirm the metadata you wrote. |
 | 7 | dataset writes possible | in `dataset_mode: datadog`, `project_id` in `config.json` is a real project you resolved (`get_llmobs_project` / `pup llm-obs projects list` returned it) — not a guessed UUID. In `dataset_mode: local_file`, no project is needed; confirm the mode came from an explicit user answer, not a default. |
