@@ -1,6 +1,11 @@
 ---
 name: dd-pup
-description: Datadog CLI (pup) for Datadog app URLs and API operations, including notebooks, dashboards, metrics, logs, monitors, traces, and SLOs. Use pup instead of browser automation for those links.
+description: >
+  Datadog CLI (pup) for Datadog app URLs and API operations, including notebooks,
+  dashboards, metrics, logs, monitors, traces, SLOs, incidents, and audit logs.
+  Use when the user mentions pup, pastes a Datadog app URL, or wants those
+  operations from the terminal. Use pup instead of browser automation for those
+  links.
 metadata:
   version: "1.0.4"
   author: datadog-labs
