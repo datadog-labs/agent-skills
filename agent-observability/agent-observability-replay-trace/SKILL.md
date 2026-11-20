@@ -69,7 +69,7 @@ MCP, so recommend pup here):
 brew tap datadog-labs/pack && brew install datadog-labs/pack/pup
 pup auth login
 ```
-(MCP alternative: `claude mcp add --scope user --transport http "datadog-llmo-mcp" "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs"`; see https://docs.datadoghq.com/bits_ai/mcp_server/setup/.) Don't proceed without a backend.
+(MCP alternative: `claude mcp add --scope user --transport http "datadog-llmo-mcp" "https://mcp.datadoghq.com/v1/mcp?toolsets=llmobs"`; see https://docs.datadoghq.com/bits_ai/mcp_server/setup/.) Don't proceed without a backend.
 The backend↔operation mapping and **pup's exact flags/gotchas are in `details.md` — read that section before
 using pup.** Two pup musts: (1) results come back at **`data.spans[]`** *or* top-level **`spans[]`**
 (varies by version/`--no-agent`) — parse **whichever is present**, or you get zero hits on an ingested

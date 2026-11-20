@@ -2,7 +2,7 @@
 name: agent-install
 description: Install the Datadog Agent on Linux hosts via SSH with Single Step Instrumentation (SSI) enabled — SSI automatically instruments applications for APM without code changes. Only use if no agent is installed yet.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,linux,agent,install,ssi,ssh
@@ -22,7 +22,7 @@ Invoke this skill when the user expresses intent to:
 
 Do NOT invoke this skill if:
 - The Agent is already installed on all hosts — check with `datadog-agent status` first
-- The target is a Kubernetes cluster — use `dd-apm-k8s-agent-install` instead
+- The target is a Kubernetes cluster — use `agent-install` at `dd-apm/k8s-ssi/agent-install` instead
 
 ---
 

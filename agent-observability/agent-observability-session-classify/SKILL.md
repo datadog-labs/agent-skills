@@ -20,7 +20,7 @@ description: >
 4. If MCP tools are absent → check whether `pup` is executable: run `pup --version` via Bash. A JSON response containing `"version"` confirms pup is available.
 5. If pup responds → use **pup mode** throughout. Translate every MCP tool call to its pup equivalent using the Tool Reference appendix at the bottom of this file.
 6. If neither is available → stop and tell the user:
-   > "Neither the Datadog MCP server nor the pup CLI is available. Connect the MCP server (`claude mcp add --scope user --transport http datadog-llmo-mcp 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs,rum'`) or install pup."
+   > "Neither the Datadog MCP server nor the pup CLI is available. Connect the MCP server (`claude mcp add --scope user --transport http datadog-llmo-mcp 'https://mcp.datadoghq.com/v1/mcp?toolsets=llmobs,rum'`) or install pup."
 
 `--backend pup` is accepted anywhere in the invocation arguments and is stripped before passing remaining args to the skill logic.
 
@@ -41,9 +41,9 @@ description: >
 
 **Intent tagging:** On every MCP tool call, prefix `telemetry.intent` with `skill:agent-observability-session-classify[<inv_id>] — ` followed by a description of why the tool is being called. On the **first MCP tool call only**, use `skill:agent-observability-session-classify:start[<inv_id>] — ` instead (note the `:start` suffix). Example first call: `skill:agent-observability-session-classify:start[3a9f1c2b] — Step 1: enumerate turn root spans for session abc-123`
 
-# Skill: eval-session-classify
+# Skill: agent-observability-session-classify
 
-Classification skill for Datadog Agent Observability sessions and traces. Produces a satisfaction verdict (`yes` / `partial` / `no`) with a brief reasoning string. Designed to be called standalone or by `eval-pipeline`.
+Classification skill for Datadog Agent Observability sessions and traces. Produces a satisfaction verdict (`yes` / `partial` / `no`) with a brief reasoning string. Designed to be called standalone or by `agent-observability-eval-pipeline`.
 
 ---
 
@@ -1039,7 +1039,7 @@ Compact block per unit:
 
 ### Step M3 — Emit summary
 
-After all units are classified, emit the summary. The `# Session Classification Summary` header is the **detection sentinel** for downstream skills (`eval-trace-rca`, `eval-pipeline`) — emit it exactly as shown:
+After all units are classified, emit the summary. The `# Session Classification Summary` header is the **detection sentinel** for downstream skills (`agent-observability-trace-rca`, `agent-observability-eval-pipeline`) — emit it exactly as shown:
 
 ```markdown
 # Session Classification Summary

@@ -42,15 +42,12 @@ If not found, install it (OS-aware):
 ### Claude runs
 
 ```bash
-if [[ "$(uname)" == "Darwin" ]]; then
-  brew tap datadog-labs/pack && brew install pup
-else
-  PUP_VERSION=$(curl -s https://api.github.com/repos/datadog-labs/pup/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
-  curl -L "https://github.com/datadog-labs/pup/releases/download/${PUP_VERSION}/pup_linux_amd64.tar.gz" | tar xz -C /usr/local/bin pup
-  chmod +x /usr/local/bin/pup
-fi
+brew tap datadog-labs/pack
+brew install datadog-labs/pack/pup
 pup --version
 ```
+
+Without Homebrew, download the binary from the [latest Pup release](https://github.com/DataDog/pup/releases/latest) and check its published checksum before placing it on `PATH`.
 
 Check auth:
 ```bash
@@ -137,7 +134,7 @@ kubectl get mutatingwebhookconfigurations | grep datadog
 
 The last command confirms the Admission Controller webhook is registered cluster-wide — this is the precondition for SSI injection working at all and must be checked even when most other services are being instrumented (any deviation in one webhook config can silently skip a subset of pods).
 
-`pup apm troubleshooting list` surfaces injection errors that Datadog's backend received from the cluster — these point to cluster-side mutation failures that may not be visible from `kubectl describe` alone. `pup apm service-library-config get` shows the runtime SDK config the tracer is operating under; an empty result with `ddTraceConfigs` configured, or unexpected values, points to UST/config-propagation issues.
+`pup apm troubleshooting list` surfaces injection errors that Datadog's backend received from the cluster. These point to cluster-side mutation failures that may not be visible from `kubectl describe` alone. `pup apm service-library-config get` shows the runtime SDK config the tracer is operating under; unexpected values point to UST/config-propagation issues. This view does not list every setting for every SDK, so for a missing value check the pod env with the command in `verify-ssi` Step 3 before concluding the config did not propagate.
 
 ---
 

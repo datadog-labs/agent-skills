@@ -19,7 +19,7 @@ app's org); pup returns everything this skill needs too — `trace_url`, span `o
 `--include-tree`. If neither is available, guide the **pup install** — it's easier to set up than the MCP
 (and the other Agent Observability skills fall back to pup): `brew tap datadog-labs/pack && brew install
 datadog-labs/pack/pup`, then `pup auth login`. MCP alternative:
-`claude mcp add --scope user --transport http "datadog-llmo-mcp" "https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs"`
+`claude mcp add --scope user --transport http "datadog-llmo-mcp" "https://mcp.datadoghq.com/v1/mcp?toolsets=llmobs"`
 (see https://docs.datadoghq.com/bits_ai/mcp_server/setup/). Both the MCP and pup return a ready **`trace_url`** — use it verbatim (no construction).
 
 **pup exact usage** (flags are non-obvious, and this copy has drifted from reality before — treat
@@ -30,8 +30,7 @@ datadog-labs/pack/pup`, then `pup auth login`. MCP alternative:
   present.** Parsing the wrong level returns **zero hits on an already-ingested trace** — a silent false
   negative (see polling). Prefer `--no-agent` for a stable script path.
 - `pup llm-obs spans get-trace --trace-id <id> --from 30d` — `--trace-id` is a **flag**, not positional;
-  the default window is **1h**, so pass `--from` as a **bare duration** (`30d`/`7d`/`1h`) — `now-30d` is
-  rejected. Returns `total_duration_ms` and `trace_url`. **Carry `trace_id` forward, not `apm_trace_id`**
+  the default window is **1h**, so pass `--from` as a **bare duration** (`30d`/`7d`/`1h`). `now-30d` is also accepted. Returns `total_duration_ms` and `trace_url`. **Carry `trace_id` forward, not `apm_trace_id`**
   (also present in results) — feeding `apm_trace_id` into get-trace 404s.
 - `pup llm-obs spans get-content --trace-id <id> --span-id <root-span-id> --field output --from 30d` —
   span-id from get-trace; `--field` is required (`input`/`output`/`messages`/…). **Same 1h default window as

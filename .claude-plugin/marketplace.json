@@ -1,0 +1,17 @@
+{
+  "name": "datadog-labs",
+  "owner": {
+    "name": "datadog-labs",
+    "url": "https://github.com/datadog-labs"
+  },
+  "metadata": {
+    "description": "Datadog skills for AI agents."
+  },
+  "plugins": [
+    {
+      "name": "agent-skills",
+      "source": "./",
+      "description": "Datadog skills for AI agents. Essential monitoring, logging, tracing and observability."
+    }
+  ]
+}

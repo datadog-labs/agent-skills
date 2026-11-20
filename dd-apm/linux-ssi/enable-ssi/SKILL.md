@@ -2,7 +2,7 @@
 name: enable-ssi
 description: Configure Unified Service Tags and verify Single Step Instrumentation (SSI) injection on Linux hosts — SSI automatically instruments applications for APM without code changes. Only use if the Datadog Agent is already installed.
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
   tags: datadog,apm,linux,ssi,instrumentation,single-step,ld-preload,ust
@@ -23,7 +23,7 @@ Invoke this skill when:
 Do NOT invoke this skill if:
 - The Datadog Agent is not yet installed — run `agent-install` first
 - SSI packages are missing from `/opt/datadog-packages/` — re-run `agent-install`
-- The target is a Kubernetes cluster — use `dd-apm-k8s-enable-ssi` instead
+- The target is a Kubernetes cluster — use `enable-ssi` at `dd-apm/k8s-ssi/enable-ssi` instead
 
 ---
 
@@ -143,7 +143,7 @@ Apply:
 
 ```bash
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
-  "sudo systemctl daemon-reload && sudo systemctl show <SYSTEMD_SERVICE_NAME> | grep -E 'DD_SERVICE|DD_ENV|DD_VERSION'"
+  "sudo systemctl daemon-reload && sudo systemctl show <SYSTEMD_SERVICE_NAME> | grep -E 'DD_SERVICE|DD_ENV|DD_VERSION|DD_DATA_STREAMS_ENABLED'"
 ```
 
 If the UST vars appear in the output — configuration applied.
@@ -161,6 +161,19 @@ Reload: `sudo supervisorctl reload`
 env: { DD_SERVICE: "<SERVICE_NAME>", DD_ENV: "<ENV>", DD_VERSION: "<VERSION>" }
 ```
 Reload: `pm2 reload <app>`
+
+---
+
+## Step 1b: Check for Event-Driven Services
+
+**Skip this step entirely** in an eval cluster (kind cluster name contains "evalya") or when running non-interactively: run nothing, ask nothing, and continue to the next step.
+
+Otherwise, read the `## Is DSM a fit?` section of `.claude/skills/dd-apm/enable-dsm/SKILL.md` and run its detection command.
+
+- Fit found (messaging client, broker, queue-triggered Lambda, or the user describes services handing work to each other asynchronously) → follow `enable-dsm`. It asks the user once, states the plan rule, and makes the config change without restarting.
+- No fit → skip. Do not mention DSM.
+
+If the user agrees, `enable-dsm` adds its variable to the drop-in from Step 1, so the restart in Step 2 picks up both.
 
 ---
 
@@ -203,10 +216,10 @@ ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
 
 # UST vars in process environment
 ssh -o StrictHostKeyChecking=no -i <SSH_KEY> <SSH_USER>@<SSH_HOST> \
-  "sudo cat /proc/<PID>/environ | tr '\0' '\n' | grep -E 'DD_SERVICE|DD_ENV|DD_VERSION'"
+  "sudo cat /proc/<PID>/environ | tr '\0' '\n' | grep -E 'DD_SERVICE|DD_ENV|DD_VERSION|DD_DATA_STREAMS_ENABLED'"
 ```
 
-If both the launcher and language library appear in maps, and UST vars are in environ — SSI and tagging are fully configured.
+If both the launcher and language library appear in maps, and UST vars are in environ (plus `DD_DATA_STREAMS_ENABLED=true` if DSM was enabled in Step 1b), SSI and tagging are fully configured.
 
 ERROR: Launcher in maps but no language library — injection attempted but failed. Run:
 ```bash

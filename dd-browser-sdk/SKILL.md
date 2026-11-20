@@ -8,7 +8,7 @@ metadata:
   version: "1.0.0"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
-  tags: datadog,browser-sdk,rum,logs,session-replay,profiling,product-analytics,error-tracking,cdn,npm,migration
+  tags: datadog,browser-sdk,rum,logs,session-replay,profiling,product-analytics,error-tracking,sourcemaps,build-plugin,cdn,npm,migration
   globs: "**/@datadog/browser-*,**/datadog-rum*,**/datadog-logs*"
 ---
 
@@ -23,6 +23,7 @@ RUM, Logs, and Session Replay instrumentation for browser applications.
 | Upgrade from v4 to v5 | `dd-browser-sdk/upgrade-v5` |
 | Upgrade from v5 to v6 | `dd-browser-sdk/upgrade-v6` |
 | Upgrade from v6 to v7 | `dd-browser-sdk/upgrade-v7` |
+| Set up sourcemap upload via the build plugin | `dd-browser-sdk/setup-sourcemaps` |
 
 ## Routing
 
@@ -37,3 +38,7 @@ RUM, Logs, and Session Replay instrumentation for browser applications.
 **Upgrading from v6 to v7** (removed options like `betaEncodeCookieOptions`, `allowFallbackToLocalStorage`, `trackBfcacheViews`, `usePciIntake`, or `/v6/` CDN paths):
 
 **Immediately read** `.claude/skills/dd-browser-sdk/upgrade-v7/SKILL.md` — do not proceed from memory.
+
+**Setting up sourcemap upload** (minified stack traces in RUM or Error Tracking, requests to "upload sourcemaps" or "unminify errors", or a project with a vite/webpack/rollup/rspack/esbuild config and no `@datadog/*-plugin` configured):
+
+**Immediately read** `.claude/skills/dd-browser-sdk/setup-sourcemaps/SKILL.md` — do not proceed from memory.

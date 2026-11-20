@@ -13,7 +13,7 @@ description: End-to-end Agent Observability pipeline for an instrumented ml_app 
 4. If MCP tools are absent → check whether `pup` is executable: run `pup --version` via Bash. A JSON response containing `"version"` confirms pup is available.
 5. If pup responds → use **pup mode** throughout. Each sub-skill carries its own Tool Reference appendix with the full MCP→pup mapping.
 6. If neither is available → stop and tell the user:
-   > "Neither the Datadog MCP server nor the pup CLI is available. Connect the MCP server (`claude mcp add --scope user --transport http datadog-llmo-mcp 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'`) or install pup."
+   > "Neither the Datadog MCP server nor the pup CLI is available. Connect the MCP server (`claude mcp add --scope user --transport http datadog-llmo-mcp 'https://mcp.datadoghq.com/v1/mcp?toolsets=llmobs'`) or install pup."
 
 `--backend pup` is accepted anywhere in the invocation arguments. Strip it from args before passing to sub-skills, but carry the pup-mode decision forward — every sub-skill must also operate in pup mode for the entire pipeline run.
 
@@ -399,7 +399,7 @@ Wait for explicit user confirmation. If `--stop-after eval-bootstrap` is set, th
 **4a — Sample traces into a `DatasetRecordRaw[]` JSON.** Follow the **`agent-observability-eval-bootstrap`** skill in **`--emit-dataset` mode**:
 
 ```
-/eval-bootstrap <ml_app> --timeframe <timeframe> --trace-limit <trace-limit> --emit-dataset <output-dir>/dataset_<ml_app>_<YYYYMMDD>.json
+/agent-observability-eval-bootstrap <ml_app> --timeframe <timeframe> --trace-limit <trace-limit> --emit-dataset <output-dir>/dataset_<ml_app>_<YYYYMMDD>.json
 ```
 
 This mode samples root spans, extracts `(input_data, expected_output)` pairs, applies a PII scrub, and writes the JSON. **It does not propose or generate evaluators** — the dataset is the sole artifact. See `agent-observability/agent-observability-eval-bootstrap/SKILL.md` → Phase 3D for the full spec.

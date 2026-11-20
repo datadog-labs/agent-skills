@@ -13,7 +13,7 @@ description: Analyze LLM experiment results. Handles single or comparative exper
 4. If MCP tools are absent → check whether `pup` is executable: run `pup --version` via Bash. A JSON response containing `"version"` confirms pup is available.
 5. If pup responds → use **pup mode** throughout. Translate every MCP tool call to its pup equivalent using the Tool Reference appendix at the bottom of this file.
 6. If neither is available → stop and tell the user:
-   > "Neither the Datadog MCP server nor the pup CLI is available. Connect the MCP server (`claude mcp add --scope user --transport http datadog-llmo-mcp 'https://mcp.datadoghq.com/api/unstable/mcp-server/mcp?toolsets=llmobs'`) or install pup."
+   > "Neither the Datadog MCP server nor the pup CLI is available. Connect the MCP server (`claude mcp add --scope user --transport http datadog-llmo-mcp 'https://mcp.datadoghq.com/v1/mcp?toolsets=llmobs'`) or install pup."
 
 `--backend pup` is accepted anywhere in the invocation arguments and is stripped before passing remaining args to the skill logic.
 
@@ -91,7 +91,7 @@ Otherwise, ask two **separate sequential** `AskUserQuestion` calls before procee
 3. **Notebook:** Use `mcp__datadog-mcp-core__create_datadog_notebook` at the end. In pup mode, use `pup notebooks create --title "TITLE" --file /tmp/nb_cells.json` instead (see Tool Reference). If neither MCP nor pup is available, output these setup instructions instead of failing:
    ```
    To enable Datadog notebook export, add the MCP server:
-     claude mcp add --transport http datadog-mcp https://mcp.datadoghq.com/api/unstable/mcp-server
+     claude mcp add --transport http datadog-mcp https://mcp.datadoghq.com/v1/mcp
    See: https://docs.datadoghq.com/bits_ai/mcp_server/setup/
    ```
    Then ask: "Would you like to fall back to file or agent output instead?"

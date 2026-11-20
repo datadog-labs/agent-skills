@@ -12,6 +12,7 @@ pub const DD_APM_SKILL: &str = skill!("dd-apm/SKILL.md");
 
 pub static DD_APM_SUB_SKILLS: &[(&str, &str)] = &[
     ("service-remapping/SKILL.md",            skill!("dd-apm/service-remapping/SKILL.md")),
+    ("enable-dsm/SKILL.md",                   skill!("dd-apm/enable-dsm/SKILL.md")),
     ("k8s-ssi/agent-install/SKILL.md",        skill!("dd-apm/k8s-ssi/agent-install/SKILL.md")),
     ("k8s-ssi/enable-ssi/SKILL.md",           skill!("dd-apm/k8s-ssi/enable-ssi/SKILL.md")),
     ("k8s-ssi/verify-ssi/SKILL.md",           skill!("dd-apm/k8s-ssi/verify-ssi/SKILL.md")),
@@ -43,13 +44,13 @@ pub static DD_BROWSER_SDK_SUB_SKILLS: &[(&str, &str)] = &[
 pub const DD_DOCS_SKILL: &str = skill!("dd-docs/SKILL.md");
 
 pub static DD_LLMO_SUB_SKILLS: &[(&str, &str)] = &[
-    ("llm-obs-eval-bootstrap/SKILL.md",          skill!("dd-llmo/llm-obs-eval-bootstrap/SKILL.md")),
-    ("llm-obs-eval-pipeline/SKILL.md",           skill!("dd-llmo/llm-obs-eval-pipeline/SKILL.md")),
-    ("llm-obs-experiment-analyzer/SKILL.md",     skill!("dd-llmo/llm-obs-experiment-analyzer/SKILL.md")),
-    ("llm-obs-experiment-py-bootstrap/SKILL.md", skill!("dd-llmo/llm-obs-experiment-py-bootstrap/SKILL.md")),
-    ("llm-obs-session-classify/SKILL.md",        skill!("dd-llmo/llm-obs-session-classify/SKILL.md")),
-    ("llm-obs-trace-rca/SKILL.md",               skill!("dd-llmo/llm-obs-trace-rca/SKILL.md")),
-    ("agent-observability-replay-trace/SKILL.md", skill!("agent-observability/agent-observability-replay-trace/SKILL.md")),
+    ("agent-observability-eval-bootstrap/SKILL.md",      skill!("agent-observability/agent-observability-eval-bootstrap/SKILL.md")),
+    ("agent-observability-eval-pipeline/SKILL.md",       skill!("agent-observability/agent-observability-eval-pipeline/SKILL.md")),
+    ("agent-observability-experiment-analyzer/SKILL.md", skill!("agent-observability/agent-observability-experiment-analyzer/SKILL.md")),
+    ("agent-observability-experiment-bootstrap/SKILL.md", skill!("agent-observability/agent-observability-experiment-bootstrap/SKILL.md")),
+    ("agent-observability-session-classify/SKILL.md",    skill!("agent-observability/agent-observability-session-classify/SKILL.md")),
+    ("agent-observability-trace-rca/SKILL.md",           skill!("agent-observability/agent-observability-trace-rca/SKILL.md")),
+    ("agent-observability-replay-trace/SKILL.md",        skill!("agent-observability/agent-observability-replay-trace/SKILL.md")),
 ];
 
 pub const DD_LOGS_SKILL: &str = skill!("dd-logs/SKILL.md");
@@ -64,5 +65,7 @@ pub static DD_SECURITY_SUB_SKILLS: &[(&str, &str)] = &[
 
 pub static DD_SOFTWARE_DELIVERY_SUB_SKILLS: &[(&str, &str)] = &[
     ("triage-flaky-test/SKILL.md", skill!("dd-software-delivery/triage-flaky-test/SKILL.md")),
+    ("triage-flaky-test/references/fix-patterns.md", skill!("dd-software-delivery/triage-flaky-test/references/fix-patterns.md")),
     ("unblock-pr/SKILL.md",        skill!("dd-software-delivery/unblock-pr/SKILL.md")),
+    ("unblock-pr/references/failure-classification.md", skill!("dd-software-delivery/unblock-pr/references/failure-classification.md")),
 ];
