@@ -1673,6 +1673,78 @@
       "visibility": "public"
     },
     {
+      "key": "dd-ios-sdk.upgrade-v3@s2",
+      "id": "dd-ios-sdk.upgrade-v3",
+      "kind": "lifecycle",
+      "product": "rum",
+      "action": "upgrade-v3",
+      "platform": [],
+      "cloud": [],
+      "scope": [
+        "ios"
+      ],
+      "when": "day-2-on-demand",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-ios-sdk/upgrade-v3/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-ios-sdk@s2",
+      "id": "dd-ios-sdk",
+      "kind": "lifecycle",
+      "product": "rum",
+      "action": "route-sdk-maintenance",
+      "platform": [],
+      "cloud": [],
+      "scope": [
+        "ios"
+      ],
+      "when": "day-2-on-demand",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-ios-sdk/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "agent-install-docker@s1",
       "id": "agent-install-docker",
       "kind": "platform-install",
@@ -2378,6 +2450,89 @@
       "source": {
         "repo": "agent-skills",
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-confluent-cloud-integration/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-coreweave-agent-fleet-installation-on-clusters@s2",
+      "id": "dd-coreweave-agent-fleet-installation-on-clusters",
+      "kind": "platform-install",
+      "product": null,
+      "action": "install-agent",
+      "platform": [
+        "kubernetes"
+      ],
+      "cloud": [
+        "coreweave"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "after": [],
+      "delivers": [
+        "infra"
+      ],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "CoreWeave managed Agent installation is in preview; the skill stops at install-rule creation and Datadog rolls the Operator out from there.",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-coreweave-agent-fleet-installation-on-clusters/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-nebius-agent-fleet-installation-on-clusters@s2",
+      "id": "dd-nebius-agent-fleet-installation-on-clusters",
+      "kind": "platform-install",
+      "product": null,
+      "action": "install-agent",
+      "platform": [
+        "kubernetes"
+      ],
+      "cloud": [
+        "nebius"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "after": [],
+      "delivers": [
+        "infra",
+        "logs"
+      ],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-nebius-agent-fleet-installation-on-clusters/SKILL.md",
         "path_type": "file"
       },
       "status": "canonical",
