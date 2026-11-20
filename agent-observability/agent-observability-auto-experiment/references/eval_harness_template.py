@@ -45,6 +45,7 @@ import json
 import os
 import re
 import statistics
+import time
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -212,6 +213,13 @@ def generate_output(line: dict) -> "str | None":
 
     Return None to EXCLUDE this line from the eval set (non-target / infra line, or no scoreable
     target span). Excluded lines are out of both numerator and denominator — never scored 0.
+
+    RESOURCE USAGE (optional but preferred): return either the output string, or a dict
+    `{"output": str, "input_tokens": int, "output_tokens": int, "cost_usd": float}` with whatever
+    usage fields the code under test actually reports. Quality is not the only thing a change moves
+    — a prompt that doubles token spend for +0.01 is usually a bad trade, and the loop can only
+    surface that trade-off if the numbers are measured here. Omit the fields you cannot measure;
+    they are reported as unknown, never as zero.
     """
     raise NotImplementedError("wire generate_output to the real code under test")
 
@@ -247,9 +255,20 @@ def judge(input_text: str, output_text: str) -> "tuple[float, str]":
 
 def evaluate_line(line: dict) -> "dict | None":
     """Score ONE datapoint. None => excluded from the eval set (not scored 0)."""
-    output = generate_output(line)
-    if output is None:
+    started = time.monotonic()
+    produced = generate_output(line)
+    latency_ms = (time.monotonic() - started) * 1000.0
+    if produced is None:
         return None  # non-target / non-scoreable line — excluded from the mean
+    # `generate_output` may return a bare string or a dict carrying measured resource usage.
+    usage: dict = {}
+    if isinstance(produced, dict):
+        usage = produced
+        output = produced.get("output")
+        if output is None:
+            return None
+    else:
+        output = produced
     input_text = line.get("input") if isinstance(line.get("input"), str) else json.dumps(line.get("input"))
     score, justification = judge(input_text, output)
     link = _export_span_link()
@@ -271,6 +290,14 @@ def evaluate_line(line: dict) -> "dict | None":
         "iteration": int(ITERATION) if ITERATION and ITERATION.isdigit() else None,
         "trace_id": (link or {}).get("trace_id"),
         "span_id": (link or {}).get("span_id"),
+        # Cost/latency travel WITH the score so an iteration's quality gain can be read against
+        # what it spent (SKILL.md "Resource usage"). `latency_ms` is always measured here;
+        # token/cost fields are None unless `generate_output` reported them — unknown is reported
+        # as unknown, never as 0, which would read as "this change was free".
+        "latency_ms": round(latency_ms, 1),
+        "input_tokens": usage.get("input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+        "cost_usd": usage.get("cost_usd"),
     }
 
 
@@ -285,6 +312,32 @@ def _one_pass(lines: list) -> "tuple[list[dict], int]":
             continue
         results.append(result)
     return results, excluded
+
+
+def _usage_summary(results: list) -> dict:
+    """Aggregate the last pass's per-case cost/latency so quality can be read against spend.
+
+    Quality is not the only axis a change moves: a variant that buys +0.01 with double the tokens
+    is usually a bad trade, and the loop can only surface that if the numbers travel with the
+    score. Averages are over the cases that actually reported the field — a field no case reported
+    comes back `None` (unknown), never `0`, which would read as "this change was free".
+    """
+    def _mean_of(field: str) -> "float | None":
+        values = [r[field] for r in results if isinstance(r.get(field), (int, float))]
+        return statistics.mean(values) if values else None
+
+    latencies = sorted(r["latency_ms"] for r in results if isinstance(r.get("latency_ms"), (int, float)))
+    p95 = latencies[min(len(latencies) - 1, int(0.95 * len(latencies)))] if latencies else None
+    return {
+        "latency_ms_mean": _mean_of("latency_ms"),
+        "latency_ms_p95": p95,
+        "input_tokens_mean": _mean_of("input_tokens"),
+        "output_tokens_mean": _mean_of("output_tokens"),
+        "cost_usd_mean": _mean_of("cost_usd"),
+        "cases_reporting_tokens": sum(
+            1 for r in results if isinstance(r.get("input_tokens"), (int, float))
+        ),
+    }
 
 
 def main() -> None:
@@ -316,6 +369,8 @@ def main() -> None:
             out.write(json.dumps(r) + "\n")
     mean = statistics.mean(run_means)
     stdev = statistics.pstdev(run_means) if len(run_means) > 1 else 0.0
+    usage = _usage_summary(last_results)
+
     # `mean` is the before_score/after_score the loop reads; `stdev` feeds SE_diff for the
     # two-sample t-test that LABELS a kept move's confidence (significant vs within_noise) — the
     # keep decision itself is "point estimate improved in the goal's direction", not the t-test, and
@@ -324,6 +379,7 @@ def main() -> None:
     print(json.dumps({
         "mean": mean, "stdev": stdev, "runs": RUNS,
         "scored": len(last_results), "excluded": excluded, "run_means": run_means,
+        "usage": usage,
     }))
 
 

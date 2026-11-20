@@ -1258,6 +1258,13 @@ Call `submit_llmobs_experiment_events` — or, under `datadog_backend: pup`,
       scored, cases scoring exactly 0.0, cases scoring exactly 1.0).
     - **nearest-rank five-number summary, 4 decimal places** — `dist_min:<X.XXXX>`,
       `dist_q1:<X.XXXX>`, `dist_median:<X.XXXX>`, `dist_q3:<X.XXXX>`, `dist_max:<X.XXXX>`.
+  - **Resource-usage tags (every iteration that has a computed score).** `latency_ms_mean:<int>`
+    and `latency_ms_p95:<int>` (the harness always measures these), plus `tokens_per_case:<int>`
+    (`input_tokens_mean + output_tokens_mean`, rounded) and `cost_usd_per_case:<X.XXXXXX>` **only
+    when the harness actually measured them**. **Omit an unmeasured tag rather than sending `0`** —
+    an absent tag reads as unknown, a `0` is a false claim that the iteration was free. Copy them
+    from the row's `usage` block; never re-derive by hand. Omit all four on a `no_change`
+    iteration, for the same reason the `dist_*` tags are omitted.
 
     **The counts are not decoration — on a near-binary metric they are the only part that moves.**
     A real run had 26 of 34 cases at exactly 1.0, which pins `q1 = median = q3 = 1.0` and makes the
