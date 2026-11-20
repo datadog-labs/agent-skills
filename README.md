@@ -33,6 +33,7 @@ The main skills are listed here. The [Install](#install) section lists every ski
 | **dd-github-copilot-onboarding** | Connect GitHub Copilot to Datadog — usage and license metrics for the orgs you own |
 | **dd-github-costs-onboarding** | Bring a GitHub enterprise/org bill — Actions, Packages, Copilot, storage — into Cloud Cost Management |
 | **dd-coreweave-agent-fleet-installation-on-clusters** | Install the Datadog Agent fleet on the CoreWeave CKS clusters of a connected tenancy — one install rule, Datadog rolls out the Operator (preview) |
+| **dd-coreweave-integration** | Connect a CoreWeave namespace to Datadog — metrics and logs through the CoreWeave Cloud integration |
 | **dd-nebius-agent-fleet-installation-on-clusters** | Install the Datadog Agent fleet on the Nebius Managed Kubernetes clusters of a connected tenant — one managed install rule, Operator rollout |
 | **dd-nebius-integration** | Connect a Nebius Cloud tenant to Datadog — log streams through the Nebius Cloud integration |
 | **dd-openai-onboarding** | Connect OpenAI to Datadog — org-wide API usage metrics and costs in Cloud Cost Management |
@@ -132,6 +133,7 @@ npx skills add datadog-labs/agent-skills \
   --skill upgrade-browser-sdk-v6 \
   --skill dd-confluent-cloud-integration \
   --skill dd-coreweave-agent-fleet-installation-on-clusters \
+  --skill dd-coreweave-integration \
   --skill dd-dbm-rds-postgres \
   --skill dd-gcp-ccm \
   --skill dd-gcp-integration \

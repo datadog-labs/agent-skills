@@ -63,6 +63,7 @@
     "./dd-coding-agent-mcp/",
     "./dd-confluent-cloud-integration/",
     "./dd-coreweave-agent-fleet-installation-on-clusters/",
+    "./dd-coreweave-integration/",
     "./dd-dbm-rds-postgres/",
     "./dd-docs/",
     "./dd-gcp-ccm/",
