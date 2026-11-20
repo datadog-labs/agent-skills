@@ -192,7 +192,7 @@ The `agent-observability` directory contains ten skills for working with Agent O
 | `agent-observability-eval-bootstrap` | Generate evaluator code from traces, optionally seeded by RCA output. Also emits a dataset from traces in `--emit-dataset` mode. |
 | `agent-observability-eval-pipeline` | Six-phase pipeline: classify → RCA → bootstrap evaluators → dataset → experiment → analyze. Stop early with `--stop-after`, or resume with `--start-at`. |
 | `agent-observability-session-classify` | Classify whether user intent was satisfied in a session (trace + RUM signals) |
-| `agent-observability-auto-experiment` | Local hill-climb: baseline-eval a prompt/file against LLM-Obs data, make one focused change, re-score with the same harness, keep it only if it beats the best, repeat |
+| `agent-observability-auto-experiment` | Local hill-climb ("Autoresearch"): baseline-eval code against LLM-Obs data, make one focused change, re-score with the same harness, keep it only if it beats the best, repeat — then prove the winner on a held-out split |
 | `agent-observability-build-eval-from-annotations` | Build an evaluator from an annotation queue's human labels: find where the labelled property lives in the trace, draft an LLM judge, score it against the existing labels, hill-climb its errors, publish the winner as a disabled evaluator |
 | `agent-observability-replay-trace` | Iterate on one trace: re-run it against local code, diff old vs new output, loop until satisfied (CLI, no server; edit → replay → diff) |
 | `agent-observability-online-experiment` | Set up live-traffic Agent Observability experiments with feature flags, score, token, and cost metrics, allocations, and an optional start. |

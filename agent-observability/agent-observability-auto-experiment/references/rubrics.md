@@ -75,6 +75,13 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
   wobble as a confident improvement), not keeping it. A candidate that **does not improve** relative
   to the goal direction (lower for maximize, higher for minimize — or flat) is still **not** kept —
   best only moves when the point estimate improves toward the goal.
+- **Significance labels a move; it never stops the run.** A within-noise keep is progress, so it
+  **resets** the plateau counter like any other keep. The loop stops on a plateau only when the last
+  3 *scored* iterations were all **discarded** (SKILL.md, *Stop conditions & guards*). Stopping on
+  "no significant improvement in 3" would end every run on a noisy metric at iteration 3, since there
+  `min_delta` exceeds any single iteration's realistic gain — and those are precisely the runs where
+  a chain of kept tentative steps compounds into a significant total. Test the compounded chain at
+  the end (higher-power confirmation + held-out headline), not one step at a time.
 - **Raise power to gain CONFIDENCE, not to unlock the keep.** The keep already happened (higher
   point estimate → best). Adding `runs` shrinks `SE_diff = stdev·√(2/runs)` so `|t|` can cross 2 and
   upgrade a tentative best from `within_noise` to `significant`. This is how you *confirm* a kept-but-
@@ -101,6 +108,43 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
   - Relabel `significant` if the t-test now clears; otherwise the best stays kept but `within_noise`,
     with the higher-power numbers recorded. Do this for the single best candidate of the run, not
     every within-band wobble.
+
+## Two kinds of uncertainty — run-to-run vs case-to-case (`_two_uncertainties`)
+
+The t-test above is computed over **repeated runs of the same fixed cases**. That answers exactly
+one question: *would this gain reproduce if I reran the eval?* It does **not** answer the question
+a reader usually hears in the word "significant": *would this gain hold on other cases?* Those are
+different uncertainties with different denominators, and conflating them is the most common way an
+honest loop overclaims.
+
+| question | varies | denominator | what it catches |
+|---|---|---|---|
+| does the gain reproduce? | rerun noise (sampling temperature, judge wobble) | `runs` | a lucky draw |
+| does the gain generalize? | which cases are in the set | **number of cases** | a fix that moved two records |
+
+A run-level `|t| = 9.4` on a 60-case split can mean nothing more than "two cases flipped, and they
+flip the same way every time". That is a real finding — it is just not evidence about the other
+9,940 cases you did not score.
+
+**So compute both, and report both**, using the `score_mean` the harness writes per case (its mean
+across runs) and pairing **by eval-set `id`**:
+
+- `d_i = score_mean_candidate(i) − score_mean_best(i)` for every case `i` scored in **both** sides
+  (pair by id; an id missing on either side is excluded from the pairing and counted — the
+  denominator guard in the mechanism audit should already have caught it).
+- `mean_d = mean(d_i)`; `sd_d = sample stdev(d_i)`; `SE_case = sd_d / √n_cases`;
+  **`|t_case| = |mean_d| / SE_case`** (undefined when `sd_d == 0`, i.e. every case moved by the
+  same amount — report it as such, do not divide by zero).
+- **`n_moved`** — how many cases have `d_i ≠ 0`. This is the number everything rests on. **State it
+  next to every headline**: "+0.048 on 60 held-out cases, carried by 3 cases that flipped" is
+  honest; "+0.048, |t| = 9.4" alone is not.
+- Record `{mean_d, sd_d, t_case, n_cases, n_moved}` alongside the run-level t-test wherever a
+  comparison is reported (`result.json`, the final report, the held-out headline).
+
+**Neither test is a keep gate.** The keep rule is unchanged: higher point estimate in the goal's
+direction plus the mechanism audit. These are confidence labels. But a headline whose
+`t_case < 2` or whose `n_moved ≤ 2` must say plainly that the gain rests on a handful of cases and
+may not generalize — that sentence is required, not optional.
 
 ## Data-selection guidance — what enters the eval set (`_data_selection_guidance`)
 
@@ -221,11 +265,17 @@ taxonomy without paying to re-describe:
 }
 ```
 
+- **Describe EVERY failing case, up to a hard cap of 200.** Full coverage is the default, not an
+  aspiration: describing is parallel, cheap and read-only, and a census built on a convenience
+  sample ranks buckets by what happened to be sampled. Above 200 failures, describe a **random**
+  200 (never the first 200 — corpus order correlates with time, source and difficulty) and record
+  `"sampling": "random-200"`.
 - **`failing_total` and `described` are both required, and every claim states its coverage.** If you
   described 15 of 47 failures, the census says `"described": 15` and the ranked buckets are reported
   as "15 of 47 failures inspected" — a bucket count drawn from a partial sample must never be
-  presented as if it covered the whole set. Describe all of them when you can; when you cannot, say
-  what you skipped.
+  presented as if it covered the whole set. **A partial census is an exception that needs a stated
+  reason** (the cap, a describer that failed), recorded in the census file; "it was quicker" is not
+  one.
 - Bucket `count`s are over described datapoints only. `count` sums across buckets must not exceed
   `described`.
 
