@@ -1501,7 +1501,12 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
    baseline-vs-best `test` delta with its two-sample t-test (`|t| = |Δ|/SE_diff ≥ 2` AND
    `|Δ| ≥ min_delta`; if `SE_diff == 0`, `|Δ| ≥ min_delta` in direction — the same **confidence
    label** the keep decision uses) as the run's result — the `val` hill-climb gain is not the
-   headline. If `test` improves in the goal's direction but is not significant, keep the best as best
+   headline.
+   **Report the paired case-level test next to it** (rubric: **Two kinds of uncertainty**): pair
+   the two sides' `score_mean` by eval-set `id`, compute `|t_case| = |mean_d| / (sd_d/√n_cases)`,
+   and state `n_moved` — how many cases actually changed. The run-level t answers "does this
+   reproduce on rerun"; only the paired test speaks to "would this hold on other cases", and a
+   headline carried by one or two flipped cases **must say so in the same sentence as the number**. If `test` improves in the goal's direction but is not significant, keep the best as best
    but **flag it tentative** and say plainly the `test` win is within noise / did not clearly
    generalize (read the number carefully). Only if `test` shows **no improvement in the goal's
    direction** (flat or a regression) treat baseline as best.

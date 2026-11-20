@@ -355,6 +355,11 @@ def main() -> None:
     lines = [json.loads(r) for r in DATA.read_text().splitlines() if r.strip()]
     run_means: list[float] = []
     last_results: list[dict] = []
+    # Per-case scores across ALL runs, keyed by eval-set id. The run-level stdev answers "does this
+    # gain reproduce across reruns of the same cases"; it says nothing about whether the gain would
+    # hold on other cases. Answering that needs a per-CASE score, paired across commits (see
+    # rubrics.md "Two kinds of uncertainty"), which is what these accumulate.
+    per_case_scores: dict = {}
     excluded = 0
     # Re-run the whole eval RUNS times; each pass re-invokes the (stochastic) code under
     # test + judge, so the spread across passes is the run-to-run noise floor.
@@ -363,9 +368,17 @@ def main() -> None:
         if not results:
             raise SystemExit("no scoreable lines — cannot compute a mean (do NOT fabricate one)")
         run_means.append(sum(r["score"] for r in results) / len(results))
+        for r in results:
+            per_case_scores.setdefault(r["id"], []).append(r["score"])
         last_results = results
-    with RESULTS.open("w") as out:  # keep the last pass's per-line detail for audit
+    with RESULTS.open("w") as out:  # last pass's per-line detail + each case's across-run score
         for r in last_results:
+            scores = per_case_scores.get(r["id"], [r["score"]])
+            # `score` stays the last pass's value (unchanged contract). `score_mean` is the case's
+            # mean across every run and is what the PAIRED case-level test compares between two
+            # commits; `score_runs` keeps the raw per-run values so the pairing is auditable.
+            r["score_mean"] = statistics.mean(scores)
+            r["score_runs"] = scores
             out.write(json.dumps(r) + "\n")
     mean = statistics.mean(run_means)
     stdev = statistics.pstdev(run_means) if len(run_means) > 1 else 0.0

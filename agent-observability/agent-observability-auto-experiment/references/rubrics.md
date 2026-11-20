@@ -102,6 +102,43 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
     with the higher-power numbers recorded. Do this for the single best candidate of the run, not
     every within-band wobble.
 
+## Two kinds of uncertainty — run-to-run vs case-to-case (`_two_uncertainties`)
+
+The t-test above is computed over **repeated runs of the same fixed cases**. That answers exactly
+one question: *would this gain reproduce if I reran the eval?* It does **not** answer the question
+a reader usually hears in the word "significant": *would this gain hold on other cases?* Those are
+different uncertainties with different denominators, and conflating them is the most common way an
+honest loop overclaims.
+
+| question | varies | denominator | what it catches |
+|---|---|---|---|
+| does the gain reproduce? | rerun noise (sampling temperature, judge wobble) | `runs` | a lucky draw |
+| does the gain generalize? | which cases are in the set | **number of cases** | a fix that moved two records |
+
+A run-level `|t| = 9.4` on a 60-case split can mean nothing more than "two cases flipped, and they
+flip the same way every time". That is a real finding — it is just not evidence about the other
+9,940 cases you did not score.
+
+**So compute both, and report both**, using the `score_mean` the harness writes per case (its mean
+across runs) and pairing **by eval-set `id`**:
+
+- `d_i = score_mean_candidate(i) − score_mean_best(i)` for every case `i` scored in **both** sides
+  (pair by id; an id missing on either side is excluded from the pairing and counted — the
+  denominator guard in the mechanism audit should already have caught it).
+- `mean_d = mean(d_i)`; `sd_d = sample stdev(d_i)`; `SE_case = sd_d / √n_cases`;
+  **`|t_case| = |mean_d| / SE_case`** (undefined when `sd_d == 0`, i.e. every case moved by the
+  same amount — report it as such, do not divide by zero).
+- **`n_moved`** — how many cases have `d_i ≠ 0`. This is the number everything rests on. **State it
+  next to every headline**: "+0.048 on 60 held-out cases, carried by 3 cases that flipped" is
+  honest; "+0.048, |t| = 9.4" alone is not.
+- Record `{mean_d, sd_d, t_case, n_cases, n_moved}` alongside the run-level t-test wherever a
+  comparison is reported (`result.json`, the final report, the held-out headline).
+
+**Neither test is a keep gate.** The keep rule is unchanged: higher point estimate in the goal's
+direction plus the mechanism audit. These are confidence labels. But a headline whose
+`t_case < 2` or whose `n_moved ≤ 2` must say plainly that the gain rests on a handful of cases and
+may not generalize — that sentence is required, not optional.
+
 ## Data-selection guidance — what enters the eval set (`_data_selection_guidance`)
 
 **Choosing what to score.** Identify the **target unit** from the experiment `goal`/`evaluators`

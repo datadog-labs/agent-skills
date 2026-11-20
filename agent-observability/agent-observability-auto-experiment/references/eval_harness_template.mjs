@@ -294,6 +294,11 @@ async function main() {
 
   const runMeans = [];
   let lastResults = [];
+  // Per-case scores across ALL runs, keyed by eval-set id. The run-level stdev answers "does this
+  // gain reproduce across reruns of the same cases"; it says nothing about whether the gain would
+  // hold on other cases. Answering that needs a per-CASE score, paired across commits (see
+  // rubrics.md "Two kinds of uncertainty"), which is what these accumulate.
+  const perCaseScores = new Map();
   let excluded = 0;
   // Re-run the whole eval RUNS times; each pass re-invokes the (stochastic) code under test +
   // judge, so the spread across passes is the run-to-run noise floor.
@@ -306,10 +311,22 @@ async function main() {
       process.exit(1);
     }
     runMeans.push(mean(results.map((r) => r.score)));
+    for (const r of results) {
+      if (!perCaseScores.has(r.id)) perCaseScores.set(r.id, []);
+      perCaseScores.get(r.id).push(r.score);
+    }
     lastResults = results;
   }
 
-  // keep the last pass's per-line detail for audit
+  // last pass's per-line detail + each case's across-run score. `score` stays the last pass's
+  // value (unchanged contract). `score_mean` is the case's mean across every run and is what the
+  // PAIRED case-level test compares between two commits; `score_runs` keeps the raw per-run values
+  // so the pairing is auditable.
+  for (const r of lastResults) {
+    const scores = perCaseScores.get(r.id) || [r.score];
+    r.score_mean = mean(scores);
+    r.score_runs = scores;
+  }
   fs.writeFileSync(RESULTS, lastResults.map((r) => JSON.stringify(r)).join("\n") + "\n");
 
   const meanOfRuns = mean(runMeans);
