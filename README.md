@@ -144,6 +144,8 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-instrument-product-analytics \
   --skill dd-instrument-rum \
   --skill dd-instrument-test-optimization \
+  --skill dd-ios-sdk \
+  --skill dd-ios-sdk-v3-upgrade \
   --skill dd-nebius-agent-fleet-installation-on-clusters \
   --skill dd-nebius-integration \
   --skill dd-oci-ccm \
