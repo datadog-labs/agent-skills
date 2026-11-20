@@ -1467,13 +1467,30 @@ non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it
 ## Stop conditions & guards
 
 - Stop when `iteration == max_iterations`.
-- **Plateau within noise — stop early.** If the last **3** iterations produced **no significant
-  improvement** (every delta was `significant:false` — `|t| < 2` OR `|Δ| < min_delta` — whether
-  `discarded` or kept only `within_noise`), stop
-  and report the current best with `stop_reason: "plateau (deltas within noise)"`. Continuing past a
-  noise plateau just burns budget nudging the best up on within-noise wiggle; escalate instead (a new
-  census bucket, a different dimension, or accept the ceiling). Distinguish this from a real
-  regression streak.
+- **Plateau — 3 discarded scored iterations in a row — stop early.** If the last **3 scored**
+  iterations were **all `decision:discarded`**, stop and report the current best with
+  `stop_reason: "plateau (3 consecutive discards)"`. Track the counter across iterations and reset it
+  on every `kept` iteration — **including a `within_noise` keep**: a kept change moved the point
+  estimate in the goal's direction and became the new best, so the search is still finding ground.
+  `no_change` iterations are **neither counted nor reset** (nothing was scored, so they say nothing
+  about the plateau); the **5-in-a-row `no_change`** rule below covers those. So three discards
+  interrupted by a kept within-noise change is *not* a plateau, and three discards separated only by
+  `no_change` iterations *is*. Continuing past a real plateau just burns budget re-proposing changes
+  the eval keeps rejecting; escalate instead (a new census bucket, a different dimension, or accept
+  the ceiling). Distinguish this from a real regression streak.
+  - **Why not "no significant improvement in 3"**, the obvious alternative: on a noisy metric
+    `min_delta` sits above every realistic per-iteration gain (Step 2.4), so *every* iteration is
+    `significant:false` and that rule fires at iteration 3 no matter how well the run is going —
+    including runs whose kept within-noise steps compound into a large, significant total gain by
+    iteration 10. It would stop exactly the runs this skill exists to perform, and it contradicts the
+    keep rule, which deliberately keeps within-noise improvements (Step 4 and
+    `references/rubrics.md`). Significance is a **confidence label**, never a stop condition; the
+    honest signal that the search is stuck is the
+    eval **rejecting** what's proposed. Confirm the compounded total at the end instead — the
+    **Higher-power confirmation** below and the held-out headline are where a chain of tentative
+    steps gets tested as one effect.
+  - Report `plateau_discard_streak` (the final value of the counter) in `final_result.reasoning` so
+    a reader can tell a plateau stop from a budget stop.
 - **A change with no computable score is `no_change`, never a fabricated number** (harness won't
   run / no new commit / judge unreachable / feasibility probe reached 0). Record the blocker in
   `reasoning`. Its LLM-Obs submission is the carried-forward marker (`decision:no_change`,

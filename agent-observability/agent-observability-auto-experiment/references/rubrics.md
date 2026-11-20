@@ -75,6 +75,13 @@ LLM judge are stochastic, so the mean wiggles run-to-run. Treat every score as
   wobble as a confident improvement), not keeping it. A candidate that **does not improve** relative
   to the goal direction (lower for maximize, higher for minimize — or flat) is still **not** kept —
   best only moves when the point estimate improves toward the goal.
+- **Significance labels a move; it never stops the run.** A within-noise keep is progress, so it
+  **resets** the plateau counter like any other keep. The loop stops on a plateau only when the last
+  3 *scored* iterations were all **discarded** (SKILL.md, *Stop conditions & guards*). Stopping on
+  "no significant improvement in 3" would end every run on a noisy metric at iteration 3, since there
+  `min_delta` exceeds any single iteration's realistic gain — and those are precisely the runs where
+  a chain of kept tentative steps compounds into a significant total. Test the compounded chain at
+  the end (higher-power confirmation + held-out headline), not one step at a time.
 - **Raise power to gain CONFIDENCE, not to unlock the keep.** The keep already happened (higher
   point estimate → best). Adding `runs` shrinks `SE_diff = stdev·√(2/runs)` so `|t|` can cross 2 and
   upgrade a tentative best from `within_noise` to `significant`. This is how you *confirm* a kept-but-
