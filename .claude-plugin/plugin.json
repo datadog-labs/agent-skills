@@ -77,6 +77,8 @@
     "./dd-instrument-rum/",
     "./dd-instrument-shipdog/",
     "./dd-instrument-test-optimization/",
+    "./dd-ios-sdk/",
+    "./dd-ios-sdk/upgrade-v3/",
     "./dd-logs/",
     "./dd-monitors/",
     "./dd-nebius-integration/",
