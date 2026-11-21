@@ -4,13 +4,13 @@ Resolve credentials only after framework/plugin prerequisites and existing-instr
 
 ## Reuse supplied values
 
-Use credentials already supplied by the user, task environment, or existing project configuration. Browser RUM requires:
+Use credentials already supplied by the user, task environment, or existing project configuration. RUM requires:
 
 - `applicationId`
 - `clientToken`
 - `site`
 
-The application ID and client token are browser-visible identifiers, not Datadog API keys. Never request or embed a Datadog API key for Browser RUM.
+The application ID and client token are public identifiers that ship in the app, not Datadog API keys. Never request or embed a Datadog API key or application key in the app. `rum-application.md` uses those keys only in shell commands against the Datadog API.
 
 Accept these public Datadog site parameters:
 
@@ -26,24 +26,13 @@ Accept these public Datadog site parameters:
 
 If a supplied `DD_SITE` or `site` value is empty or not one of these public sites, stop before editing and ask for the correct site. Do not silently default an explicitly incorrect value to US1.
 
-## Create a RUM application when supported
+## Get or create the RUM application
 
-If no credentials were supplied, ask whether the user already has a RUM application for this frontend. If not, use the local tool exactly as follows when it is available:
-
-```text
-CreateRumApplication(
-  name: string,
-  type: "react" | "browser"
-)
-```
-
-Use a substantiated application name from the deployed frontend service/package/folder. Use `type: "react"` only for a plain React application. Use `type: "browser"` for Next.js, Angular, Vue, Nuxt, Svelte, vanilla, generic SPA, and iframe-hosted applications.
-
-On success, use the returned `applicationId`, `clientToken`, and `site`.
-
-If the tool is unavailable, permission is denied, or creation fails, stop without editing and ask the user to create or select a Browser RUM application at `https://app.datadoghq.com/rum/application/create`, then provide its Application ID, Client Token, and Datadog site.
+Follow `rum-application.md`. With an application ID, it returns the client token, so the user does not need to find it. Without one, it creates the application. When you can ask, first ask whether the user already has a RUM application for this app; when you cannot ask, create one. Stop without editing when `rum-application.md` says to stop, or when only its settings step can create the application.
 
 ## Put values in the application
+
+For React Native, follow "Credentials" in `rum-react-native.md` instead of this section.
 
 Follow an existing public client environment-variable convention when the project already has one. Use these prefixes when needed:
 
