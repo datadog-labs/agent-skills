@@ -1,6 +1,6 @@
 # LLM Observability: Python
 
-Provision `DD_API_KEY` first via `common-credentials.md` if you haven't already.
+Pick the env file first with `common-credentials.md`. Add the variables below to it, and write `DD_API_KEY` last, as that file describes.
 
 Install — and **persist `ddtrace` into the dependency manifest the deploy installs from** (the one identified in SKILL.md Phase 1e), not just the local environment. A local-only install makes the app run for you, but a clean deploy install reads the manifest and will crash with `ModuleNotFoundError: No module named 'ddtrace'` if the package isn't declared there.
 
@@ -20,15 +20,44 @@ conda install -c conda-forge ddtrace
 ```
 Where to hand-edit: a `ddtrace` line in `requirements.txt`, or `"ddtrace"` in the `[project.dependencies]` (or `[tool.poetry.dependencies]`) array of `pyproject.toml` — matching whichever manifest Phase 1e identified.
 
-## In-code init
+## Start the tracer
+
+The tracer must load before any LLM library. Otherwise it cannot patch the LLM client, and the app sends no LLM spans.
+
+### Tracer already started
+
+If Phase 1d found that `ddtrace-run` or `import ddtrace.auto` already starts the tracer (for APM, for example), keep that start unchanged and add no `LLMObs.enable(...)`. With that start, the variables in the next section are what turn LLM Observability on: add the missing ones to what the start path loads, then the key. An existing APM setup usually means a Datadog Agent exists, so check goal 4 below before you set agentless mode.
+
+### Preferred: `ddtrace-run` in the start command
+
+Prefix the persisted start command with `ddtrace-run`, wherever it lives: `Dockerfile` `CMD`/`ENTRYPOINT`, compose `command`, `Procfile`, a run script, or the documented start. The preload starts the tracer before any app code runs, so import order does not matter, and no init code is needed:
+```sh
+ddtrace-run uvicorn main:app --host 0.0.0.0 --port 8000
+ddtrace-run gunicorn app:app
+ddtrace-run python app.py
+```
+
+LLM Observability then starts from these variables, set in the env file (`common-credentials.md`) or the service's environment:
+```
+DD_LLMOBS_ENABLED=1
+DD_LLMOBS_AGENTLESS_ENABLED=1
+DD_LLMOBS_ML_APP=<suitable app name, e.g. project folder name>
+DD_SITE=<site, default datadoghq.com>
+DD_API_KEY=<key from common-credentials.md>
+```
+
+### Fallback: in-code init
+
+Use this only when the start command cannot be edited.
 
 > **Copy the import and `LLMObs.enable(...)` call verbatim.** The module is `ddtrace.llmobs` — there is **no** `ddtrace.llm_observability` module, and "correcting" the terse name to the spelled-out one is the most common way this instrumentation crashes on deploy (`ModuleNotFoundError: No module named 'ddtrace.llm_observability'`). Use exactly the kwargs shown below (`ml_app`, `api_key`, `site`, `agentless_enabled`); don't substitute `env`/`service` or add a `from ddtrace import tracer, config` line from memory.
 
-Must run before any other application imports:
+Put it in the entry module, above every LLM import. Move it above an existing `from openai import OpenAI` if needed:
 ```python
-# any top-level imports, mainly os or dotenv
 import os
-import dotenv
+from dotenv import load_dotenv  # only when the settings come from an env file
+
+load_dotenv()  # must run before LLMObs.enable() reads the settings
 
 # import and enable LLM Observability _before_ any other module imports
 from ddtrace.llmobs import LLMObs
@@ -44,14 +73,16 @@ LLMObs.enable(
 from openai import OpenAI
 # ...
 ```
+`load_dotenv()` reads `.env`; pass the path for another file, for example `load_dotenv(".env.local")`. If you add `python-dotenv`, persist it into the manifest the same way as `ddtrace`.
 
-## Alternative: no code change
+### Load the env file before the tracer starts
 
-Wrap the run command with `ddtrace-run` and pass config via env vars:
+`ddtrace` does not read `.env` files, and `ddtrace-run` reads its settings when the process starts. A `load_dotenv()` call in the app, or uvicorn's `--env-file` option, loads the file after `ddtrace-run` has already read its settings. Load the file in the start command, before `ddtrace-run`:
 ```sh
-DD_SITE=datadoghq.com DD_LLMOBS_ENABLED=1 DD_LLMOBS_ML_APP=<app-name> DD_API_KEY=<key> DD_LLMOBS_AGENTLESS_ENABLED=1 ddtrace-run app.py
+dotenv -f .env run -- ddtrace-run uvicorn main:app    # python-dotenv's CLI, from python-dotenv[cli]
+uv run --env-file .env ddtrace-run uvicorn main:app    # projects managed with uv
 ```
-For FastAPI/uvicorn: `ddtrace-run uvicorn main:app --reload`.
+Both commands stop when the file is missing, so use them only where the file exists, such as a local run script. In container and hosted deploys, set the variables in the service's environment instead, for example with compose `env_file:` or the hosting platform's settings. Keep any env loading that the project already has.
 
 ## Beyond SDK init: a well-formed trace
 
@@ -66,9 +97,9 @@ Enabling the SDK produces auto-instrumented `llm` spans for supported providers,
 | 3 | RUM session linking | Opt-in, needs RUM SDK | Correlating a RUM session with LLMObs works by forwarding the RUM session ID (`datadogRum.getInternalContext().session_id`) to the backend and using it *as* the `session_id`. That is the only documented link, so it makes the LLMObs session span the whole browser session — several conversations in one browse collapse into one. Prefer the conversation-scoped `session_id` from goal 2 by default; opt in only when that whole-browser grouping is acceptable |
 | 4 | APM trace linking | Partial — always | `apm_trace_id` is set on every span automatically. Full navigable linking in the UI needs a dd-agent; without one the tag is present but the APM trace won't exist |
 
-Detect what's achievable before instrumenting: check for `@datadog/browser-rum` on the frontend (goal 3, opt-in), and for `DD_AGENT_HOST`/`DD_TRACE_AGENT_URL`/`ddtrace-run`/an agent sidecar (goal 4). Never promise RUM or navigable APM linking that the detected environment doesn't support — state the gap and the upgrade path instead.
+Detect what's achievable before instrumenting: check for `@datadog/browser-rum` on the frontend (goal 3, opt-in), and for `DD_AGENT_HOST`/`DD_TRACE_AGENT_URL`/an agent sidecar (goal 4). A `ddtrace-run` preload alone does not mean an agent exists. Never promise RUM or navigable APM linking that the detected environment doesn't support — state the gap and the upgrade path instead.
 
-**Goal 4 config knob:** the init snippet above hardcodes `agentless_enabled=True`. Flip it to `False` whenever a dd-agent is detected — leave it `True` otherwise (the `apm_trace_id` tag is still set either way, but only becomes a navigable APM trace with an agent present).
+**Goal 4 config knob:** the setup above hardcodes agentless mode (`DD_LLMOBS_AGENTLESS_ENABLED=1`, or `agentless_enabled=True` in code). Flip it to `0`/`False` whenever a dd-agent is detected — leave it `True` otherwise (the `apm_trace_id` tag is still set either way, but only becomes a navigable APM trace with an agent present).
 
 ## Adding spans
 
@@ -201,8 +232,9 @@ Use `workflow` here, not `agent` — `run_pipeline` doesn't call an LLM directly
 - **OpenAI Agents SDK:** coexists with its own `trace()`; `Runner.run()` is auto-instrumented — wrap the calling function with `@tool`/`@agent`; align `session_id` via `group_id` in `trace()` and `session_id` in the LLMObs context manager.
 - **Pydantic AI:** auto-patched on `LLMObs.enable()`; wrap the function calling `agent.run()`/`agent.iter()` with a context manager passing `session_id`. If that function calls more than one `Agent` (a multi-stage pipeline), wrap it **once**, enclosing every stage — see "Multi-agent pipelines and sub-agent orchestration" above; don't wrap each stage's `.run()` call separately.
 - **LangChain/LangGraph:** fully auto-instrumented; wrap the top-level invoking function with `@workflow(session_id=...)` or a context manager — `session_id` is valid here only because this `@workflow` *is* the root span; don't add it to any nested `@workflow`.
-- **FastAPI:** `LLMObs.enable()` where `app = FastAPI()` is created; session ID from request body or `x-session-id` header with UUID fallback.
-- **Flask:** `LLMObs.enable()` before `app.run()` or in `create_app()`; session ID from `request.get_json()["session_id"]` (or a schema's `.load()`), not attribute access — Flask's `request` has no Pydantic-style fields.
+- **FastAPI / Flask:** start the tracer as "Start the tracer" above describes (`ddtrace-run uvicorn …` / `ddtrace-run gunicorn …`). A fallback `LLMObs.enable()` goes in the entry module above every LLM import, not next to `app = FastAPI()` or inside `create_app()`, where LLM imports may already have run.
+- **FastAPI:** session ID from request body or `x-session-id` header with UUID fallback.
+- **Flask:** session ID from `request.get_json()["session_id"]` (or a schema's `.load()`), not attribute access — Flask's `request` has no Pydantic-style fields.
 - **CLI / background job:** prefer an existing per-operation ID if the code already tracks one (`session_id = job_id or str(uuid.uuid4())`); otherwise `str(uuid.uuid4())` per run. RUM not applicable.
 
 ## Reporting goal status
