@@ -21,6 +21,7 @@ The main skills are listed here. The [Install](#install) section lists every ski
 | **dd-apps** | Build Datadog Apps — scaffold, run locally, upload, publish, CI/CD, DDSQL data access |
 | **dd-product-recommender** | Recommend the right Datadog products for a codebase and/or goal (recommendation only) |
 | **dd-profiler-setup** | Set up Datadog Continuous Profiler for a service — Java, Python, Go, Ruby, Node.js, .NET, PHP |
+| **dd-instrument-aap** | Turn on Datadog App and API Protection (AppSec) in a service's tracer (Python, Node.js, Java, Go, Ruby, .NET, PHP) or at an Envoy, HAProxy or NGINX proxy — Remote Configuration when no code change is needed |
 | **dd-instrument-error-tracking** | Turn on Datadog Error Tracking for browser apps running the RUM Browser SDK — event processing switch, framework error hooks (React, Next.js, Vue, Angular, SvelteKit) |
 | **dd-instrument-llmo** | Instrument Python & Node.js/Next.js AI backends with Datadog LLM Observability — SDK init, agent/workflow spans, RUM↔LLMO session linking |
 | **dd-instrument-product-analytics** | Turn on Datadog Product Analytics for browser apps running the RUM Browser SDK — application switch, `setUser` identity, click collection |
@@ -139,6 +140,7 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-gcp-integration \
   --skill dd-gcp-log-forwarding \
   --skill dd-instrument-error-tracking \
+  --skill dd-instrument-aap \
   --skill dd-github-copilot-onboarding \
   --skill dd-github-costs-onboarding \
   --skill dd-github-onboarding \
