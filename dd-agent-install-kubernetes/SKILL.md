@@ -1,13 +1,13 @@
 ---
 name: dd-agent-install-kubernetes
-description: Install the Datadog Agent on a Kubernetes cluster - Amazon EKS (standard or Fargate profiles), Azure AKS, Google GKE (standard or Autopilot), OpenShift, Oracle OKE, VMware Tanzu (TKG), Rancher (RKE2/K3s), or self-managed - through the Datadog Operator (kubectl/Helm), the Datadog Helm chart, or Terraform, with metrics, logs, and APM trace intake on by default, Single Step Instrumentation off unless the user asks, and optional products; for an SSI-first install use `dd-apm/k8s-ssi` `agent-install`. Use when the user is running a Kubernetes cluster on GKE, EKS, AKS, OpenShift, OKE, or TKG, asks to install or set up the Datadog Agent on Kubernetes, wants to install the Agent with Terraform, or wants to monitor their Kubernetes pods. Does not connect a cloud provider integration or install the Agent on standalone hosts or plain Docker. Requires a Datadog account with a valid API key and application key; run `dd-account-setup` first if they are missing.
+description: Installs the Datadog Agent on a Kubernetes cluster - EKS (including Fargate), AKS, GKE (including Autopilot), OpenShift, Oracle OKE, VMware Tanzu (TKG), Rancher, minikube, kind, or self-managed - through the Datadog Operator, the Helm chart, or Terraform, either on the live cluster now or by preparing the install in the repository (manifests, Kustomize, Helm values, Terraform, Pulumi, Ansible) for the user to deploy. Metrics, logs from every container, and APM trace intake are on by default; Single Step Instrumentation, the OpenTelemetry collector, and other products are opt-in. Use when the user wants to install, set up, or prepare the Datadog Agent on Kubernetes, monitor their pods or cluster, collect Kubernetes logs, or add Datadog to the cluster's IaC. Not for an SSI-first APM install (use `dd-apm/k8s-ssi` `agent-install`), cloud provider integrations, standalone hosts, or plain Docker. Installing now needs a valid API key and application key; run `dd-account-setup` first if they are missing.
 metadata:
-  version: "1.0.3"
+  version: "1.1.0"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
-  tags: datadog,agent,kubernetes,k8s,eks,aks,gke,openshift,oke,tkg,rancher,terraform
+  tags: datadog,agent,kubernetes,k8s,eks,aks,gke,openshift,oke,tkg,rancher,terraform,minikube,kind,kustomize,pulumi,ansible
   alwaysApply: "false"
-  tools: kubectl,oc,helm,terraform,aws,az,gcloud,oci,openssl
+  tools: kubectl,oc,helm,terraform,aws,az,gcloud,oci,openssl,minikube
 ---
 
 # Datadog Agent Installation (Kubernetes)
@@ -15,8 +15,32 @@ metadata:
 You are helping a user install the Datadog Agent on a Kubernetes cluster.
 
 Per-distribution manifest and values changes live in **`references/distributions.md`**, the Terraform
-install path in **`references/terraform.md`**, and FIPS, private registries, APM library pinning, and
-namespace scoping in **`references/advanced.md`**. Read the relevant file when a step below points to it.
+install path in **`references/terraform.md`**, FIPS, private registries, APM library pinning, and
+namespace scoping in **`references/advanced.md`**, and the repository-only mode in
+**`references/prepare-in-repo.md`**. Read the relevant file when a step below points to it.
+
+## Choose the mode
+
+Pick the mode from evidence before Phase 0, and tell the user which one you picked and why.
+
+- **Prepare in the repository.** Change only files in the repository, never the cluster, and end
+  with the exact commands the user runs to deploy. Use it when any of these holds:
+  - your instructions or the run context forbid changing the cluster or cloud resources (for
+    example, they say never to run `kubectl apply`, `helm install`, or `terraform apply`);
+  - the user asks to prepare, add, or commit the setup in the repository, or not to touch the
+    cluster;
+  - the repository holds the deployment config for the cluster or its workloads (manifests,
+    Kustomize, a Helm chart or values, Terraform, Pulumi, or Ansible), and the user did not ask to
+    install on the live cluster now.
+
+  Follow **`references/prepare-in-repo.md`**. It replaces every step below that changes the
+  cluster; the manifest blocks below still apply.
+- **Install now.** Install on the live cluster after one confirmation, as Phases 0 to 5 describe.
+  Use it when the user asks to install on their cluster now and nothing above forbids it, or when
+  the repository holds no Kubernetes deployment config.
+
+When the evidence points both ways and you can ask, ask once. With no one to ask, prepare in the
+repository: it changes nothing the user has not reviewed.
 
 ## Stopping
 
@@ -47,7 +71,9 @@ This downloads one snapshot of the repository's current `main` (which can be new
 
 ## Phase 0: Preflight
 
-**Datadog credentials.** Load `DD_SITE` / `DD_API_KEY` / `DD_APP_KEY` from the environment (falling back
+**Datadog credentials.** In prepare mode, keys are optional: take `DD_SITE` from the run context or
+the environment, run the checks below only when `DD_API_KEY` is set, and never stop for a missing
+key. To install now, load `DD_SITE` / `DD_API_KEY` / `DD_APP_KEY` from the environment (falling back
 to `.env.local` / `.env`) and validate both keys - they fail independently:
 
 ```bash
@@ -115,6 +141,11 @@ confirm and fill in identifiers. Do not silently pick a target cluster, distribu
 the environment and proceed on it. The stated cluster type and mode drive install-changing decisions
 that are painful to undo once applied - GKE Autopilot's image registry, EKS Fargate's sidecar path,
 OpenShift's SCCs - so guessing them wrong wastes a full install cycle.
+
+Settings that the run context or the request already supply - distribution, products, cluster name,
+env tag, registry, tracer versions, SSI target or disabled namespaces - are answers: use them as
+given and do not ask for them again. In prepare mode, take the rest from the repository instead of
+asking (`references/prepare-in-repo.md`, section 4).
 
 Ask up front, in a single round when you can:
 
@@ -206,6 +237,9 @@ install behavior (the manifest and values changes for each are in `references/di
 - **Rancher (RKE2 / K3s)**: mostly generic, but RKE2/K3s run their own embedded containerd at a
   non-default socket (commonly `/run/k3s/containerd/containerd.sock`). If the agent can't reach the
   runtime, set `spec.global.criSocketPath` (Operator) / `datadog.criSocketPath` (Helm) to match.
+- **Local (minikube, kind)**: the kubelet serves a self-signed certificate, so the Agent needs
+  `kubelet.tlsVerify: false` (*Local clusters* in `references/distributions.md`). Never set it on a
+  managed cluster.
 - **Self-managed / other**: treat as a generic distro.
 
 ### Connect to the cluster
@@ -279,7 +313,9 @@ the default above, because its WorkloadAllowlist only admits those image digests
 `references/distributions.md`). Do not apply the general `registry.datadoghq.com` default to an
 Autopilot cluster.
 
-Restricted-network clusters often need a mirror - ask if egress to the public registries is blocked.
+When the run context or the user names a registry, use it for every Datadog image (see *Where each
+setting goes*), and add pull secrets only when it needs authentication. Restricted-network clusters
+often need a mirror - ask if egress to the public registries is blocked.
 If it is, collect the mirror prefix, whether authentication is required, and the name and namespace
 of an existing pull secret. Account for the Operator, Agent components, Fargate sidecars, and any
 Single Step Instrumentation init images rather than treating the Agent image as the whole mirror.
@@ -291,6 +327,18 @@ Only relevant when Single Step Instrumentation is selected. By default, Datadog 
 compatible tracer for each detected language. If the user requests pins, verify each version
 against the current Single Step Instrumentation compatibility documentation and use explicit
 placeholders until verified. Do not copy example versions from this skill into a live manifest.
+
+### Where each setting goes
+
+| Setting | `DatadogAgent` (Operator) | Helm chart values |
+|---|---|---|
+| Site | `spec.global.site` | `datadog.site` |
+| Cluster name | `spec.global.clusterName` | `datadog.clusterName` |
+| Env tag | `spec.global.tags: ["env:<DD_ENV>"]` | `datadog.tags: ["env:<DD_ENV>"]` |
+| Image registry | `spec.global.registry`, plus the Operator chart's `image.repository: <REGISTRY>/operator`; with SSI, also `spec.features.admissionController.registry` | `registry`; with SSI, also `clusterAgent.admissionController.containerRegistry` |
+| Tracer versions | `ddTraceVersions` on each SSI target | the same, under `datadog.apm.instrumentation.targets` |
+| SSI target namespaces | `namespaceSelector.matchNames` on an SSI target | the same |
+| SSI disabled namespaces | `spec.features.apm.instrumentation.disabledNamespaces` | `datadog.apm.instrumentation.disabledNamespaces` |
 
 ### Products
 
@@ -309,8 +357,19 @@ additional products the user wants, briefly calling out operational impact or pr
 - `autoscaling` (Kubernetes Autoscaling)
 - `fips` (FIPS mode and its platform/product compatibility requirements)
 
-Write explicit APM and logs blocks into the generated configuration so the three-pillar policy does
-not depend on chart or Operator defaults. If the user opts out of either pillar, write its explicit
+**A product list is a selection.** When the run context or the request gives one (for example
+`infrastructure,logs` or `otel`), enable what it lists on top of infrastructure, which is always on:
+`logs` turns on log collection, `apm` selects Single Step Instrumentation, and `otel` turns on DDOT.
+When the list leaves out `logs`, write the disabled logs block. Keep the APM receiver on unless the
+user opts out; it only accepts traces that applications send.
+
+**Logs cover every container** by default (`containerCollectAll: true`), because a cluster where only
+annotated pods send logs looks empty to a user who asked for logs. Honor a request to limit
+collection to annotated pods. In prepare mode, also set `source` and `service` per workload
+(`references/prepare-in-repo.md`, section 6).
+
+In a new install, write explicit APM and logs blocks into the generated configuration so the
+three-pillar policy does not depend on chart or Operator defaults. If the user opts out of either pillar, write its explicit
 disabled block instead. Do not silently enable NPM, USM, live process collection, security, or other
 products beyond the three pillars.
 
@@ -323,6 +382,56 @@ Profiling is enabled in the application's tracer, not in the Agent. With Single 
 Instrumentation, set it through `ddTraceConfigs` (see `references/advanced.md`). Without Single
 Step Instrumentation, do not turn injection on to get profiling: after the Agent is running, run
 the `dd-profiler-setup` skill for the services the user wants profiled.
+
+### Existing Datadog setup
+
+Before you build a manifest, look for a Datadog Agent that is already set up: in the repository
+(`references/prepare-in-repo.md`, section 3, lists where to look) and, to install now, in the
+cluster with read-only commands. An error saying the cluster has no `datadogagents` resource type
+means no Operator install.
+
+```bash
+kubectl get datadogagents -A
+helm list -A | grep -i datadog
+```
+
+Read a live resource or release without printing keys:
+
+```bash
+kubectl get datadogagent <NAME> -n <NAMESPACE> -o yaml | grep -viE 'apikey|appkey|last-applied-configuration'
+helm get values <RELEASE> -n <NAMESPACE> -o yaml | grep -viE 'apikey|appkey'
+```
+
+Compare the setup with the request. The requested items are the products the request or the run
+context names and the settings they give: site, cluster name, env tag, registry, tracer versions,
+SSI namespaces, and options such as FIPS. An item is in place when the setup delivers it in any
+form. For example, an env tag counts as `env:<DD_ENV>` in `tags`, as `DD_ENV` in an `env` list, or
+inside `DD_TAGS`; and a missing site means `datadoghq.com`. Requested logs include logs from every
+container: log collection that is enabled without `containerCollectAll: true` (Operator) or
+`datadog.logs.containerCollectAll: true` (chart) is missing that one setting, so add only that field,
+next to the existing `enabled`, unless the user asked to limit logs to annotated pods. The rest of
+the baseline (the APM receiver, event collection, cluster checks, Kubernetes Explorer, explicit
+`enabled: true` defaults) is not a requested item: it belongs to a new install only.
+
+- **Everything requested is in place:** stop. Change no file and nothing in the cluster, and report
+  that the setup is already in place, naming the file or resource and the setting that covers each
+  requested item.
+- **Something requested is missing or wrong:** change only those items, in the resource or values
+  that already exist, and in the form and place each setting already uses there. Fix a wrong
+  `DD_ENV` value where it is; do not move it into `tags`. Keep the install method, namespace,
+  release name, and Secret. Add nothing else: no baseline block, no explicit default, no
+  reformatting. In prepare mode, edit the file (`references/prepare-in-repo.md`). To install now,
+  edit and apply the repository file that holds the setup when there is one. Otherwise write a
+  patch file that holds only the missing fields, show it, and apply it after confirmation. The
+  deployed chart version and `--reuse-values` keep every other value of the release as it is:
+
+  ```bash
+  kubectl patch datadogagent <NAME> -n <NAMESPACE> --type merge --patch-file datadog-agent-patch.yaml
+  helm upgrade <RELEASE> datadog/datadog -n <NAMESPACE> --version <DEPLOYED_CHART_VERSION> \
+    --reuse-values -f datadog-values-patch.yaml
+  ```
+
+- **No Datadog setup:** continue with a new install.
 
 ## Phase 2: Pick the Install Method
 
@@ -416,6 +525,7 @@ spec:
       collectKubernetesEvents: true
     logCollection:
       enabled: true
+      containerCollectAll: true
     orchestratorExplorer:
       enabled: true
 ```
@@ -460,15 +570,11 @@ apm:
 ```yaml
 logCollection:
   enabled: true
-```
-This enables the Logs Agent for annotated workloads. If the user wants logs from every container,
-add:
-```yaml
-logCollection:
-  enabled: true
   containerCollectAll: true
 ```
-If the user explicitly opts out of logs, replace the baseline block with:
+This collects logs from every container. If the user wants logs only from workloads with
+Autodiscovery log annotations, drop `containerCollectAll`. If the user explicitly opts out of logs,
+or a product list leaves logs out, replace the baseline block with:
 ```yaml
 logCollection:
   enabled: false
@@ -572,6 +678,12 @@ otelCollector:
       containerPort: 4318
       hostPort: 4318
 ```
+Enable it only when the user asks for OpenTelemetry, OTLP intake, or DDOT. It needs Agent 7.67.0 or
+later. Do not enable it when the cluster already runs a standalone OpenTelemetry Collector on host
+ports 4317 and 4318, unless the user wants DDOT to replace it: the ports would conflict. The Agent
+then receives OTLP on each node's host ports 4317 (gRPC) and 4318 (HTTP). Pointing applications at
+it is app-side work: run the `dd-instrument-otel` skill for that (see *Running another skill*). When
+that skill is not available, report the app-side wiring as remaining work.
 
 **Kubernetes Autoscaling** - the feature block merges into `spec.features`:
 ```yaml
@@ -671,13 +783,15 @@ datadog:
     enabled: true
   logs:
     enabled: true
+    containerCollectAll: true
   orchestratorExplorer:
     enabled: true
 ```
 
 Leave `registry` unset in the baseline so the chart selects the site-appropriate image registry -
 GKE Autopilot requires its `gcr.io` variant, which the chart picks automatically but an explicit
-`registry` would override. Set `registry` only for a private mirror (see `references/advanced.md`).
+`registry` would override. Set `registry` only for a mirror or a registry the run context or the user
+names (see `references/advanced.md`).
 
 ### Distribution overrides
 
@@ -715,16 +829,11 @@ datadog:
 datadog:
   logs:
     enabled: true
-```
-This enables the Logs Agent for annotated workloads. If the user wants logs from every container,
-add:
-```yaml
-datadog:
-  logs:
-    enabled: true
     containerCollectAll: true
 ```
-If the user explicitly opts out of logs, replace the baseline values with:
+This collects logs from every container. If the user wants logs only from workloads with
+Autodiscovery log annotations, drop `containerCollectAll`. If the user explicitly opts out of logs,
+or a product list leaves logs out, replace the baseline values with:
 ```yaml
 datadog:
   logs:
@@ -823,7 +932,7 @@ datadog:
     enabled: true
 ```
 
-**DDOT collector**:
+**DDOT collector** (same conditions as on the Operator path):
 ```yaml
 datadog:
   otelCollector:
