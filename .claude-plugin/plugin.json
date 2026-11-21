@@ -74,6 +74,7 @@
     "./dd-github-costs-onboarding/",
     "./dd-git-tagging/",
     "./dd-github-onboarding/",
+    "./dd-instrument-code-coverage/",
     "./dd-instrument-llmo/",
     "./dd-instrument-product-analytics/",
     "./dd-instrument-rum/",
