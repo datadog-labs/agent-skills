@@ -1,6 +1,6 @@
 # LLM Observability: Node.js
 
-Provision `DD_API_KEY` first via `common-credentials.md` if you haven't already.
+Pick the env file first with `common-credentials.md`. Add the variables below to it, and write `DD_API_KEY` last, as that file describes.
 
 Install — and **persist `dd-trace` into the dependency manifest the deploy installs from** (the one identified in SKILL.md Phase 1e, normally `package.json`). `npm install` / `yarn add` / `pnpm add` / `bun add` all write it to `package.json` by default, which is what you want:
 ```sh
@@ -8,12 +8,47 @@ npm install dd-trace
 ```
 (substitute `yarn add` / `pnpm add` / `bun add` per the detected package manager). Do not pass `--no-save`, and confirm `dd-trace` appears in `package.json` afterward — a package present only in `node_modules` is missing from a clean deploy install and the deploy will crash with `Cannot find module 'dd-trace'`.
 
-## In-code init (non-Next.js)
+## Start the tracer (non-Next.js)
 
-> **Copy the package name and `.init({...})` option keys verbatim** — the package is `dd-trace` and the options are exactly `llmobs: { mlApp, agentlessEnabled }` as shown below. Don't paraphrase the package name or invent option keys from memory. Adapt only the module *mechanism* to the project's module system: the CommonJS `require('dd-trace').init(...)` form is below; a project with `"type": "module"` in `package.json` or an `.mjs` entrypoint must use an ESM form instead (Node's `--import dd-trace/initialize.mjs` via `NODE_OPTIONS`, or `import tracer from 'dd-trace'` — both shown later in this file), because `require` is undefined in an ES module and forcing it there crashes at startup with `require is not defined`.
+The tracer must load before any LLM library. Otherwise it cannot patch the LLM client, and the app sends no LLM spans.
 
-Must run before any other application code, typically as the very first line of the entry file or in a separate `tracer.js` required first:
+### Tracer already started
+
+If Phase 1d found that a preload or an existing `dd-trace` `.init(...)` already starts the tracer (for APM, for example), keep it unchanged and add no second start. A second `init()` is ignored, and a preload added in front of the app's own `init()` would run first and drop that call's options, such as its `service` name. Instead, add the missing variables from the next section to what the start path loads, then the key: `dd-trace` turns LLM Observability on when `DD_LLMOBS_ML_APP` or `DD_LLMOBS_AGENTLESS_ENABLED` is set. For an existing in-code init, you can instead add the `llmobs` option from the fallback below to that call. Either way, the variables must load before that init runs. An existing APM setup usually means a Datadog Agent exists, so check goal 4 below before you set agentless mode.
+
+### Preferred: a preload in the start command
+
+Add the preload to the persisted start command, wherever it lives: `package.json` scripts, `Dockerfile` `CMD`, compose `command` or `Procfile`. The preload starts the tracer before any app code runs, so import order does not matter, and no init code is needed. Pick the flag by module system:
+
+- ESM (`"type": "module"` in `package.json`, an `.mjs` entry, or an entry that uses `import`): `node --import dd-trace/initialize.mjs server.js`. This flag starts the tracer and registers the loader that `dd-trace` needs to patch ES modules. `dd-trace/register.js` alone only registers the loader and never starts the tracer.
+- CommonJS: `node --require dd-trace/init server.js`.
+
+When the start command runs a wrapper instead of `node` (for example `tsx`, `ts-node` or `nodemon`), pass the same flag through `NODE_OPTIONS`:
+```json
+{ "scripts": { "start": "NODE_OPTIONS='--import dd-trace/initialize.mjs' tsx server.ts" } }
+```
+
+LLM Observability then starts from these variables, set in the env file (`common-credentials.md`) or the service's environment:
+```
+DD_LLMOBS_ENABLED=1
+DD_LLMOBS_AGENTLESS_ENABLED=1
+DD_LLMOBS_ML_APP=<suitable app name, e.g. project folder name>
+DD_SITE=<site, default datadoghq.com>
+DD_API_KEY=<key from common-credentials.md>
+```
+
+### Fallback: in-code init (CommonJS only)
+
+Use this only when the start command cannot be edited.
+
+> **Copy the package name and `.init({...})` option keys verbatim** — the package is `dd-trace` and the options are exactly `llmobs: { mlApp, agentlessEnabled }` as shown below. Don't paraphrase the package name or invent option keys from memory.
+
+Never use in-code init in an ES module (`"type": "module"` or an `.mjs` entry). `require` is undefined there, imports are hoisted above any init statement, and `dd-trace` patches ES modules only through the `--import` loader. If an ESM app's start command cannot be edited, `NODE_OPTIONS='--import dd-trace/initialize.mjs'` must be set in the host's environment settings. Set it if you can; otherwise tell the user to set it, and report the setup as incomplete.
+
+The init must run before any other application code, above every LLM import: as the very first line of the entry file, or in a separate `tracer.js` that the entry file requires first. It reads the same variables as the preload:
 ```javascript
+require('dotenv').config(); // only when the settings come from an env file; must run before init
+
 require('dd-trace').init({
     llmobs: {
         mlApp: process.env.DD_LLMOBS_ML_APP,
@@ -24,13 +59,15 @@ require('dd-trace').init({
 });
 // ... then require everything else
 ```
+If you add `dotenv`, persist it into `package.json` the same way as `dd-trace`.
 
-Env vars (`.env`/`.env.local`):
+### Load the env file before the tracer starts
+
+`dd-trace` does not read `.env` files, and a preload reads its settings when the process starts, before a `require('dotenv').config()` in the app runs. Load the file in the start command, before the preload:
+```sh
+node --env-file-if-exists=.env --import dd-trace/initialize.mjs server.js
 ```
-DD_API_KEY=<key from common-credentials.md>
-DD_LLMOBS_ML_APP=<suitable app name, e.g. project folder name>
-DD_SITE=<site, default datadoghq.com>
-```
+`--env-file-if-exists` skips a missing file, so the same command still starts in a deploy that sets the variables in the service's environment. `--env-file` stops Node.js when the file is missing. `--env-file-if-exists` needs Node.js 20.19+ or 22.9+, and an older Node.js refuses to start with it as a bad option. Read the version from `engines` in `package.json`, `.nvmrc`/`.node-version` or the `Dockerfile` base image. On an older or unknown version, preload `dotenv` instead and persist it into `package.json`: `node --require dotenv/config --import dd-trace/initialize.mjs server.js`. `dotenv/config` reads `.env`; set `DOTENV_CONFIG_PATH` for another file. Node.js rejects both env-file flags in `NODE_OPTIONS`, so with a wrapper, use the wrapper's own env-file option, or preload `dotenv` first: `NODE_OPTIONS='--require dotenv/config --import dd-trace/initialize.mjs'`. In container and hosted deploys, set the variables in the service's environment, for example with compose `env_file:` or the hosting platform's settings.
 
 ## Next.js
 
@@ -43,7 +80,11 @@ export async function register() {
     }
 }
 ```
-Also add `serverExternalPackages: ["<llm-sdk-package>"]` (e.g. `"@anthropic-ai/sdk"`, `"openai"`) to `next.config.js`. Additionally set `DD_LLMOBS_ENABLED=true` and `DD_LLMOBS_AGENTLESS_ENABLED=true` in the env file. After making these changes, run `npx tsc --noEmit` and add `// @ts-ignore` only for genuinely new errors introduced by the dd-trace types.
+Also add `serverExternalPackages: ["<llm-sdk-package>"]` (e.g. `"@anthropic-ai/sdk"`, `"openai"`) to `next.config.js`. Set the five variables from the preload section above in the env file (`.env.local`). `register()` runs after Next.js loads its `.env*` files, so the tracer sees them with no extra loader. Don't start the tracer with a `NODE_OPTIONS` preload in Next.js: the preload starts before Next.js loads those files, so their settings never reach the tracer.
+
+Check the `next` version in `package.json`. The snippet and config above are for Next.js 15 and later. Before Next.js 15 (13.x and 14.x), `register()` runs only when `next.config.js` sets `experimental: { instrumentationHook: true }`, so add it; otherwise the tracer never starts. On those versions the externals list is `experimental.serverComponentsExternalPackages` instead of `serverExternalPackages`, including for `"ai"` below.
+
+After making these changes, run `npx tsc --noEmit` and add `// @ts-ignore` only for genuinely new errors introduced by the dd-trace types.
 
 If the project already defines a `register()` export in `instrumentation.ts` (e.g. for other instrumentation), extend it rather than adding a second, competing `register()` export.
 
@@ -65,19 +106,6 @@ On Vercel, add these to the project's env vars — Vercel dashboard for deployed
 | `DD_LLMOBS_AGENTLESS_ENABLED` | `true` |
 | `DD_LLMOBS_ML_APP` | A suitable ML app name (e.g. the Vercel project name) |
 
-## Alternative: no code change
-
-Use `NODE_OPTIONS` in `package.json` scripts:
-```json
-{ "scripts": { "start": "NODE_OPTIONS='--import dd-trace/initialize.mjs' node app.js" } }
-```
-For Next.js: `"start": "NODE_OPTIONS='--import dd-trace/initialize.mjs' next start"`, `"dev": "NODE_OPTIONS='--import dd-trace/initialize.mjs' next dev"`.
-
-Note: when running an app inline for a one-off manual test (not via its normal start script), `.env` values won't be picked up automatically — pass them on the command line directly:
-```sh
-DD_LLMOBS_ENABLED=1 DD_LLMOBS_ML_APP=<app-name> DD_API_KEY=<key> DD_LLMOBS_AGENTLESS_ENABLED=1 DD_SITE=datadoghq.com pnpm dev
-```
-
 ## Beyond SDK init: a well-formed trace
 
 **Run this section even if `dd-trace`'s `init()` already exists in the project.** SDK init alone only turns on auto-instrumented `llm` spans — it does not by itself produce a session ID, a root span, or a RUM/APM link. Don't let Phase 1d's "SDK already present" finding stand in for this checklist.
@@ -91,18 +119,18 @@ Enabling the SDK produces auto-instrumented `llm` spans for supported providers,
 | 3 | RUM session linking | Opt-in, needs RUM SDK | Correlating a RUM session with LLMObs works by forwarding the RUM session ID (`datadogRum.getInternalContext().session_id`) to the backend and using it *as* the `sessionId`. That is the only documented link, so it makes the LLMObs session span the whole browser session — several conversations in one browse collapse into one. Prefer the conversation-scoped `sessionId` from goal 2 by default; opt in only when that whole-browser grouping is acceptable |
 | 4 | APM trace linking | Partial — always | `apm_trace_id` is set on every span automatically. Full navigable linking in the UI needs a dd-agent; without one the tag is present but the APM trace won't exist |
 
-Detect what's achievable before instrumenting: check for `@datadog/browser-rum` on the frontend (goal 3, opt-in), and for `DD_AGENT_HOST`/`DD_TRACE_AGENT_URL`/`NODE_OPTIONS=--require dd-trace/init`/an agent sidecar (goal 4). Never promise RUM or navigable APM linking that the detected environment doesn't support — state the gap and the upgrade path instead.
+Detect what's achievable before instrumenting: check for `@datadog/browser-rum` on the frontend (goal 3, opt-in), and for `DD_AGENT_HOST`/`DD_TRACE_AGENT_URL`/an agent sidecar (goal 4). A `dd-trace` preload alone does not mean an agent exists. Never promise RUM or navigable APM linking that the detected environment doesn't support — state the gap and the upgrade path instead.
 
-**Goal 4 config knob:** the init snippets above hardcode `agentlessEnabled: true`. Flip it to `false` whenever a dd-agent is detected — leave it `true` otherwise (the `apm_trace_id` tag is still set either way, but only becomes a navigable APM trace with an agent present).
+**Goal 4 config knob:** the setup above hardcodes agentless mode (`DD_LLMOBS_AGENTLESS_ENABLED=1`, or `agentlessEnabled: true` in code). Flip it to `0`/`false` whenever a dd-agent is detected — leave it `true` otherwise (the `apm_trace_id` tag is still set either way, but only becomes a navigable APM trace with an agent present).
 
 ## Adding spans
 
-Obtain `llmobs` from the already-initialized tracer (the `require('dd-trace').init(...)` from "In-code init" above) — don't call `.init()` again:
+Obtain `llmobs` from the tracer that the preload, `instrumentation.ts` or the fallback init above already started — don't call `.init()` again:
 ```typescript
 import tracer from 'dd-trace';
 const { llmobs } = tracer;
 ```
-(CommonJS: same tracer instance returned by the `require('dd-trace').init(...)` call above — `const { llmobs } = require('dd-trace');`)
+(CommonJS: `const { llmobs } = require('dd-trace');` returns the same tracer instance.)
 
 **`llmobs.trace()`** (preferred):
 ```typescript
@@ -233,7 +261,7 @@ Use `kind: 'workflow'` here, not `'agent'` — `runPipeline` doesn't call an LLM
 - **Vercel AI SDK:** auto-instrumented; wrap the calling function with `llmobs.trace({ kind: 'workflow', sessionId })` (same root-span caveat) — do not wrap individual `generateText()`/`streamText()` calls, they're already traced. Also requires `experimental_telemetry.isEnabled = true` per call — see the Vercel AI SDK section above.
 - **OpenAI Agents JS:** auto-instrumented; wrap the function calling `Runner.run()` with `llmobs.trace({ kind: 'agent', sessionId })`. If that function calls more than one agent/`Runner.run()` (a multi-stage pipeline), wrap it **once**, enclosing every stage — see "Multi-agent pipelines and sub-agent orchestration" above; don't wrap each stage's call separately. Use `kind: 'workflow'` instead of `'agent'` when the wrapper orchestrates multiple agents without calling an LLM itself.
 - **Express / Fastify / Hono / Koa:** session ID from `req.body.sessionId` or `req.headers['x-session-id']` with `crypto.randomUUID()` fallback.
-- **Next.js App Router:** session ID from the request body in Route Handlers/API routes; the SDK itself still initializes in `instrumentation.ts` as shown above. **Pages Router:** same intake, init via `NODE_OPTIONS` — never in `_app.tsx`, which is a browser bundle.
+- **Next.js App Router:** session ID from the request body in Route Handlers/API routes; the SDK itself still initializes in `instrumentation.ts` as shown above. **Pages Router:** same intake, and init in `instrumentation.ts` as well — never in `_app.tsx`, which is a browser bundle.
 - **CLI / background job:** prefer an existing per-operation ID if the code already tracks one (`const sessionId = jobId ?? crypto.randomUUID()`); otherwise `crypto.randomUUID()` per run. RUM not applicable.
 
 ## Reporting goal status
