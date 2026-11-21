@@ -1,19 +1,19 @@
 ---
 name: dd-instrument-rum
-description: Instrument browser-based web applications with Datadog Browser RUM. Detect the application framework, router, package manager, bundler, entrypoint, credentials, and existing RUM setup; add or safely complete classic Browser RUM instrumentation for React, Next.js App or Pages Router, Angular, Vue, Nuxt, Svelte, vanilla JavaScript, SPAs, and iframe-hosted apps; avoid duplicate initialization; and verify the application still builds. Use when asked to add, set up, instrument, repair, or verify Datadog RUM, Browser Monitoring, Session Replay, or framework-specific Browser RUM plugins.
+description: Instruments web and React Native apps with Datadog RUM. Creates the RUM application in Datadog or turns RUM on for an existing one, detects the framework, router and any existing setup, adds one SDK init for React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla JavaScript, bare React Native, Expo or Expo Router, and checks that the app still builds. Use when asked to add, set up, repair or verify Datadog RUM, Browser Monitoring or Session Replay. Not for native-only iOS or Android apps.
 metadata:
-  version: "0.1.0"
+  version: "0.2.0"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
-  tags: datadog,rum,browser-rum,instrumentation,session-replay,react,nextjs,angular,vue,nuxt,svelte
+  tags: datadog,rum,browser-rum,instrumentation,session-replay,react,nextjs,angular,vue,nuxt,svelte,react-native,expo
   alwaysApply: "false"
 ---
 
-# Datadog Browser RUM instrumentation
+# Datadog RUM instrumentation
 
-Instrument only the browser application in scope. Do not add Datadog APM, tracing, LLM Observability, Logs, source-map upload, user identification, Vercel metadata, Shopify, Salesforce, or unrelated Datadog products.
+Instrument only the web or React Native application in scope. Do not add Datadog APM, tracing, LLM Observability, Logs, source-map or symbol upload, user identification, Vercel metadata, Shopify, Salesforce, or unrelated Datadog products.
 
-Use normal file inspection, editing, and command tools for every step except optional RUM application creation. Use only `CreateRumApplication` for that operation, as described in `references/common-credentials.md`; never invent Datadog tool names.
+Use normal file inspection, editing, and command tools. For the RUM application on the Datadog side, follow `references/rum-application.md`: it uses a RUM tool that the run provides, then the Datadog API, then a settings step for the user. Never invent Datadog tool names.
 
 ## Ground rules
 
@@ -24,7 +24,7 @@ Use normal file inspection, editing, and command tools for every step except opt
 - Preserve an existing valid init configuration. Add missing compatible framework plugin wiring to that init in place; never create a competing init.
 - **Existing-init credential guardrail:** when one valid RUM init already exists, treat its `applicationId`, `clientToken`, `site`, service tags, sampling, privacy, tracking, and every other existing option as immutable. Credentials supplied by the task are for a new init only; they are not an override for an existing valid init. In this branch, do not rewrite credential lines while adding plugin wiring.
 - Stop without editing when required credentials cannot be resolved, `site` is invalid, framework/plugin prerequisites are unmet, permissions prevent the work, or multiple conflicting init calls cannot be safely consolidated.
-- Install only packages required for Browser RUM. Keep `@datadog/browser-rum` and every `@datadog/browser-rum-*` integration package on the same exact SDK version.
+- Install only packages required for RUM. Keep `@datadog/browser-rum` and every `@datadog/browser-rum-*` integration package on the same exact SDK version, and do the same for `@datadog/mobile-react-native` and its integrations.
 - Persist dependencies in the manifest and lockfile used by the real build. Do not rely on packages that happen to exist in `node_modules`.
 - Preserve application behavior, existing custom error handling, formatting conventions, and unrelated code.
 - Apply edits with the available file-editing tool. If an expected text match fails, re-read the file and adapt to its current contents instead of retrying the same edit.
@@ -33,11 +33,19 @@ Use normal file inspection, editing, and command tools for every step except opt
 
 ## Phase 1: analyze the target
 
-### Locate the browser application
+### Locate the application
 
-Identify the project root that produces browser code. In a monorepo, inspect workspace configuration, scripts, Dockerfiles, and CI/deployment configuration to find the frontend manifest used by the real build rather than editing the repository root by assumption. Record that manifest path and its package manager before editing. If several independent browser applications are plausible and the user did not select one, ask which application to instrument.
+Identify the project root that produces the browser or React Native app. In a monorepo, inspect workspace configuration, scripts, Dockerfiles, and CI/deployment configuration to find the frontend manifest used by the real build rather than editing the repository root by assumption. Record that manifest path and its package manager before editing. If several independent applications are plausible and the user did not select one, ask which application to instrument.
 
-Reject non-browser applications such as Ink CLIs and projects with no HTML/browser build target.
+### Classify the platform
+
+Classify the platform before the framework, because web and React Native use different SDKs:
+
+- **React Native:** the deployed manifest lists `react-native` or `expo` in its dependencies, or the project has a Metro config. Read `references/rum-react-native.md` and follow it instead of `references/rum-core.md` and the web framework references. The rest of this file still applies: existing-setup rules, the RUM application step, credentials, verification and the report.
+- **Native-only mobile:** an iOS, Android, Flutter or Kotlin Multiplatform app with no `react-native` or `expo` dependency. Stop without editing and report that this skill does not set up those apps; point the user to the [Datadog mobile RUM docs](https://docs.datadoghq.com/real_user_monitoring/application_monitoring/).
+- **Web:** a browser build target. Continue with the framework detection below.
+
+Reject other non-browser applications, such as Ink CLIs and projects with no HTML/browser build target.
 
 ### Detect the framework and runtime shape
 
@@ -86,20 +94,27 @@ Check for:
 - `DD_RUM.init`, `window.DD_RUM.init`, `DD_RUM.onReady`, and Datadog CDN loader URLs.
 - Existing plugin registrations, router wrappers/providers/components, and framework error hooks.
 
+For React Native, search for the existing-setup signals listed in `references/rum-react-native.md`.
+
 Treat package presence alone as insufficient: a dependency may be unused.
 
 - **No init:** add one using the selected reference.
 - **One valid init:** keep its location and all existing values. Do not resolve or apply replacement credentials. Add only missing compatible plugin/router/error wiring to it.
 - **One init with missing or invalid required credentials/site:** stop and report the invalid configuration; do not layer another init over it.
 - **Multiple init calls or mixed npm/CDN setups:** stop and report every location unless they can be proven to be one mutually exclusive setup. Do not guess which setup should win.
-- **Complete setup:** make no changes; still run the applicable verification.
+- **Complete setup:** make no code changes; still run the RUM application step below and the applicable verification.
 
 ## Phase 2: instrument
 
-Resolve credentials through `references/common-credentials.md` only after analysis succeeds. If analysis found one valid existing init, reuse its existing credentials and skip credential replacement entirely. Supplied task credentials may be used only when creating a new init. Then:
+Only after analysis succeeds, run the RUM application step in `references/rum-application.md` in two cases:
+
+- **The goal includes RUM.** Run it also for an existing init or a complete setup, with the init's application ID, so that Datadog keeps the RUM data. When the init reads the ID from an env file, read only that line, because env files often hold secrets.
+- **A new init needs an application ID or a client token.**
+
+Then resolve credentials through `references/common-credentials.md`. If analysis found one valid existing init, reuse its existing credentials and skip credential replacement entirely. Supplied task credentials may be used only when creating a new init. Then:
 
 1. Install the core SDK and compatible framework package(s) with the detected package manager, using the deployed frontend manifest. For an existing valid init, install only a missing integration package; never replace already-valid RUM packages or configuration.
-2. Apply the canonical configuration and install method from `references/rum-core.md`. For an existing valid init, apply only missing compatible fields to that same object; do not copy credential or canonical-option placeholders over existing values.
+2. Apply the canonical configuration and install method from `references/rum-core.md`, or the init from `references/rum-react-native.md` for React Native. For an existing valid init, apply only missing compatible fields to that same object; do not copy credential or canonical-option placeholders over existing values.
 3. Apply the selected framework reference, including router tracking and safe framework error integration when those surfaces exist.
 4. Update the lockfile with the same package manager. Never hand-edit a generated lockfile.
 5. Detect configured formatting from manifest scripts such as `lint:fix`, `fix`, or `format` and from ESLint/Prettier configuration. Run the project's formatter or fix command only for files changed by this work.
@@ -108,4 +123,4 @@ Do not add `allowedTracingUrls` or any backend/CORS/tracing configuration; those
 
 ## Phase 3: verify and report
 
-Follow `references/common-verify-report.md`. Before reporting success, inspect the final diff against the pre-edit project. When an existing valid init was found, verify that every pre-existing init value—including both credentials—remains byte-for-byte unchanged and that the only setup changes are the required missing integration wiring (plus any strictly necessary dependency/lockfile change). If an existing value changed, restore it before reporting success. Do not report success unless required packages are persisted, the resulting setup contains exactly one init, and the normal build succeeds.
+Follow `references/common-verify-report.md`, with the build check from `references/rum-react-native.md` for React Native. Before reporting success, inspect the final diff against the pre-edit project. When an existing valid init was found, verify that every pre-existing init value—including both credentials—remains byte-for-byte unchanged and that the only setup changes are the required missing integration wiring (plus any strictly necessary dependency/lockfile change). If an existing value changed, restore it before reporting success. Do not report success unless required packages are persisted, the resulting setup contains exactly one init, and the normal build succeeds.
