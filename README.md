@@ -27,6 +27,7 @@ The main skills are listed here. The [Install](#install) section lists every ski
 | **dd-instrument-rum** | Instrument browser apps with Datadog Browser RUM — React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla |
 | **dd-git-tagging** | Tag a service's traces with its Git commit and repository URL, the telemetry half of source code integration — any tracer language, agentless or through an Agent |
 | **dd-instrument-shipdog** | ShipDog backend setup for Python and Node.js — agentless traces and logs, Live Debugger, and a verifying logpoint |
+| **dd-agent-install-ecs** | Add the Datadog Agent to an Amazon ECS service on Fargate or EC2 — task-definition edits in Terraform, CDK, CloudFormation or JSON, with metrics, logs and APM; never deploys |
 | **dd-instrument-test-optimization** | Set up Datadog Test Optimization in CI pipelines — auto-instrumentation for GitHub Actions, GitLab, CircleCI; manual tracers; container forwarding; JUnit XML |
 | **dd-anthropic-usage-and-costs-onboarding** | Connect Anthropic to Datadog — Claude usage (org-wide on the Platform plan, per-user on Enterprise) and costs in Cloud Cost Management |
 | **dd-github-onboarding** | Connect GitHub via the Datadog GitHub App — source code in stack traces, pull-request comments |
@@ -114,6 +115,7 @@ npx skills add datadog-labs/agent-skills \
   --skill k9-ownership-byod-setup \
   --skill dd-account-setup \
   --skill dd-agent-install-docker \
+  --skill dd-agent-install-ecs \
   --skill dd-agent-install-kubernetes \
   --skill dd-agent-install-linux \
   --skill dd-agent-install-macos \

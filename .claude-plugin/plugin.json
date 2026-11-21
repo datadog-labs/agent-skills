@@ -31,6 +31,7 @@
     "./agent-observability/agent-observability-trace-rca/",
     "./dd-account-setup/",
     "./dd-agent-install-docker/",
+    "./dd-agent-install-ecs/",
     "./dd-agent-install-kubernetes/",
     "./dd-agent-install-linux/",
     "./dd-agent-install-macos/",
