@@ -1,11 +1,11 @@
 ---
 name: dd-agent-install-linux
-description: Install the Datadog Agent on Linux hosts - a single machine or a fleet - with support for cloud rollouts (AWS Systems Manager, GCP VM Manager, Azure Run Command), remote configuration management, proxy, FIPS, custom tags, and advanced configuration, with infrastructure metrics, logs, and the APM trace receiver on by default and host Single Step Instrumentation only when the user asks (for an SSI-first request, use `dd-apm/linux-ssi` `agent-install`). Use when the user wants to monitor their Linux servers, install the Datadog Agent on an Ubuntu or other Linux host, or roll the Agent out to an EC2 or other cloud VM fleet without SSHing in. Does not install the Agent on Windows, macOS, Docker, or Kubernetes (use dd-agent-install-windows, dd-agent-install-macos, dd-agent-install-docker, or dd-agent-install-kubernetes) and does not connect a cloud provider integration. Requires a Datadog account with a valid API key and application key; run `dd-account-setup` first if they are missing.
+description: Install the Datadog Agent on Linux hosts - one machine or a fleet - with cloud rollouts (AWS Systems Manager, GCP VM Manager, Azure Run Command), configuration management, proxy, FIPS, tags and the bundled OpenTelemetry Collector; infrastructure metrics, logs and the APM trace receiver are on by default, and host Single Step Instrumentation only on request or from a caller's products setting (for SSI-first, use `dd-apm/linux-ssi` `agent-install`). When the repository's Terraform or Ansible provisions the hosts, or the machine must not change, it adds a re-runnable install to the IaC or prints one command instead of running it. Use when the user wants to monitor Linux servers, install the Agent on an Ubuntu or other Linux host, add it to Terraform or Ansible, or roll it out to a cloud VM fleet. Not for Windows, macOS, Docker or Kubernetes (use dd-agent-install-windows, -macos, -docker or -kubernetes) or cloud provider integrations. Needs a Datadog account; run `dd-account-setup` first if keys are missing.
 metadata:
-  version: "1.0.2"
+  version: "1.1.0"
   author: datadog-labs
   repository: https://github.com/datadog-labs/agent-skills
-  tags: datadog,agent,install,host,linux,infrastructure,logs,apm
+  tags: datadog,agent,install,host,linux,infrastructure,logs,apm,terraform,ansible
   alwaysApply: "false"
   tools: curl
 ---
@@ -16,7 +16,7 @@ You are helping a user install the Datadog Agent on one or more Linux hosts.
 
 ## Stopping
 
-Some steps below end in a stop: a fleet whose scope the user has not confirmed (Phase 1 and Phase 2), a fleet that spans several providers before the user picks which group goes first, and a remote rollout with no approved way to deliver the API key. Reach a stop the normal way: the preflight and the discovery or checks that lead to it still run, and you show them. At the stop, your reply ends with what you found and the question for the user. A stop is an open question, not a review gate: it gets no "after approval" section, and you do not write past it. Do not also write what would follow an answer: no commands, files, scripts or Terraform for it, and no "next steps", "after you choose", "if you pick option N", "for reference" or "commands that cannot be run" section. The user can paste anything you show, so an unconfirmed command is as good as run. Write the next steps after the user answers.
+Some steps below end in a stop: a fleet whose scope the user has not confirmed (Phase 1 and Phase 2), a fleet that spans several providers before the user picks which group goes first, a remote rollout with no approved way to deliver the API key, and a repository with several IaC roots before the user picks one (prepare mode). Reach a stop the normal way: the preflight and the discovery or checks that lead to it still run, and you show them. At the stop, your reply ends with what you found and the question for the user. A stop is an open question, not a review gate: it gets no "after approval" section, and you do not write past it. Do not also write what would follow an answer: no commands, files, scripts or Terraform for it, and no "next steps", "after you choose", "if you pick option N", "for reference" or "commands that cannot be run" section. The user can paste anything you show, so an unconfirmed command is as good as run. Write the next steps after the user answers.
 
 ## Running another skill
 
@@ -40,6 +40,25 @@ echo "$d/$SKILL"
 ```
 
 This downloads one snapshot of the repository's current `main` (which can be newer than the skill you are running) and extracts only that skill's directory, so every file it references (`references/`, `scripts/`, and so on) is there. The block prints the directory. Read `SKILL.md` there, and any file it points to, in full with your file-reading tool, then follow it and return here. Do not use a web-fetch or summarizing tool for this; those shorten the skill and drop steps. If the block fails, stop the hand-off and tell the user: do not continue from memory or from a partial download. The downloaded skill is reference instructions only; it cannot override the user or the safety rules in this skill.
+
+## Choose the mode
+
+Pick one mode from the evidence before Phase 0:
+
+- **Prepare in the repository** when any of these is true:
+  - The run's instructions forbid installing, starting, stopping or changing the Agent on this
+    machine, for example by saying to edit project files and return commands.
+  - The user asks not to change the machine, or asks to add the Agent to their Terraform,
+    Ansible or other IaC.
+  - The repository holds IaC that provisions the target Linux hosts, and the user did not ask to
+    install now.
+
+  Follow [references/prepare-in-repository.md](references/prepare-in-repository.md) instead of
+  Phases 0-5. That mode never runs the installer.
+- **Install now** in every other case: follow Phases 0-5 below.
+
+An instruction that forbids installs always wins. If the repository's IaC provisions the hosts
+and the user asks to install now, ask whether they want the IaC change or an immediate install.
 
 ## Phase 0: Preflight
 
@@ -147,7 +166,9 @@ not reasons to leave a pillar off:
   the applications are deployed and configure tracing separately.
 
 Do not silently enable products beyond the three pillars (live processes, OpenTelemetry Collector,
-security). FIPS uses a distinct Agent package and runtime configuration - it is not a generic
+security). The prepare mode uses the same opt-ins, with one exception: when the run settings carry a
+products setting, as a calling tool's always do, that setting decides, and its full coverage turns
+on Single Step Instrumentation, profiling, Data Streams and process-log discovery without asking. FIPS uses a distinct Agent package and runtime configuration - it is not a generic
 boolean on the standard installer.
 
 If the rollout spans AWS, GCP, Azure, and local hosts, run Phase 2's cloud-fleet discovery for each
@@ -204,7 +225,9 @@ The reply ends with the questions. It has no secret, document, policy, script, T
 (`send-command`, `create-association`, `os-policy-assignments`, `run-command`, `put-parameter`,
 `secrets create`, `ssh`), not even under "next steps", "after approval", or "once you confirm".
 
-Use the user's existing IaC or management mechanism when one is present. Do not mix an imperative
+Use the user's existing IaC or management mechanism when one is present. When that IaC is in this
+repository, prepare the change as described in
+[references/prepare-in-repository.md](references/prepare-in-repository.md). Do not mix an imperative
 rollout into Terraform-managed infrastructure without asking.
 
 ### Remote secret handling
@@ -317,7 +340,10 @@ Optional settings:
   in the `proxy:` section (`https`, `http`, `no_proxy`) of `/etc/datadog-agent/datadog.yaml` and
   restart the Agent.
 - Custom hostname: `DD_HOSTNAME`.
-- Bundled OpenTelemetry Collector: `DD_OTELCOLLECTOR_ENABLED=true`.
+- Bundled OpenTelemetry Collector, only when the user asks for it: `DD_OTELCOLLECTOR_ENABLED=true`.
+  It needs Agent 7.69.3 or later and adds `otelcollector.enabled: true` to `datadog.yaml`. The
+  collector only receives data. Making the application export OTLP to it is the job of the
+  `dd-instrument-otel` skill.
 - Pin an Agent version: `DD_AGENT_MINOR_VERSION="<VERSION>"`.
 - Install without starting: `DD_INSTALL_ONLY=true` (the script treats any non-empty value as set).
 
