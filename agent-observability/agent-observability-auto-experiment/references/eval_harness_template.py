@@ -45,6 +45,7 @@ import json
 import os
 import re
 import statistics
+import time
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -69,6 +70,35 @@ RUNS = max(3, int(os.environ.get("AUTO_EXP_RUNS", "3")))
 # `goal` — `goal` is the optimization target; the judge must score against `evaluators`. Never
 # score against `goal`.
 EVALUATORS = os.environ.get("AUTO_EXP_EVALUATORS", "<paste the config `evaluators` rubric here>")
+
+# Which iteration this invocation is scoring, stamped onto every per-case row so
+# `eval_results.jsonl` and the per-case LLM-Obs events agree on which attempt produced a score
+# (SKILL.md "Report per-case scores to LLM-Obs"). Optional: manual invocations may leave it unset.
+ITERATION = os.environ.get("AUTO_EXP_ITERATION")
+
+
+def _export_span_link() -> "dict | None":
+    """Best-effort link from this case's score to the trace the code under test just produced.
+
+    When the code under test is instrumented with LLM-Obs, `LLMObs.export_span()` returns the
+    `{trace_id, span_id}` of the span that is active/last-finished in this process. Carrying that
+    pair into `eval_results.jsonl` is what makes "open the case, see why it scored that" true: the
+    per-case LLM-Obs event (submitted by the orchestrator) cites the same ids, so a reader can jump
+    from a score straight to the model and tool calls behind it.
+
+    Returns None when the app is not instrumented, ddtrace is absent, or no span is in scope — an
+    unlinked case is reported as unlinked, never with a fabricated id.
+    """
+    try:
+        from ddtrace.llmobs import LLMObs  # type: ignore
+
+        link = LLMObs.export_span()
+    except Exception:
+        return None
+    if not isinstance(link, dict):
+        return None
+    trace_id, span_id = link.get("trace_id"), link.get("span_id")
+    return {"trace_id": trace_id, "span_id": span_id} if trace_id and span_id else None
 
 def _load_domain_notes() -> str:
     """Read the config `domain_notes` (see SKILL.md "Domain notes") and render them for the prompt.
@@ -183,6 +213,13 @@ def generate_output(line: dict) -> "str | None":
 
     Return None to EXCLUDE this line from the eval set (non-target / infra line, or no scoreable
     target span). Excluded lines are out of both numerator and denominator — never scored 0.
+
+    RESOURCE USAGE (optional but preferred): return either the output string, or a dict
+    `{"output": str, "input_tokens": int, "output_tokens": int, "cost_usd": float}` with whatever
+    usage fields the code under test actually reports. Quality is not the only thing a change moves
+    — a prompt that doubles token spend for +0.01 is usually a bad trade, and the loop can only
+    surface that trade-off if the numbers are measured here. Omit the fields you cannot measure;
+    they are reported as unknown, never as zero.
     """
     raise NotImplementedError("wire generate_output to the real code under test")
 
@@ -218,11 +255,23 @@ def judge(input_text: str, output_text: str) -> "tuple[float, str]":
 
 def evaluate_line(line: dict) -> "dict | None":
     """Score ONE datapoint. None => excluded from the eval set (not scored 0)."""
-    output = generate_output(line)
-    if output is None:
+    started = time.monotonic()
+    produced = generate_output(line)
+    latency_ms = (time.monotonic() - started) * 1000.0
+    if produced is None:
         return None  # non-target / non-scoreable line — excluded from the mean
+    # `generate_output` may return a bare string or a dict carrying measured resource usage.
+    usage: dict = {}
+    if isinstance(produced, dict):
+        usage = produced
+        output = produced.get("output")
+        if output is None:
+            return None
+    else:
+        output = produced
     input_text = line.get("input") if isinstance(line.get("input"), str) else json.dumps(line.get("input"))
     score, justification = judge(input_text, output)
+    link = _export_span_link()
     return {
         # Stable eval-set id FIRST — required so eval_results.jsonl can be diffed and cited by id
         # in the census / result reasoning / mechanism audit / LLM-Obs reasoning (see rubrics.md
@@ -234,6 +283,21 @@ def evaluate_line(line: dict) -> "dict | None":
         "output": output[:500],
         "score": float(score),
         "justification": justification,
+        # Iteration stamp + trace linkage: the orchestrator replays these into one per-case LLM-Obs
+        # event per scored datapoint, so every case in every iteration is inspectable in the
+        # experiment instead of only the iteration mean. Both may be None (no iteration env var,
+        # uninstrumented code under test) — report them absent, never invented.
+        "iteration": int(ITERATION) if ITERATION and ITERATION.isdigit() else None,
+        "trace_id": (link or {}).get("trace_id"),
+        "span_id": (link or {}).get("span_id"),
+        # Cost/latency travel WITH the score so an iteration's quality gain can be read against
+        # what it spent (SKILL.md "Resource usage"). `latency_ms` is always measured here;
+        # token/cost fields are None unless `generate_output` reported them — unknown is reported
+        # as unknown, never as 0, which would read as "this change was free".
+        "latency_ms": round(latency_ms, 1),
+        "input_tokens": usage.get("input_tokens"),
+        "output_tokens": usage.get("output_tokens"),
+        "cost_usd": usage.get("cost_usd"),
     }
 
 
@@ -248,6 +312,32 @@ def _one_pass(lines: list) -> "tuple[list[dict], int]":
             continue
         results.append(result)
     return results, excluded
+
+
+def _usage_summary(results: list) -> dict:
+    """Aggregate the last pass's per-case cost/latency so quality can be read against spend.
+
+    Quality is not the only axis a change moves: a variant that buys +0.01 with double the tokens
+    is usually a bad trade, and the loop can only surface that if the numbers travel with the
+    score. Averages are over the cases that actually reported the field — a field no case reported
+    comes back `None` (unknown), never `0`, which would read as "this change was free".
+    """
+    def _mean_of(field: str) -> "float | None":
+        values = [r[field] for r in results if isinstance(r.get(field), (int, float))]
+        return statistics.mean(values) if values else None
+
+    latencies = sorted(r["latency_ms"] for r in results if isinstance(r.get("latency_ms"), (int, float)))
+    p95 = latencies[min(len(latencies) - 1, int(0.95 * len(latencies)))] if latencies else None
+    return {
+        "latency_ms_mean": _mean_of("latency_ms"),
+        "latency_ms_p95": p95,
+        "input_tokens_mean": _mean_of("input_tokens"),
+        "output_tokens_mean": _mean_of("output_tokens"),
+        "cost_usd_mean": _mean_of("cost_usd"),
+        "cases_reporting_tokens": sum(
+            1 for r in results if isinstance(r.get("input_tokens"), (int, float))
+        ),
+    }
 
 
 def main() -> None:
@@ -265,6 +355,11 @@ def main() -> None:
     lines = [json.loads(r) for r in DATA.read_text().splitlines() if r.strip()]
     run_means: list[float] = []
     last_results: list[dict] = []
+    # Per-case scores across ALL runs, keyed by eval-set id. The run-level stdev answers "does this
+    # gain reproduce across reruns of the same cases"; it says nothing about whether the gain would
+    # hold on other cases. Answering that needs a per-CASE score, paired across commits (see
+    # rubrics.md "Two kinds of uncertainty"), which is what these accumulate.
+    per_case_scores: dict = {}
     excluded = 0
     # Re-run the whole eval RUNS times; each pass re-invokes the (stochastic) code under
     # test + judge, so the spread across passes is the run-to-run noise floor.
@@ -273,12 +368,22 @@ def main() -> None:
         if not results:
             raise SystemExit("no scoreable lines — cannot compute a mean (do NOT fabricate one)")
         run_means.append(sum(r["score"] for r in results) / len(results))
+        for r in results:
+            per_case_scores.setdefault(r["id"], []).append(r["score"])
         last_results = results
-    with RESULTS.open("w") as out:  # keep the last pass's per-line detail for audit
+    with RESULTS.open("w") as out:  # last pass's per-line detail + each case's across-run score
         for r in last_results:
+            scores = per_case_scores.get(r["id"], [r["score"]])
+            # `score` stays the last pass's value (unchanged contract). `score_mean` is the case's
+            # mean across every run and is what the PAIRED case-level test compares between two
+            # commits; `score_runs` keeps the raw per-run values so the pairing is auditable.
+            r["score_mean"] = statistics.mean(scores)
+            r["score_runs"] = scores
             out.write(json.dumps(r) + "\n")
     mean = statistics.mean(run_means)
     stdev = statistics.pstdev(run_means) if len(run_means) > 1 else 0.0
+    usage = _usage_summary(last_results)
+
     # `mean` is the before_score/after_score the loop reads; `stdev` feeds SE_diff for the
     # two-sample t-test that LABELS a kept move's confidence (significant vs within_noise) — the
     # keep decision itself is "point estimate improved in the goal's direction", not the t-test, and
@@ -287,6 +392,7 @@ def main() -> None:
     print(json.dumps({
         "mean": mean, "stdev": stdev, "runs": RUNS,
         "scored": len(last_results), "excluded": excluded, "run_means": run_means,
+        "usage": usage,
     }))
 
 

@@ -1,6 +1,11 @@
 ---
 name: dd-logs
-description: Log management - search, archives, metrics, and cost control.
+description: >
+  Datadog Log Management. Search and analyze logs in Datadog, configure archives,
+  log-based metrics, and exclusion filters, and control indexing and ingestion cost.
+  Use for a Datadog logs request ("search datadog logs", "why did log costs spike",
+  "create a log-based metric", "set up archives"). Not for writing application logging
+  code or reading local or server log files.
 metadata:
   version: "1.0.2"
   author: datadog-labs

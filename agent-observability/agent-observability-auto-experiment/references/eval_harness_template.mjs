@@ -70,6 +70,41 @@ const RUNS = Math.max(3, parseInt(process.env.AUTO_EXP_RUNS || "3", 10));
 const EVALUATORS =
   process.env.AUTO_EXP_EVALUATORS || "<paste the config `evaluators` rubric here>";
 
+// Which iteration this invocation is scoring, stamped onto every per-case row so
+// `eval_results.jsonl` and the per-case LLM-Obs events agree on which attempt produced a score
+// (SKILL.md "Report per-case scores to LLM-Obs"). Optional: manual invocations may leave it unset.
+const ITERATION = /^\d+$/.test(process.env.AUTO_EXP_ITERATION || "")
+  ? parseInt(process.env.AUTO_EXP_ITERATION, 10)
+  : null;
+
+/**
+ * Best-effort link from this case's score to the trace the code under test just produced.
+ *
+ * When the code under test is instrumented with LLM-Obs, the tracer can hand back the
+ * `{traceId, spanId}` of the span that just finished. Carrying that pair into
+ * `eval_results.jsonl` is what makes "open the case, see why it scored that" true: the per-case
+ * LLM-Obs event (submitted by the orchestrator) cites the same ids, so a reader can jump from a
+ * score straight to the model and tool calls behind it.
+ *
+ * Returns null when the app is not instrumented or no span is in scope — an unlinked case is
+ * reported as unlinked, never with a fabricated id.
+ *
+ * @returns {Promise<{trace_id: string, span_id: string}|null>}
+ */
+async function exportSpanLink() {
+  try {
+    const { default: tracer } = await import("dd-trace");
+    const span = tracer.scope().active();
+    if (!span) return null;
+    const ctx = span.context();
+    const traceId = String(ctx.toTraceId());
+    const spanId = String(ctx.toSpanId());
+    return traceId && spanId ? { trace_id: traceId, span_id: spanId } : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Run the REAL code under test on ONE datapoint and return its output.
  *
@@ -82,8 +117,15 @@ const EVALUATORS =
  * Return null to EXCLUDE this line from the eval set (non-target / infra line, or no scoreable
  * target span). Excluded lines are out of both numerator and denominator — never scored 0.
  *
+ * RESOURCE USAGE (optional but preferred): return either the output string, or an object
+ * `{output, input_tokens, output_tokens, cost_usd}` with whatever usage the code under test
+ * actually reports. Quality is not the only thing a change moves — a prompt that doubles token
+ * spend for +0.01 is usually a bad trade, and the loop can only surface that trade-off if the
+ * numbers are measured here. Omit fields you cannot measure; they are reported as unknown, never
+ * as zero.
+ *
  * @param {object} line
- * @returns {Promise<string|null>}
+ * @returns {Promise<string|{output: string, input_tokens?: number, output_tokens?: number, cost_usd?: number}|null>}
  */
 async function generateOutput(line) {
   throw new Error("wire generateOutput to the real code under test");
@@ -128,13 +170,22 @@ async function judge(inputText, outputText) {
  * @returns {Promise<object|null>}
  */
 async function evaluateLine(line) {
-  const output = await generateOutput(line);
-  if (output === null || output === undefined) {
+  const started = Date.now();
+  const produced = await generateOutput(line);
+  const latencyMs = Date.now() - started;
+  if (produced === null || produced === undefined) {
     return null; // non-target / non-scoreable line — excluded from the mean
+  }
+  // `generateOutput` may return a bare string or an object carrying measured resource usage.
+  const usage = typeof produced === "object" ? produced : {};
+  const output = typeof produced === "object" ? produced.output : produced;
+  if (output === null || output === undefined) {
+    return null;
   }
   const inputText =
     typeof line.input === "string" ? line.input : JSON.stringify(line.input);
   const [score, justification] = await judge(inputText, output);
+  const link = await exportSpanLink();
   return {
     // Stable eval-set id FIRST — required so eval_results.jsonl can be diffed and cited by id
     // in the census / result reasoning / mechanism audit / LLM-Obs reasoning (see rubrics.md
@@ -146,6 +197,21 @@ async function evaluateLine(line) {
     output: String(output).slice(0, 500),
     score: Number(score),
     justification,
+    // Iteration stamp + trace linkage: the orchestrator replays these into one per-case LLM-Obs
+    // event per scored datapoint, so every case in every iteration is inspectable in the
+    // experiment instead of only the iteration mean. Both may be null (no iteration env var,
+    // uninstrumented code under test) — report them absent, never invented.
+    iteration: ITERATION,
+    trace_id: link ? link.trace_id : null,
+    span_id: link ? link.span_id : null,
+    // Cost/latency travel WITH the score so an iteration's quality gain can be read against what
+    // it spent (SKILL.md "Resource usage"). `latency_ms` is always measured; token/cost fields are
+    // null unless `generateOutput` reported them — unknown is reported as unknown, never as 0,
+    // which would read as "this change was free".
+    latency_ms: latencyMs,
+    input_tokens: usage.input_tokens ?? null,
+    output_tokens: usage.output_tokens ?? null,
+    cost_usd: usage.cost_usd ?? null,
   };
 }
 
@@ -170,6 +236,33 @@ async function onePass(lines) {
 
 function mean(xs) {
   return xs.reduce((a, b) => a + b, 0) / xs.length;
+}
+
+/**
+ * Aggregate the last pass's per-case cost/latency so quality can be read against spend.
+ * Averages cover only the cases that reported the field; a field nobody reported comes back null
+ * (unknown), never 0 — "free" is a claim, not a default.
+ * @param {object[]} results
+ */
+function usageSummary(results) {
+  const meanOf = (field) => {
+    const values = results.map((r) => r[field]).filter((v) => typeof v === "number");
+    return values.length ? mean(values) : null;
+  };
+  const latencies = results
+    .map((r) => r.latency_ms)
+    .filter((v) => typeof v === "number")
+    .sort((a, b) => a - b);
+  return {
+    latency_ms_mean: meanOf("latency_ms"),
+    latency_ms_p95: latencies.length
+      ? latencies[Math.min(latencies.length - 1, Math.floor(0.95 * latencies.length))]
+      : null,
+    input_tokens_mean: meanOf("input_tokens"),
+    output_tokens_mean: meanOf("output_tokens"),
+    cost_usd_mean: meanOf("cost_usd"),
+    cases_reporting_tokens: results.filter((r) => typeof r.input_tokens === "number").length,
+  };
 }
 
 // Population stdev (matches Python's statistics.pstdev used by the .py template).
@@ -201,6 +294,11 @@ async function main() {
 
   const runMeans = [];
   let lastResults = [];
+  // Per-case scores across ALL runs, keyed by eval-set id. The run-level stdev answers "does this
+  // gain reproduce across reruns of the same cases"; it says nothing about whether the gain would
+  // hold on other cases. Answering that needs a per-CASE score, paired across commits (see
+  // rubrics.md "Two kinds of uncertainty"), which is what these accumulate.
+  const perCaseScores = new Map();
   let excluded = 0;
   // Re-run the whole eval RUNS times; each pass re-invokes the (stochastic) code under test +
   // judge, so the spread across passes is the run-to-run noise floor.
@@ -213,10 +311,22 @@ async function main() {
       process.exit(1);
     }
     runMeans.push(mean(results.map((r) => r.score)));
+    for (const r of results) {
+      if (!perCaseScores.has(r.id)) perCaseScores.set(r.id, []);
+      perCaseScores.get(r.id).push(r.score);
+    }
     lastResults = results;
   }
 
-  // keep the last pass's per-line detail for audit
+  // last pass's per-line detail + each case's across-run score. `score` stays the last pass's
+  // value (unchanged contract). `score_mean` is the case's mean across every run and is what the
+  // PAIRED case-level test compares between two commits; `score_runs` keeps the raw per-run values
+  // so the pairing is auditable.
+  for (const r of lastResults) {
+    const scores = perCaseScores.get(r.id) || [r.score];
+    r.score_mean = mean(scores);
+    r.score_runs = scores;
+  }
   fs.writeFileSync(RESULTS, lastResults.map((r) => JSON.stringify(r)).join("\n") + "\n");
 
   const meanOfRuns = mean(runMeans);
@@ -233,6 +343,7 @@ async function main() {
       scored: lastResults.length,
       excluded,
       run_means: runMeans,
+      usage: usageSummary(lastResults),
     })
   );
 }

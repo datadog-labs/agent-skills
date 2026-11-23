@@ -9,6 +9,7 @@ description: >-
   change tested in an offline experiment onto live traffic. Triggers: online experiment, A/B test
   an LLM app, test a prompt change on live traffic, experiment with feature flag and evaluation
   score, start an online experiment from a managed prompt or offline experiment.
+arguments: ["ML_APP?"]
 ---
 
 # Set up an online experiment on an LLM application
@@ -16,6 +17,12 @@ description: >-
 An online experiment splits live traffic between a control and a treatment version of an LLM application. A Datadog feature flag assigns each **subject** to a variant, and an Agent Observability evaluation score (plus cost and token usage) measures the outcome. This skill walks through the whole setup, from the flag to starting the experiment.
 
 Online experiments for Agent Observability may require the feature to be enabled for the user's organization. If any step reports the feature is unavailable, tell the user to contact their Datadog representative rather than retrying.
+
+## Skill argument
+
+`$ML_APP` is optional and supplies the value for the experiment's `ml_app` tag. For example, invoking this skill with `checkout-assistant` as the argument creates an experiment tagged with `agent-observability` and `ml_app:checkout-assistant`.
+
+If the argument is omitted, empty, or whitespace-only, omit the `ml_app` tag entirely; do not send an empty `ml_app:` tag or infer its value from the application. Application and metric discovery still determines the `ml_app` used for instrumentation and metric filters. The `agent-observability` tag is required regardless of the argument.
 
 ## When to use this skill
 
@@ -193,6 +200,7 @@ Present one compact confirmation request containing:
 - primary evaluation metric, stored definition or proposed definition, and desired-change direction;
 - token and cost secondary metrics;
 - whether existing objects will be reused or new ones created;
+- experiment creation tags, as specified in Phase 3, using the optional `$ML_APP` argument;
 - the complete list of writes, including production enablement/allocation when applicable;
 - whether starting is included (only when the user already requested it).
 
@@ -242,9 +250,9 @@ The code must be **deployed** for the experiment to collect anything. Tell the u
 
 ## Phase 3 — Create the experiment and link the flag
 
-1. Create a draft experiment with a clear name and the hypothesis. The primary metric can be attached afterwards, so it is fine to create the draft before the metrics exist.
+1. Create a draft experiment with a clear name and the hypothesis. In that same MCP `create-experiment` request, set `tags` to `["agent-observability", "ml_app:<ML_APP>"]` when `$ML_APP` is non-empty, replacing `<ML_APP>` with the argument's value. When the argument is omitted, empty, or whitespace-only, use `["agent-observability"]`. Include these tags at creation time rather than adding them in a later update. The primary metric can be attached afterwards, so it is fine to create the draft before the metrics exist.
 2. Link the flag from Phase 1 to the experiment. For a managed prompt, link the existing managed-prompt flag; never create or link a second flag for the prompt.
-3. Read the experiment back. A draft may report an incomplete set-up state until it is started; that alone is not an error. The start step reports concrete blockers if there are any.
+3. Read the experiment back and confirm that its tags match the creation request. A draft may report an incomplete set-up state until it is started; that alone is not an error. The start step reports concrete blockers if there are any.
 4. Resolve the draft's subject type and verify that its Product Analytics attribute is `@usr.id`, matching the field produced from Phase 2's `subject_identifier` tag. Starting requires a subject type, but do not accept an arbitrary server-selected default: subject types mapped to another field cannot join these Agent Observability outcomes. Explicitly select an `@usr.id`-compatible subject type before proceeding. If the available capabilities cannot inspect or configure the mapping, direct the user to the Datadog UI and stop until it is confirmed.
 
 An alternative to creating the flag first is a single operation that creates the flag together with an experiment-linked allocation (the `create-experiment-feature-flag` tool). It needs the experiment and the environment to exist up front. The step-by-step path above keeps each write small and easy to read back, which is why this skill uses it.

@@ -13,6 +13,8 @@ metadata:
 
 Reconstruct what a Datadog API key did, where requests originated, and which resources were affected.
 
+This timeline is Audit Trail events matched by `@metadata.api_key.id`. It does not cover application keys, personal access tokens, service account tokens, or workload identity mappings. Log intake records the API key UUID in the `datadog.api_key_uuid` log tag. That tag is not an audit event.
+
 ## Prerequisites
 
 ```bash
@@ -75,7 +77,13 @@ pup audit-logs search --query "@metadata.api_key.id:KEY_ID" --from 90d --limit 5
     | sort_by(-.count)'
 ```
 
-### Step 4 — Destructive action check
+### Step 4 — Log intake for this key
+
+```bash
+pup logs search --query "datadog.api_key_uuid:KEY_ID" --from 7d --limit 100
+```
+
+### Step 5 — Destructive action check
 
 ```bash
 pup audit-logs search --query "@metadata.api_key.id:KEY_ID @action:deleted" --from 90d -o json \
@@ -88,7 +96,7 @@ pup audit-logs search --query "@metadata.api_key.id:KEY_ID @action:deleted" --fr
     }]'
 ```
 
-### Step 5 — When was the key created and by whom?
+### Step 6 — When was the key created and by whom?
 
 ```bash
 pup audit-logs search --query "@asset.type:api_key @asset.id:KEY_ID @action:created" --from 90d -o json \
@@ -128,7 +136,7 @@ Endpoints called (top 5):
 Destructive actions: <N> deletions — [resource types affected]
 
 Recommended actions:
-  1. Revoke the key immediately if not already done
+  1. Ask the user before revoking the key. Do not delete it yourself until they confirm
   2. Review affected resources: [list]
   3. Check if any deleted resources need restoration
   4. Audit who else had access to this key
@@ -138,10 +146,13 @@ Recommended actions:
 
 Revoke in Datadog UI: Organization Settings > API Keys > Revoke.
 
-Or via API (requires `manage_api_keys` scope):
+Or via the API, which requires the `api_keys_delete` permission:
+
 ```bash
 pup api-keys delete KEY_ID
 ```
+
+Do not pass `-y`. That skips Pup's confirmation prompt. The delete removes the key.
 
 ## References
 

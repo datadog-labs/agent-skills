@@ -59,6 +59,10 @@ pup audit-logs search --query "@usr.email:alice@example.com" --from 7d -o json |
 | `@network.client.geoip.country.name` | Country | `United States` |
 | `@network.client.geoip.as.name` | ASN name | `Amazon.com` |
 | `@http.url_details.path` | API endpoint path | `/api/v1/dashboard/xyz` |
+| `@evt.actor.mode` | Datadog AI agent mode | `interactive`, `autonomous` |
+| `@delegator.id` | User a Datadog AI agent acted for | user id |
+| `is_mcp_call` | Action went through the Datadog MCP server | `true` |
+| `is_notable_event` | Billing or security change Datadog marks notable | `true` |
 
 ## Search Syntax
 
@@ -76,14 +80,14 @@ Same Lucene-style syntax as Log Explorer:
 
 ## Retention
 
-Default retention is **90 days**. If querying beyond 90 days, archive to S3/GCS/Azure Blob must be configured. Always check whether the requested time window falls within retention before running a query.
+When Audit Trail is enabled, the default retention is **90 days**. An admin can set it to 3, 7, 15, 30, or 90 days. When Audit Trail is disabled, retention resets to 7 days. Archiving copies events to Amazon S3, Google Cloud Storage, or Azure Storage for an external SIEM. It does not extend the window you can query in Audit Trail. Check the configured retention before running a query.
 
 ## Troubleshooting
 
 | Problem | Cause | Fix |
 |---------|-------|-----|
-| 403 Forbidden | Missing `audit_logs_read` scope | Add scope to app key in Datadog UI |
-| Empty results | Time window outside retention | Check archive config; default max is 90 days |
+| 403 Forbidden | The role lacks Audit Trail Read (`audit_logs_read`), or the app key or OAuth token lacks the `audit_logs_read` scope | Grant Audit Trail Read and add the scope. Enabling Audit Trail itself requires Audit Trail Write (`audit_logs_write`) |
+| Empty results | Time window is longer than the configured retention, or Audit Trail is disabled | Check Audit Trail Settings. Disabled retention is 7 days |
 | Timeout | Query too broad | Narrow time window or add more filters |
 | No IP data | Internal action or pre-enrichment event | Not all events have geo data |
 
@@ -91,4 +95,6 @@ Default retention is **90 days**. If querying beyond 90 days, archive to S3/GCS/
 
 - [Audit Trail API](https://docs.datadoghq.com/api/latest/audit/)
 - [Audit Trail documentation](https://docs.datadoghq.com/account_management/audit_trail/)
+- [Audit Trail events](https://docs.datadoghq.com/account_management/audit_trail/events/)
+- [Track agentic usage](https://docs.datadoghq.com/account_management/audit_trail/guides/track_agentic_usage_in_your_organization/)
 - [Search syntax](https://docs.datadoghq.com/logs/explorer/search_syntax/)
