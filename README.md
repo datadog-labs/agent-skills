@@ -23,6 +23,7 @@ The main skills are listed here. The [Install](#install) section lists every ski
 | **dd-profiler-setup** | Set up Datadog Continuous Profiler for a service — Java, Python, Go, Ruby, Node.js, .NET, PHP |
 | **dd-instrument-error-tracking** | Turn on Datadog Error Tracking for browser apps running the RUM Browser SDK — event processing switch, framework error hooks (React, Next.js, Vue, Angular, SvelteKit) |
 | **dd-instrument-llmo** | Instrument Python & Node.js/Next.js AI backends with Datadog LLM Observability — SDK init, agent/workflow spans, RUM↔LLMO session linking |
+| **dd-instrument-otel** | Instrument Node.js, Python, Java and Go services with OpenTelemetry SDKs that send traces, metrics and logs straight to Datadog's OTLP intake, with no Collector |
 | **dd-instrument-product-analytics** | Turn on Datadog Product Analytics for browser apps running the RUM Browser SDK — application switch, `setUser` identity, click collection |
 | **dd-instrument-rum** | Instrument browser apps with Datadog Browser RUM — React, Next.js, Angular, Vue, Nuxt, Svelte, vanilla |
 | **dd-git-tagging** | Tag a service's traces with its Git commit and repository URL, the telemetry half of source code integration — any tracer language, agentless or through an Agent |
@@ -143,6 +144,7 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-github-costs-onboarding \
   --skill dd-github-onboarding \
   --skill dd-instrument-llmo \
+  --skill dd-instrument-otel \
   --skill dd-instrument-product-analytics \
   --skill dd-instrument-rum \
   --skill dd-instrument-test-optimization \
