@@ -4,6 +4,37 @@ Merge the blocks for the distribution and mode confirmed in SKILL.md Phase 1. Or
 (TKG), and self-managed clusters need no changes; Rancher (RKE2/K3s) only needs `criSocketPath` when the
 agent can't reach the embedded containerd (see SKILL.md Phase 1).
 
+## Contents
+
+- *Local clusters (minikube, kind)*
+- *Operator path*: GKE Autopilot, OpenShift, EKS Fargate profiles, AKS
+- *OpenShift-specific install*
+- *Helm chart path*: GKE Autopilot, OpenShift, EKS Fargate profiles, AKS Windows nodes, AKS
+
+## Local clusters (minikube, kind)
+
+The kubelet on minikube and kind serves a self-signed certificate, so the Agent cannot verify it.
+Turn verification off on these clusters only; never on a managed cluster (GKE, EKS, AKS, and the
+others above). Operator path, in `spec.global`:
+
+```yaml
+kubelet:
+  tlsVerify: false
+```
+
+Helm chart path:
+
+```yaml
+datadog:
+  kubelet:
+    tlsVerify: false
+```
+
+Local clusters often run with little memory. Before installing, check the headroom with the
+read-only memory check in `references/prepare-in-repo.md` (section 7), and warn the user when it is
+low. On minikube, when `minikube status` shows the cluster stopped, ask the user to run
+`minikube start` first; in prepare mode, put it first in the deploy commands.
+
 ## Operator path (SKILL.md Phase 3)
 
 **GKE Autopilot** (Operator 1.27+) - override the image registry, add the Autopilot annotation to
@@ -202,8 +233,8 @@ subjects:
 
 **Fargate logs.** The baseline `logCollection` settings configure the node Agent, not the injected
 sidecars. When logs are enabled, require Agent 7.71.0 or later and turn on kubelet log collection for
-newly injected sidecars on the Cluster Agent. For logs from every container, add a sidecar profile;
-otherwise rely on per-container Autodiscovery annotations:
+newly injected sidecars on the Cluster Agent. Add the sidecar profile for logs from every container,
+the default; drop it only when the user limits logs to pods with Autodiscovery annotations:
 ```yaml
 spec:
   features:
@@ -392,7 +423,7 @@ clusterAgent:
 On a Fargate-only cluster, confirm a Fargate profile selects the `datadog` namespace first (check
 under *Operator path* above). Apply the *Fargate RBAC* manifest from *Operator path* before labeling
 workloads. When logs are enabled, require Agent 7.71.0 or later and add the Helm form of *Fargate
-logs* (drop the `profiles` entry unless the user wants logs from every container):
+logs* (drop the `profiles` entry only when the user limits logs to annotated pods):
 
 ```yaml
 clusterAgent:
