@@ -31,26 +31,38 @@ KIND_RANK = {"foundation": 0, "cloud-connect": 1, "platform-install": 2,
 PRODUCT_TOKENS = {
     "apm": "apm", "application performance monitoring": "apm",
     "llm observability": "llm-obs", "llmo": "llm-obs", "llm obs": "llm-obs",
-    "rum": "rum", "real user monitoring": "rum", "session replay": "rum",
     "shipdog": "shipdog", "ship dog": "shipdog",
+    "rum": "rum", "real user monitoring": "rum", "session replay": "rum",
     "error tracking": "error-tracking", "product analytics": "product-analytics",
     "infrastructure monitoring": "infra", "infra": "infra", "container monitoring": "infra",
+    "infrastructure metrics": "infra",
     "log management": "logs", "logs": "logs",
+    # Delivered only by the Lambda, Cloud Run and Azure serverless installers.
+    "serverless monitoring": "serverless",
     "database monitoring": "dbm", "dbm": "dbm",
     "cloud cost management": "cost", "ccm": "cost", "cloud cost": "cost",
     "cloud security": "cloud-security", "csm": "cloud-security", "cspm": "cloud-security", "cws": "cloud-security",
     "cloud siem": "cloud-siem",
-    "app and api protection": "aap", "aap": "aap", "asm": "aap",
+    "app and api protection": "aap", "app & api protection": "aap", "aap": "aap", "asm": "aap",
+    "appsec": "aap", "application security management": "aap",
+    # Code Security (IAST and SCA) is a separate product with no setup skill yet, so it
+    # dead-ends honestly instead of falling into AAP through the generic "appsec" alias.
+    "code security": "code-security", "iast": "code-security", "sca": "code-security",
+    "interactive application security testing": "code-security",
+    "software composition analysis": "code-security",
     "test optimization": "test-optimization", "ci visibility": "test-optimization",
     "code coverage": "code-coverage",
     "synthetic monitoring": "synthetics", "synthetics": "synthetics",
     "continuous profiler": "profiler", "profiler": "profiler",
     "network device monitoring": "ndm", "sensitive data scanner": "sds",
     "slo": "slo", "monitors": "monitors", "opentelemetry": "otel", "otel": "otel",
+    # The Collector is a different product from OTel SDK export (dd-instrument-otel), so its
+    # names win over the shorter "opentelemetry"/"otel" match and have no enabler of their own.
+    "opentelemetry collector": "otel-collector", "otel collector": "otel-collector",
+    "datadog distribution of opentelemetry": "otel-collector", "ddot": "otel-collector",
     "studio": "studio", "storage": "storage", "agent observability": "agent-observability",
     "storage management": "storage", "advanced s3 monitoring": "storage",
     "confluent cloud": "confluent-cloud",
-    "coreweave": "coreweave", "coreweave cloud": "coreweave",
     "source map uploads": "source-maps", "source maps": "source-maps", "sourcemaps": "source-maps",
     "source map": "source-maps",
     "mobile rum": "rum-mobile", "rum mobile": "rum-mobile", "mobile monitoring": "rum-mobile",
@@ -64,17 +76,55 @@ PLATFORM_ALIASES = {
     "k8s": "kubernetes", "eks": "kubernetes", "gke": "kubernetes", "aks": "kubernetes",
     "openshift": "kubernetes", "oke": "kubernetes", "tkg": "kubernetes", "rancher": "kubernetes",
     "autopilot": "kubernetes",
+    # Amazon ECS on either launch type is one platform (dd-agent-install-ecs). Bare
+    # 'fargate' stays unaliased (see above). The 'ecs-ec2' spelling also keeps the AWS
+    # log forwarder in a Logs plan (own_pipeline_except in the catalog).
+    "amazon-ecs": "ecs", "aws-ecs": "ecs", "ecs-fargate": "ecs", "ecs-ec2": "ecs",
     # Generic hosts/VMs do not imply Linux, and EC2/GCE do not reveal the guest
     # operating system. GCR is a registry, not the Cloud Run compute platform.
     "cloudrun": "cloud-run",
+    # Azure's serverless compute products share one installer (dd-instrument-azure-serverless).
+    # AKS is Kubernetes (above), not one of these.
+    "azure-functions": "azure-serverless", "azure functions": "azure-serverless",
+    "function-app": "azure-serverless", "function app": "azure-serverless",
+    "app-service": "azure-serverless", "app service": "azure-serverless",
+    "azure-app-service": "azure-serverless", "azure app service": "azure-serverless",
+    "function apps": "azure-serverless", "azure function apps": "azure-serverless",
+    "container-apps": "azure-serverless", "container apps": "azure-serverless",
+    "azure-container-apps": "azure-serverless", "azure container apps": "azure-serverless",
+    # ai-setup-cli --serverless-compute-type names. Cloud Run functions (2nd gen) share
+    # the Cloud Run installer.
+    "aws-lambda": "lambda", "aws lambda": "lambda",
+    "gcp-cloud-run": "cloud-run", "gcp cloud run": "cloud-run", "cloud run": "cloud-run",
+    "gcp-cloud-run-functions": "cloud-run", "cloud-run-functions": "cloud-run",
+    "cloud run functions": "cloud-run",
     # Serverless/PaaS deploy targets have no Agent installer; collapse the common ones to a
     # single 'serverless' class so Agent-based products dead-end honestly (with a pointer)
     # instead of offering an install choice that cannot match the context. (spec req #12)
     "vercel": "serverless", "netlify": "serverless",
 }
+# The client app's platform, separate from where the rest of the repository runs, so a
+# repository with a React Native app and a Kubernetes backend can plan both. React
+# Native and Expo apps share one mobile RUM path (dd-instrument-rum).
+APP_PLATFORM_ALIASES = {
+    "react native": "react-native", "reactnative": "react-native", "expo": "react-native",
+}
 CLOUD_ALIASES = {
     "amazon": "aws", "amazon web services": "aws", "google": "gcp", "google cloud": "gcp",
     "microsoft azure": "azure", "az": "azure",
+}
+# A serverless platform, or Amazon ECS, runs on one cloud, so it implies the cloud when
+# none is given.
+PLATFORM_CLOUD = {"lambda": "aws", "cloud-run": "gcp", "azure-serverless": "azure", "ecs": "aws"}
+
+# Bundle names, as in ai-setup-cli's `--product=neocloud`: a bundle stands for its fixed
+# product set when no product is named with it.
+PRODUCT_BUNDLES = {"neocloud": ("infra", "logs", "apm")}
+# Provider names. A named provider always plans its own cloud integration, alone or next
+# to other products, and sets the cloud when it is the only provider and no cloud is given.
+PROVIDER_ALIASES = {
+    "nebius": "nebius",
+    "coreweave": "coreweave", "core weave": "coreweave", "coreweave cloud": "coreweave",
 }
 
 
@@ -85,9 +135,42 @@ def normalize_platform(p):
     return PLATFORM_ALIASES.get(p2, p2)
 
 
+def normalize_app_platform(p):
+    p2 = (p or "").strip().lower()
+    return APP_PLATFORM_ALIASES.get(p2, p2)
+
+
 def normalize_cloud(c):
     c2 = (c or "").strip().lower()
     return CLOUD_ALIASES.get(c2, c2)
+
+
+def bundle_token(name):
+    """The bundle or provider token a product name stands for, or None."""
+    key = str(name).strip().lower()
+    return key if key in PRODUCT_BUNDLES else PROVIDER_ALIASES.get(key)
+
+
+def normalize_request(products, platform, cloud):
+    """Split bundle and provider names out of a product list.
+
+    Returns (products, platform, cloud, providers). "neocloud" stands for its product
+    set when no product is named with it. Each named provider is returned for its cloud
+    integration, and a single provider sets the cloud. A serverless platform implies its
+    cloud. An explicit cloud always wins.
+    """
+    platform, cloud = normalize_platform(platform), normalize_cloud(cloud)
+    keys = [str(p).strip().lower() for p in products]
+    named = [p for p, k in zip(products, keys) if k not in PRODUCT_BUNDLES and k not in PROVIDER_ALIASES]
+    providers = list(dict.fromkeys(PROVIDER_ALIASES[k] for k in keys if k in PROVIDER_ALIASES))
+    if not named:
+        named = list(dict.fromkeys(t for k in keys if k in PRODUCT_BUNDLES for t in PRODUCT_BUNDLES[k]))
+    if not cloud or cloud == "none":
+        if len(providers) == 1:
+            cloud = providers[0]
+        elif not providers and platform in PLATFORM_CLOUD:
+            cloud = PLATFORM_CLOUD[platform]
+    return named, platform, cloud, providers
 
 
 # Serverless/PaaS platforms Datadog cannot instrument with an Agent installer. A product
@@ -169,6 +252,29 @@ def normalize_product(name, catalog_tokens=None):
 # Orchestrator machinery, not user-facing products. Excluded from intent detection so
 # "recommend what I need" (the canonical vague case) is never read as a named product.
 _NON_PRODUCT_TOKENS = frozenset({"account", "orchestrate", "recommend"})
+# Catalog tokens that are everyday words ("Function Apps", "Logic Apps"). Detection
+# matches these products only by their names, such as "Datadog Apps".
+_WORD_TOKENS = frozenset({"apps"})
+
+
+# A product named right after a negation ("no OpenTelemetry Collector", "without APM") is
+# not requested. The cue must sit in the same clause and within a few words of the name.
+_NEGATION_RE = re.compile(r"\b(?:no|not|without|never|avoid)\b|n['’]t\b")
+_CLAUSE_BREAK_RE = re.compile(r"[.;:!?,\n]")
+_NEGATION_WINDOW_WORDS = 8
+
+
+def _negated(text, start):
+    """True when a negation cue precedes position `start` in the same clause."""
+    prefix = text[:start]
+    breaks = list(_CLAUSE_BREAK_RE.finditer(prefix))
+    clause = prefix[breaks[-1].end():] if breaks else prefix
+    window = " ".join(clause.split()[-_NEGATION_WINDOW_WORDS:])
+    return bool(_NEGATION_RE.search(window))
+
+# Generic aliases that yield to a more specific product named in the same intent:
+# "enable appsec iast" asks for Code Security, not for App and API Protection.
+_YIELDING_ALIASES = {"appsec": "code-security"}
 
 
 def detect_products(intent, catalog_tokens=None):
@@ -180,26 +286,40 @@ def detect_products(intent, catalog_tokens=None):
     "Agent Observability" (a name) matches; "track LLM model calls" (a description) does not.
     The vocabulary is exactly what --products accepts (PRODUCT_TOKENS aliases + the catalog's
     own tokens), minus orchestrator machinery — so it never drifts from the resolver.
+    Bundle and provider names ("neocloud", "Nebius") come back as their token. Platform
+    names are consumed without a match, and the Apps product needs its name ("Datadog
+    Apps"), so "Container Apps" or "Function Apps" is not read as the Apps product.
+    A product counts only when at least one mention is not negated (see _negated).
     """
     if not intent:
         return []
-    vocab = (set(PRODUCT_TOKENS) | set(catalog_tokens or [])) - _NON_PRODUCT_TOKENS
+    vocab = ((set(PRODUCT_TOKENS) | set(catalog_tokens or []) | set(PRODUCT_BUNDLES)
+              | set(PROVIDER_ALIASES) | set(PLATFORM_ALIASES)) - _NON_PRODUCT_TOKENS - _WORD_TOKENS)
     # Longest phrase first so "mobile rum" wins over "rum"; the matched span is then consumed
     # so a contained shorter alias cannot double-match. Fully ordered key => deterministic.
     terms = sorted(vocab, key=lambda t: (-t.count(" "), -len(t), t))
     original = intent.lower()
     haystack = original
     first_pos = {}
+    via = {}
     for term in terms:
         pattern = r"\b" + r"\s+".join(re.escape(w) for w in term.split()) + r"\b"
-        if not re.search(pattern, haystack):
+        matches = list(re.finditer(pattern, haystack))
+        if not matches:
             continue
-        token = normalize_product(term, catalog_tokens)
-        if token:
-            here = re.search(pattern, original)
-            pos = here.start() if here else 0
-            first_pos[token] = min(pos, first_pos.get(token, pos))
-        haystack = re.sub(pattern, " ", haystack)   # consume so a shorter alias can't re-match
+        token = (None if term in PLATFORM_ALIASES
+                 else normalize_product(term, catalog_tokens) or bundle_token(term))
+        kept = [m.start() for m in matches if not _negated(original, m.start())]
+        if token and kept:
+            first_pos[token] = min(kept[0], first_pos.get(token, kept[0]))
+            via.setdefault(token, set()).add(term)
+        # Consume every mention, negated or not, so a shorter alias can't re-match; blanking
+        # with spaces of the same length keeps positions aligned with `original`.
+        haystack = re.sub(pattern, lambda m: " " * len(m.group(0)), haystack)
+    for alias, rival in _YIELDING_ALIASES.items():
+        token = PRODUCT_TOKENS[alias]
+        if rival in first_pos and via.get(token) == {alias}:
+            first_pos.pop(token, None)
     return [t for t, _ in sorted(first_pos.items(), key=lambda kv: (kv[1], kv[0]))]
 
 
@@ -263,6 +383,15 @@ class Router:
                     self.verify.setdefault(n["product"], []).append(n)
             for product in n.get("trigger_products") or []:
                 self.triggered.setdefault(product, []).append(n)
+        # An enabler may also answer another product for specific app platforms, e.g.
+        # dd-instrument-rum covers Mobile RUM for react-native apps only.
+        self.enable_aliases = {}
+        for n in self.live:
+            if n["kind"] != "product-enable":
+                continue
+            for alias in n.get("also_enables") or []:
+                self.enable_aliases.setdefault(alias["product"], []).append(
+                    (n, tuple(alias.get("app_platform") or ())))
 
         for index in (self.install, self.cloud, self.enable, self.verify, self.triggered):
             for values in index.values():
@@ -307,7 +436,8 @@ class Router:
     @staticmethod
     def _fits(node, ctx):
         return ((not node["platform"] or ctx.get("platform") in node["platform"]) and
-                (not node["cloud"] or ctx.get("cloud") in node["cloud"]))
+                (not node["cloud"] or ctx.get("cloud") in node["cloud"]) and
+                ctx.get("platform") not in node.get("unsupported_platforms", ()))
 
     def _nearest_product(self, name):
         """Nearest known product for an unrecognized input: (display, token), or None.
@@ -339,19 +469,28 @@ class Router:
             normalized = normalize_product(str(name), self.product_tokens) or str(name).strip().lower()
             selected[normalized] = str(skill_id).strip()
             selected[str(name).strip().lower()] = str(skill_id).strip()
-        ctx = {**ctx,
-               "platform": normalize_platform(ctx.get("platform")),   # ROB-2: "Kubernetes"/"EKS" -> kubernetes
-               "cloud": normalize_cloud(ctx.get("cloud"))}
+        # The spelling before aliasing, for installers whose own pipeline depends on it
+        # (own_pipeline_except: ecs-ec2 is ecs, but its awslogs logs need the forwarder).
+        requested_platform = str(ctx.get("platform") or "").strip().lower()
+        # ROB-2: "Kubernetes"/"EKS" -> kubernetes; bundles expand; providers set the cloud.
+        products, platform, cloud, providers = normalize_request(
+            list(products), ctx.get("platform"), ctx.get("cloud"))
+        ctx = {**ctx, "platform": platform, "cloud": cloud,
+               "app_platform": normalize_app_platform(ctx.get("app_platform"))}
         include, dead_ends, choice_options, caveats = {}, [], {}, []
         dependencies = set()  # (dependent key, prerequisite key)
+        choice_count = 0
 
         def add_choice(need, options):
+            nonlocal choice_count
             options = set(options)
             if need in choice_options:
                 # One detected context must satisfy every dependent capability.
                 choice_options[need].intersection_update(options)
             else:
                 choice_options[need] = options
+            if choice_options[need]:
+                choice_count += 1
 
         def requested_selection(*names):
             for name in names:
@@ -361,6 +500,29 @@ class Router:
 
         def accepts_id(node, skill_id):
             return skill_id == node["id"] or skill_id in self.alias_ids_by_key.get(node["key"], set())
+
+        requested = {t for t in (normalize_product(p, self.product_tokens) for p in products) if t}
+        p_ctx = ctx.get("platform")
+        installer_selection = requested_selection(
+            f"platform-install:{p_ctx}", f"platform-install:{p_ctx} capability")
+        selected_installer = next(
+            (n for n in self.install.get(p_ctx, [])
+             if installer_selection and accepts_id(n, installer_selection) and self._fits(n, ctx)),
+            None)
+
+        def installers_needed_anyway(tok, installers):
+            """One installer per platform: the installers among `installers` that the plan
+            needs anyway, for another requested product that tok's own enable chain (its
+            enabler's installer) cannot deliver. Kubernetes APM plus Logs is one install."""
+            chain = set()
+            for enabler in self.enable.get(tok, []):
+                if self._fits(enabler, ctx):
+                    for edge in enabler["requires"]:
+                        target = self.by_id.get(edge.get("skill"))
+                        if target and target["kind"] == "platform-install":
+                            chain.update(target.get("delivers", []))
+            others = requested - {tok} - chain
+            return [n for n in installers if others & set(n.get("delivers", []))]
 
         def choose_implementation(candidates, need, *selection_names):
             """Choose among equally applicable, non-duplicate capabilities."""
@@ -379,14 +541,29 @@ class Router:
             return None
 
         def product_candidate(tok, label):
-            cands = self.enable.get(tok, [])
+            # Installers that deliver the product are candidates too (e.g. the Cloud Run
+            # installer delivers APM), so platform choices and product prerequisites
+            # (AAP requires APM) see them, not just product-enable skills.
+            delivering = {n["key"]: n for nodes in self.install.values() for n in nodes
+                          if tok in n.get("delivers", [])}
+            aliased = [n for n, app_platforms in self.enable_aliases.get(tok, [])
+                       if ctx.get("app_platform") in app_platforms]
+            cands = list(self.enable.get(tok, [])) + aliased + [
+                delivering[k] for k in sorted(delivering)
+                if not ctx.get("cloud") or ctx["cloud"] == "none"
+                or not delivering[k]["cloud"] or ctx["cloud"] in delivering[k]["cloud"]
+            ]
             if not cands:
                 dead_ends.append(f"{_san(label)} — no setup skill yet (not automated)")
                 return None
             matches = [n for n in cands if fits(n)]
             if not matches:
                 plats = sorted({p for n in cands for p in n["platform"]})
-                clouds = sorted({c for n in cands for c in n["cloud"]})
+                # Only candidates that could run on the detected platform make a cloud
+                # choice meaningful (a Vercel app can't use the Cloud Run installer).
+                p_ctx = ctx.get("platform")
+                clouds = sorted({c for n in cands for c in n["cloud"]
+                                 if not p_ctx or p_ctx == "none" or not n["platform"] or p_ctx in n["platform"]})
                 if plats and (not ctx.get("platform") or ctx.get("platform") == "none"):
                     add_choice("platform", plats)
                 elif clouds and (not ctx.get("cloud") or ctx.get("cloud") == "none"):
@@ -397,6 +574,16 @@ class Router:
                     pointer = _serverless_pointer(ctx.get("platform")) if plats else ""
                     dead_ends.append(f"{_san(label)} — not automated for {where}{covered}{pointer}")
                 return None
+
+            enablers = [n for n in matches if n["kind"] == "product-enable"]
+            installers = [n for n in matches if n["kind"] == "platform-install"]
+            if enablers and installers:
+                # The product's enable chain wins over an installer that delivers it too,
+                # unless that installer is selected or the plan needs it anyway.
+                if selected_installer:
+                    matches = [selected_installer] if selected_installer in installers else enablers
+                else:
+                    matches = installers_needed_anyway(tok, installers) or enablers
 
             selection = requested_selection(tok, f"{tok} capability")
             if selection:
@@ -508,7 +695,9 @@ class Router:
 
         def stage(node, label):
             dead_end_count = len(dead_ends)
-            choices_before = {need: set(options) for need, options in choice_options.items()}
+            # Count every raised choice, not just changed option sets: a second product that
+            # needs the same pending choice must not add a generic dead-end on top of it.
+            choices_before = choice_count
             ok, staged, edges = plan_node(node, [], set())
             if ok:
                 for v in staged.values():
@@ -517,7 +706,7 @@ class Router:
                 return True
             # Preserve a precise bind error or an actionable choice without adding
             # a second, generic dead-end that tells the user nothing new.
-            choices_changed = choices_before != choice_options
+            choices_changed = choice_count != choices_before
             if len(dead_ends) == dead_end_count and not choices_changed:
                 dead_ends.append(
                     f"{_san(label)} — not set up: a required prerequisite is unavailable for this context")
@@ -527,9 +716,39 @@ class Router:
         # installer-delivered products (infra/logs) go LAST, so they reuse an already-staged
         # specific installer (e.g. apm-agent-install-*) instead of adding a redundant generic
         # agent install. Non-installer products keep a stable token order. (combinatorial invariant)
+        def installer_delivered(tok):
+            # Decided in this platform's context, not globally: a product counts as
+            # installer-delivered if an installer for this platform delivers it, or if no
+            # enable skill exists for it at all (infra, logs). Otherwise one platform's
+            # installer delivering e.g. APM (Cloud Run) would send APM on every other
+            # platform down the installer branch and dead-end it.
+            if tok not in self.installer_products:
+                return False
+            if not self.enable.get(tok):
+                return True
+            p = ctx.get("platform")
+            if not p or p == "none":
+                return False
+            delivering = [n for n in self.install.get(p, []) if tok in n.get("delivers", []) and fits(n)]
+            if not delivering or not any(fits(e) for e in self.enable[tok]):
+                return bool(delivering)
+            # An enable chain exists here too (APM on Kubernetes): it wins unless the selected
+            # installer, or one the plan needs anyway, delivers the product.
+            if selected_installer:
+                return selected_installer in delivering
+            return bool(installers_needed_anyway(tok, delivering))
+
+        def installer_count(tok):
+            p = ctx.get("platform")
+            return sum(1 for n in self.install.get(p, []) if tok in n.get("delivers", []) and fits(n))
+
+        # Among installer-delivered products, the one with the fewest installers goes first, so
+        # the others reuse its installer instead of asking which installer to use.
         def _proc_order(nm):
             t = normalize_product(nm, self.product_tokens)
-            return (1 if t in self.installer_products else 0, t or "", str(nm))
+            if installer_delivered(t):
+                return (1, installer_count(t), t or "", str(nm))
+            return (0, 0, t or "", str(nm))
         for name in sorted(products, key=_proc_order):
             tok = normalize_product(name, self.product_tokens)
             if tok is None:
@@ -537,22 +756,47 @@ class Router:
                 hint = f' — did you mean "{guess[0]}" ({guess[1]})?' if guess else ""
                 dead_ends.append(f"unrecognized product '{_san(name)}'{hint}")
                 continue
-            if tok in self.installer_products:       # delivered by an installer; no separate enable skill
+            if installer_delivered(tok):             # delivered by an installer; no separate enable skill
                 p = ctx.get("platform")
                 if not p or p == "none":
+                    # No platform detected. An out-of-the-box cloud integration that
+                    # delivers this product for the detected cloud (agentless
+                    # web-integration log forwarding — the s1 <cloud>-log-forwarding
+                    # setups and the local Nebius/CoreWeave integrations) satisfies
+                    # it WITHOUT an Agent install path, so the plan stays cloud-only
+                    # instead of demanding a platform choice. Only a cloud with no
+                    # such forwarder falls back to the platform choice.
+                    cloud = ctx.get("cloud")
+                    if cloud and cloud != "none":
+                        agentless = [n for n in self.triggered.get(tok, []) if fits(n)]
+                        if agentless:
+                            for forwarder in agentless:
+                                stage(forwarder, f"{name} ({forwarder['id']})")
+                            continue
                     add_choice("platform", self.install); continue
                 candidates = []
                 for candidate in self.install.get(p, []):
                     delivered = candidate.get("delivers", [])
                     if tok in delivered and fits(candidate):
                         candidates.append(candidate)
+                if candidates and selected_installer and selected_installer not in candidates:
+                    # One installer per platform: a selected installer that cannot deliver
+                    # the product is reported, not joined by a second install.
+                    dead_ends.append(f"{_san(name)} — the selected installer "
+                                     f"'{_san(selected_installer['id'])}' does not deliver this product")
+                    continue
                 already_staged = [n for n in candidates if n["key"] in include]
                 generic = [n for n in candidates if n["action"] in ("install", "install-agent")]
-                node = choose_implementation(
-                    already_staged or generic or candidates,
-                    f"platform-install:{p} capability",
-                    f"platform-install:{p}",
-                )
+                if selected_installer in candidates:
+                    node = selected_installer
+                elif already_staged:
+                    node = already_staged[0]
+                else:
+                    node = choose_implementation(
+                        generic or candidates,
+                        f"platform-install:{p} capability",
+                        f"platform-install:{p}",
+                    )
                 if not node:
                     if not candidates:
                         cloud = ctx.get("cloud")
@@ -581,8 +825,13 @@ class Router:
                     # example, cloud log forwarding belongs in a Logs plan only when
                     # that cloud was actually detected. Its own hard prerequisites are
                     # staged normally; it is never suggested for unrelated products.
+                    # An installer that delivers the product through its own pipeline
+                    # (own_pipeline, e.g. ECS logs through FireLens) skips it, except on
+                    # the requested platform spellings in own_pipeline_except.
+                    own = (tok in node.get("own_pipeline", [])
+                           and requested_platform not in node.get("own_pipeline_except", []))
                     for triggered in self.triggered.get(tok, []):
-                        if fits(triggered):
+                        if fits(triggered) and not own:
                             stage(triggered, f"{name} ({triggered['id']})")
                 continue
             m = product_candidate(tok, name)
@@ -595,13 +844,25 @@ class Router:
                     add(v)
                     dependencies.add((v["key"], m["key"]))
 
-        # `after` orders a node behind every planned skill of the named product
-        # (its enabler and verifier) without staging that product when it is absent.
+        # A named provider always plans its own cloud integration, alone or next to
+        # other products, as the Labs catalog's provider products did.
+        for provider in providers:
+            node, _ = bind({"category": "cloud-connect", "cloud": provider})
+            if node:
+                stage(node, provider)
+
+        # `after` orders a node behind every planned skill of the named product (its
+        # enabler and verifier, or an installer that delivers it) without staging that
+        # product when it is absent. It is order-only: it never becomes a prerequisite,
+        # so a failed APM step does not block the Linux Logs install that runs after it.
+        order_only = set()
         for n in include.values():
             for edge in n.get("after", []):
                 for other in include.values():
-                    if other["key"] != n["key"] and other.get("product") == edge["product"]:
-                        dependencies.add((n["key"], other["key"]))
+                    if other["key"] != n["key"] and (
+                            other.get("product") == edge["product"]
+                            or edge["product"] in other.get("delivers", [])):
+                        order_only.add((n["key"], other["key"]))
 
         def stable_key(key):
             n = include[key]
@@ -617,7 +878,7 @@ class Router:
         # orders nodes not already constrained by a hard edge (e.g. AAP->APM).
         pending = {key: set() for key in include}
         dependents = {key: [] for key in include}
-        for dependent, prerequisite in dependencies:
+        for dependent, prerequisite in dependencies | order_only:
             if dependent in pending and prerequisite in pending:
                 pending[dependent].add(prerequisite)
                 dependents[prerequisite].append(dependent)
@@ -656,7 +917,8 @@ class Router:
                             "url": n["source"]["url"], "source": n["source"]})
 
         # A compact, human-readable view of the same plan as a DAG. Nodes stay in
-        # topological order, and `requires` contains only direct prerequisites.
+        # topological order, and `requires` contains only direct hard prerequisites:
+        # emit.py's run gate reads these, so order-only edges stay out.
         position = {n["key"]: i for i, n in enumerate(plan)}
         requires_by_key = {n["key"]: set() for n in plan}
         for dependent, prerequisite in dependencies:
@@ -756,7 +1018,8 @@ def _print_trace(session_id, args, res):
     cl = normalize_cloud(args.cloud) or "none"
     print("=== DD-ORCH TRACE v1 ===")
     print(f"SESSION_ID: {session_id}")
-    print(f"CONTEXT: platform={plat} cloud={cl}")
+    app = normalize_app_platform(getattr(args, "app_platform", None)) or "none"
+    print(f"CONTEXT: platform={plat} cloud={cl}" + (f" app_platform={app}" if app != "none" else ""))
     print(f"STOP_REASON: {stop}")
     if plan:
         print("PLAN:")
@@ -921,6 +1184,9 @@ def main():
     ap.add_argument("--products", default="")
     ap.add_argument("--platform", default="none")
     ap.add_argument("--cloud", default="none")
+    ap.add_argument("--app-platform", default="none",
+                    help="the client app's platform, such as react-native for a React Native "
+                         "or Expo app; separate from --platform, where the backend runs")
     ap.add_argument(
         "--session-id",
         help="reuse a run's session ID when replanning (defaults to DD_ORCH_SESSION_ID "
@@ -992,6 +1258,9 @@ def main():
         print("  names/aliases: " + ", ".join(sorted(PRODUCT_TOKENS)))
         print("  tokens (including products without setup skills): " +
               ", ".join(sorted(_KNOWN_PRODUCT_TOKENS | router.product_tokens)))
+        print("  bundles: " + ", ".join(
+            f"{name} ({','.join(products)})" for name, products in sorted(PRODUCT_BUNDLES.items())))
+        print("  providers (plan the cloud integration): " + ", ".join(sorted(PROVIDER_ALIASES)))
         return 0
     if a.detect_products is not None:
         # Shortcut: the intent may already name products. If so, skip the recommender and
@@ -1026,10 +1295,14 @@ def main():
         print(f"# reuse this run's session id on later resolve.py and emit.py calls:\n"
               f"# --session-id {session_id}", file=sys.stderr)
     products = [p for p in a.products.split(",") if p.strip()]
+    # Normalize here too, so the trace CONTEXT and telemetry show the cloud used. The
+    # router gets the platform as spelled: own_pipeline_except reads it before aliasing.
+    requested_platform = a.platform
+    named, a.platform, a.cloud, _ = normalize_request(products, a.platform, a.cloud)
     router = Router(catalog, enabled_only=not a.include_disabled)
     res = router.resolve(
         products,
-        {"platform": a.platform, "cloud": a.cloud},
+        {"platform": requested_platform, "cloud": a.cloud, "app_platform": a.app_platform},
         selections=selections,
     )
     if a.trace:
@@ -1038,7 +1311,7 @@ def main():
         _print(res)
     if a.debug:
         _print_dag(res)
-    _emit_telemetry(session_id, a, products, router, res)
+    _emit_telemetry(session_id, a, named, router, res)
     return 0
 
 

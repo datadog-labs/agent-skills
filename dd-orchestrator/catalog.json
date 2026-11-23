@@ -350,8 +350,8 @@
         "url": "https://api.datadoghq.com/api/v2/onboarding/skills/aws-log-forwarding-setup?format=md",
         "path_type": "file"
       },
-      "status": "canonical",
-      "duplicate_of": null,
+      "status": "duplicate",
+      "duplicate_of": "dd-aws-log-forwarding@s2",
       "issues": [
         "dangling requires:orchestrator remapped to category:foundation"
       ],
@@ -393,8 +393,8 @@
         "url": "https://api.datadoghq.com/api/v2/onboarding/skills/azure-log-forwarding-setup?format=md",
         "path_type": "file"
       },
-      "status": "canonical",
-      "duplicate_of": null,
+      "status": "duplicate",
+      "duplicate_of": "dd-azure-log-forwarding@s2",
       "issues": [
         "dangling requires:orchestrator remapped to category:foundation"
       ],
@@ -437,8 +437,8 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-aws-log-forwarding/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "aws-log-forwarding-setup@s1",
+      "status": "canonical",
+      "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
       "enabled": true,
@@ -479,8 +479,8 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-azure-log-forwarding/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "azure-log-forwarding-setup@s1",
+      "status": "canonical",
+      "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
       "enabled": true,
@@ -521,8 +521,8 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-gcp-log-forwarding/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "gcp-log-forwarding-setup@s1",
+      "status": "canonical",
+      "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
       "enabled": true,
@@ -562,8 +562,8 @@
         "url": "https://api.datadoghq.com/api/v2/onboarding/skills/gcp-log-forwarding-setup?format=md",
         "path_type": "file"
       },
-      "status": "canonical",
-      "duplicate_of": null,
+      "status": "duplicate",
+      "duplicate_of": "dd-gcp-log-forwarding@s2",
       "issues": [
         "dangling requires:orchestrator remapped to category:foundation"
       ],
@@ -1780,8 +1780,8 @@
         "url": "https://api.datadoghq.com/api/v2/onboarding/skills/agent-install-docker?format=md",
         "path_type": "file"
       },
-      "status": "canonical",
-      "duplicate_of": null,
+      "status": "duplicate",
+      "duplicate_of": "agent-install-docker@s2",
       "issues": [
         "dangling requires:orchestrator remapped to category:foundation"
       ],
@@ -1812,6 +1812,7 @@
         }
       ],
       "delivers": [
+        "apm",
         "infra",
         "logs"
       ],
@@ -1825,9 +1826,63 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-docker/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "agent-install-docker@s1",
+      "status": "canonical",
+      "duplicate_of": null,
       "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "agent-install-ecs@s2",
+      "id": "agent-install-ecs",
+      "kind": "platform-install",
+      "product": null,
+      "action": "install-agent",
+      "platform": [
+        "ecs"
+      ],
+      "cloud": [
+        "aws"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [
+        {
+          "category": "cloud-connect",
+          "cloud": "aws"
+        }
+      ],
+      "after": [],
+      "delivers": [
+        "apm",
+        "infra",
+        "logs"
+      ],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "Always sets up infrastructure metrics, logs, and APM together, whichever product was requested; on Fargate, app logs move from CloudWatch to Datadog. Covers Linux tasks on ECS Fargate and EC2 defined in Terraform, AWS CDK, CloudFormation, or task-definition JSON; Windows tasks, ECS Managed Instances, and ECS Anywhere are not automated.",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-ecs/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "own_pipeline": [
+        "logs"
+      ],
+      "own_pipeline_except": [
+        "ecs-ec2"
+      ],
       "lifecycle": null,
       "enabled": true,
       "visibility": "public"
@@ -1868,8 +1923,8 @@
         "url": "https://api.datadoghq.com/api/v2/onboarding/skills/agent-install-kubernetes?format=md",
         "path_type": "file"
       },
-      "status": "canonical",
-      "duplicate_of": null,
+      "status": "duplicate",
+      "duplicate_of": "agent-install-kubernetes@s2",
       "issues": [
         "dangling requires:orchestrator remapped to category:foundation"
       ],
@@ -1900,6 +1955,7 @@
         }
       ],
       "delivers": [
+        "apm",
         "infra",
         "logs"
       ],
@@ -1913,8 +1969,8 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-kubernetes/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "agent-install-kubernetes@s1",
+      "status": "canonical",
+      "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
       "enabled": true,
@@ -1956,8 +2012,8 @@
         "url": "https://api.datadoghq.com/api/v2/onboarding/skills/agent-install-linux?format=md",
         "path_type": "file"
       },
-      "status": "canonical",
-      "duplicate_of": null,
+      "status": "duplicate",
+      "duplicate_of": "agent-install-linux@s2",
       "issues": [
         "dangling requires:orchestrator remapped to category:foundation"
       ],
@@ -1987,6 +2043,11 @@
           "category": "cloud-connect"
         }
       ],
+      "after": [
+        {
+          "product": "apm"
+        }
+      ],
       "delivers": [
         "infra",
         "logs"
@@ -2001,8 +2062,8 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-linux/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "agent-install-linux@s1",
+      "status": "canonical",
+      "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
       "enabled": true,
@@ -2044,8 +2105,8 @@
         "url": "https://api.datadoghq.com/api/v2/onboarding/skills/agent-install-macos?format=md",
         "path_type": "file"
       },
-      "status": "canonical",
-      "duplicate_of": null,
+      "status": "duplicate",
+      "duplicate_of": "agent-install-macos@s2",
       "issues": [
         "dangling requires:orchestrator remapped to category:foundation"
       ],
@@ -2089,8 +2150,8 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-macos/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "agent-install-macos@s1",
+      "status": "canonical",
+      "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
       "enabled": true,
@@ -2132,8 +2193,8 @@
         "url": "https://api.datadoghq.com/api/v2/onboarding/skills/agent-install-windows?format=md",
         "path_type": "file"
       },
-      "status": "canonical",
-      "duplicate_of": null,
+      "status": "duplicate",
+      "duplicate_of": "agent-install-windows@s2",
       "issues": [
         "dangling requires:orchestrator remapped to category:foundation"
       ],
@@ -2177,8 +2238,158 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-windows/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "agent-install-windows@s1",
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-instrument-azure-serverless@s2",
+      "id": "dd-instrument-azure-serverless",
+      "kind": "platform-install",
+      "product": null,
+      "action": "install-agent",
+      "platform": [
+        "azure-serverless"
+      ],
+      "cloud": [
+        "azure"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [
+        {
+          "category": "cloud-connect",
+          "cloud": "azure"
+        }
+      ],
+      "after": [],
+      "delivers": [
+        "apm",
+        "infra",
+        "logs",
+        "otel",
+        "serverless"
+      ],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "Covers Azure Functions (.NET, Node.js, Python, Java), App Service, and Container Apps on Datadog's documented setups; Container Apps jobs are not automated.",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-azure-serverless/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-instrument-cloud-run@s2",
+      "id": "dd-instrument-cloud-run",
+      "kind": "platform-install",
+      "product": null,
+      "action": "install-agent",
+      "platform": [
+        "cloud-run"
+      ],
+      "cloud": [
+        "gcp"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [
+        {
+          "category": "cloud-connect",
+          "cloud": "gcp"
+        }
+      ],
+      "after": [],
+      "delivers": [
+        "apm",
+        "infra",
+        "logs",
+        "otel",
+        "serverless"
+      ],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "Covers Cloud Run services, 2nd gen functions, and jobs on Datadog's documented setup types; 1st gen functions are not automated.",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-cloud-run/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-instrument-lambda@s2",
+      "id": "dd-instrument-lambda",
+      "kind": "platform-install",
+      "product": null,
+      "action": "install-agent",
+      "platform": [
+        "lambda"
+      ],
+      "cloud": [
+        "aws"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [
+        {
+          "category": "cloud-connect",
+          "cloud": "aws"
+        }
+      ],
+      "after": [],
+      "delivers": [
+        "apm",
+        "infra",
+        "logs",
+        "otel",
+        "serverless"
+      ],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "Covers zip/layer-based Lambda functions on Datadog's documented setup types; container-image functions are not automated.",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-lambda/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
       "enabled": true,
@@ -2207,8 +2418,7 @@
         }
       ],
       "delivers": [
-        "infra",
-        "logs"
+        "infra"
       ],
       "unsupported_products": [],
       "trigger_products": [],
@@ -2250,8 +2460,7 @@
         }
       ],
       "delivers": [
-        "infra",
-        "logs"
+        "infra"
       ],
       "unsupported_products": [],
       "trigger_products": [],
@@ -2476,6 +2685,10 @@
       "requires": [
         {
           "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "coreweave"
         }
       ],
       "suggests": [],
@@ -2503,11 +2716,13 @@
     {
       "key": "dd-coreweave-integration@s2",
       "id": "dd-coreweave-integration",
-      "kind": "product-enable",
-      "product": "coreweave",
-      "action": "enable",
+      "kind": "cloud-connect",
+      "product": null,
+      "action": "connect",
       "platform": [],
-      "cloud": [],
+      "cloud": [
+        "coreweave"
+      ],
       "scope": [],
       "when": "day-1-required",
       "requires": [
@@ -2518,13 +2733,54 @@
       "suggests": [],
       "delivers": [],
       "unsupported_products": [],
-      "trigger_products": [],
+      "trigger_products": [
+        "logs"
+      ],
       "invokes": [],
       "composes": [],
       "caveat": "",
       "source": {
         "repo": "agent-skills",
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-coreweave-integration/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-nebius-integration@s2",
+      "id": "dd-nebius-integration",
+      "kind": "cloud-connect",
+      "product": null,
+      "action": "connect",
+      "platform": [],
+      "cloud": [
+        "nebius"
+      ],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "after": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [
+        "logs"
+      ],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-nebius-integration/SKILL.md",
         "path_type": "file"
       },
       "status": "canonical",
@@ -2551,13 +2807,16 @@
       "requires": [
         {
           "category": "foundation"
+        },
+        {
+          "category": "cloud-connect",
+          "cloud": "nebius"
         }
       ],
       "suggests": [],
       "after": [],
       "delivers": [
-        "infra",
-        "logs"
+        "infra"
       ],
       "unsupported_products": [],
       "trigger_products": [],
@@ -2897,7 +3156,8 @@
       "platform": [],
       "cloud": [],
       "scope": [
-        "browser"
+        "browser",
+        "react-native"
       ],
       "when": "day-1-required",
       "requires": [
@@ -2911,7 +3171,15 @@
       "trigger_products": [],
       "invokes": [],
       "composes": [],
-      "caveat": "",
+      "also_enables": [
+        {
+          "product": "rum-mobile",
+          "app_platform": [
+            "react-native"
+          ]
+        }
+      ],
+      "caveat": "Covers web apps and React Native/Expo apps; native-only iOS and Android apps are not automated.",
       "source": {
         "repo": "agent-skills",
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-rum/SKILL.md",
@@ -3039,6 +3307,45 @@
       "visibility": "public"
     },
     {
+      "key": "dd-instrument-code-coverage@s2",
+      "id": "dd-instrument-code-coverage",
+      "kind": "product-enable",
+      "product": "code-coverage",
+      "action": "enable",
+      "platform": [],
+      "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "after": [
+        {
+          "product": "test-optimization"
+        }
+      ],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-code-coverage/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
       "key": "dd-instrument-error-tracking@s2",
       "id": "dd-instrument-error-tracking",
       "kind": "product-enable",
@@ -3053,14 +3360,14 @@
       "requires": [
         {
           "category": "foundation"
-        }
-      ],
-      "suggests": [],
-      "after": [
+        },
         {
+          "category": "product-enable",
           "product": "rum"
         }
       ],
+      "suggests": [],
+      "after": [],
       "delivers": [],
       "unsupported_products": [],
       "trigger_products": [],
@@ -3070,6 +3377,91 @@
       "source": {
         "repo": "agent-skills",
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-error-tracking/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-instrument-otel@s2",
+      "id": "dd-instrument-otel",
+      "kind": "product-enable",
+      "product": "otel",
+      "action": "enable-code",
+      "platform": [],
+      "cloud": [],
+      "scope": [
+        "go",
+        "java",
+        "nodejs",
+        "python"
+      ],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "after": [],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "Direct OTLP export from OTel SDKs in Node.js, Python, Java and Go services on hosts and containers; no Collector. Not for serverless platforms (AWS Lambda, ECS Fargate, Cloud Run, Azure Functions, App Service, Container Apps), managed platforms (Vercel, Netlify, Heroku) or browser apps, and not alongside Single Step Instrumentation or a Datadog tracer on the same service.",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-otel/SKILL.md",
+        "path_type": "file"
+      },
+      "status": "canonical",
+      "duplicate_of": null,
+      "issues": [],
+      "unsupported_platforms": [
+        "azure-serverless",
+        "cloud-run",
+        "lambda",
+        "serverless"
+      ],
+      "lifecycle": null,
+      "enabled": true,
+      "visibility": "public"
+    },
+    {
+      "key": "dd-instrument-aap@s2",
+      "id": "dd-instrument-aap",
+      "kind": "product-enable",
+      "product": "aap",
+      "action": "enable",
+      "platform": [],
+      "cloud": [],
+      "scope": [],
+      "when": "day-1-required",
+      "requires": [
+        {
+          "category": "foundation"
+        }
+      ],
+      "suggests": [],
+      "after": [
+        {
+          "product": "apm"
+        }
+      ],
+      "delivers": [],
+      "unsupported_products": [],
+      "trigger_products": [],
+      "invokes": [],
+      "composes": [],
+      "caveat": "",
+      "source": {
+        "repo": "agent-skills",
+        "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-instrument-aap/SKILL.md",
         "path_type": "file"
       },
       "status": "canonical",

@@ -157,9 +157,19 @@ developer goal
    yourself; `resolve.py --trace` refuses to run without a declared `--intent-mode`.
 4. **Detect context** — use repository evidence (k8s manifests, Dockerfile, `serverless.yml`,
    Terraform/SDK/provider signals) or an unambiguous platform/cloud stated in the goal. Pass known
-   values to `resolve.py` as `--platform` / `--cloud`. Leave unknown values unset; ask when a needed
+   values to `resolve.py` as `--platform` / `--cloud`. Amazon ECS task definitions on either launch
+   type mean `--platform ecs --cloud aws`: a JSON file with `family` and `containerDefinitions`,
+   Terraform `aws_ecs_task_definition`, CDK `ecs.TaskDefinition` / `ecs.FargateTaskDefinition` /
+   `ecs.Ec2TaskDefinition` or an `ecs_patterns` `*FargateService` / `*Ec2Service` construct (which
+   builds its task definition itself), or CloudFormation `AWS::ECS::TaskDefinition`. When the tasks
+   run on EC2 and an app container logs with the `awslogs` driver, pass `--platform ecs-ec2`
+   instead: the Agent cannot read those logs, so the plan keeps the AWS log forwarder. A bare
+   "Fargate" is ECS only with such evidence; EKS Fargate profiles are `kubernetes`. Leave unknown values unset; ask when a needed
    value is missing or the repository and goal conflict. Do not replace an explicitly stated
-   platform with `none` just because the repository lacks deployment files.
+   platform with `none` just because the repository lacks deployment files. A React Native or
+   Expo app (`react-native` or `expo` in the app's `package.json`) is `--app-platform react-native`.
+   Keep `--platform` for where the rest of the repository runs, so a repository with a mobile app
+   and a backend plans both.
 5. **Compose the plan and seed the trace.** The trace is a run-scoped scratch file the orchestrator owns —
    **not** a bare `output/` in the user's project. Ask the emitter for the path; it scopes the default
    under `TMPDIR` by the host agent's conversation/thread id (or by workspace as a fallback), so
@@ -167,7 +177,7 @@ developer goal
    A host that exposes no session marker must set a unique
    `DD_ORCH_OUTPUT_DIR` for concurrent runs. Reset the scratch, then run:
    `TRACE="$(python3 dd-orchestrator/scripts/emit.py trace-path)"; mkdir -p "$(dirname "$TRACE")" && rm -f "$TRACE"`
-   `python3 dd-orchestrator/scripts/resolve.py --trace --products "<products>" --platform <platform> --cloud <cloud> --intent-mode <explicit|recommended> | tee "$TRACE"`
+   `python3 dd-orchestrator/scripts/resolve.py --trace --products "<products>" --platform <platform> --cloud <cloud> [--app-platform react-native] --intent-mode <explicit|recommended> | tee "$TRACE"`
    Pass `--intent-mode explicit` when Step 3's shortcut named the products, or `--intent-mode recommended`
    when `dd-product-recommender` produced them. It is **required** — `resolve.py --trace` refuses to
    compose a plan without it (the products must trace to the shortcut or the recommender, never to your
