@@ -70,6 +70,7 @@
     "./dd-gcp-integration/",
     "./dd-gcp-log-forwarding/",
     "./dd-instrument-error-tracking/",
+    "./dd-instrument-aap/",
     "./dd-github-copilot-onboarding/",
     "./dd-github-costs-onboarding/",
     "./dd-git-tagging/",
