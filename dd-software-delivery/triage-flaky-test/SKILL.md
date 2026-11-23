@@ -293,7 +293,7 @@ new_state: quarantined
 cat > /tmp/flaky-update.json <<'EOF'
 {
   "data": {
-    "type": "UpdateFlakyTestsRequest",
+    "type": "update_flaky_test_state_request",
     "attributes": {
       "tests": [{"id": "<fingerprint_fqn>", "new_state": "quarantined"}]
     }
