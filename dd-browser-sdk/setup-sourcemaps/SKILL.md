@@ -104,9 +104,12 @@ needs to be set up first, then re-run this skill.
 If `datadogRum.init()` has no `service`, stop and tell the user: sourcemaps cannot be matched
 without it, and it must be added to the RUM init first.
 
-**`releaseVersion`** — must equal the `version` passed to `datadogRum.init()`. Typically a git
-commit SHA, release tag, or CI build ID. Can be set here, or once at the top level as
-`metadata.version`. If both are set and differ, the build fails with
+**`releaseVersion`** — must be exactly the `version` passed to `datadogRum.init()`, because
+Datadog matches uploads to errors on that string. Copy it as written: `version: '1.4.2'` means
+`releaseVersion: '1.4.2'`, and if it reads a variable, read the same variable. Don't swap in a
+commit SHA or CI variable that `datadogRum.init()` doesn't use, even if it looks like a better
+version: it won't match. Leave `datadogRum.init()` as it is. Can be set here, or once at the top
+level as `metadata.version`. If both are set and differ, the build fails with
 `sourcemaps.releaseVersion must match metadata.version when both are configured`.
 
 **`minifiedPathPrefix`** — the URL prefix the built JS is served from. Must be a full URL or start
@@ -194,7 +197,7 @@ export default defineConfig({
       errorTracking: {
         sourcemaps: {
           service: 'my-service',
-          releaseVersion: process.env.GIT_COMMIT_SHA,
+          releaseVersion: '1.4.2',
           minifiedPathPrefix: '/static/',
         },
       },
@@ -215,7 +218,7 @@ module.exports = {
       errorTracking: {
         sourcemaps: {
           service: 'my-service',
-          releaseVersion: process.env.GIT_COMMIT_SHA,
+          releaseVersion: '1.4.2',
           minifiedPathPrefix: '/static/',
         },
       },
@@ -239,7 +242,7 @@ export default {
       errorTracking: {
         sourcemaps: {
           service: 'my-service',
-          releaseVersion: process.env.GIT_COMMIT_SHA,
+          releaseVersion: '1.4.2',
           minifiedPathPrefix: '/static/',
         },
       },
@@ -260,7 +263,7 @@ require('esbuild').build({
       errorTracking: {
         sourcemaps: {
           service: 'my-service',
-          releaseVersion: process.env.GIT_COMMIT_SHA,
+          releaseVersion: '1.4.2',
           minifiedPathPrefix: '/static/',
         },
       },
@@ -269,8 +272,8 @@ require('esbuild').build({
 });
 ```
 
-Replace every value with the ones collected in step 2. Do not leave `'my-service'` or `'/static/'`
-in place.
+Replace every value with the ones collected in step 2. Do not leave `'my-service'`, `'1.4.2'` or
+`'/static/'` in place.
 
 Optional sub-options, only if the user asks:
 
