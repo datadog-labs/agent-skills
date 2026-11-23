@@ -28,6 +28,7 @@ The main skills are listed here. The [Install](#install) section lists every ski
 | **dd-git-tagging** | Tag a service's traces with its Git commit and repository URL, the telemetry half of source code integration — any tracer language, agentless or through an Agent |
 | **dd-instrument-shipdog** | ShipDog backend setup for Python and Node.js — agentless traces and logs, Live Debugger, and a verifying logpoint |
 | **dd-instrument-test-optimization** | Set up Datadog Test Optimization in CI pipelines — auto-instrumentation for GitHub Actions, GitLab, CircleCI; manual tracers; container forwarding; JUnit XML |
+| **dd-instrument-code-coverage** | Upload coverage reports to Datadog Code Coverage — one upload step in GitHub Actions, GitLab CI or Azure Pipelines, or an existing Test Optimization setup |
 | **dd-anthropic-usage-and-costs-onboarding** | Connect Anthropic to Datadog — Claude usage (org-wide on the Platform plan, per-user on Enterprise) and costs in Cloud Cost Management |
 | **dd-github-onboarding** | Connect GitHub via the Datadog GitHub App — source code in stack traces, pull-request comments |
 | **dd-github-copilot-onboarding** | Connect GitHub Copilot to Datadog — usage and license metrics for the orgs you own |
@@ -142,6 +143,7 @@ npx skills add datadog-labs/agent-skills \
   --skill dd-github-copilot-onboarding \
   --skill dd-github-costs-onboarding \
   --skill dd-github-onboarding \
+  --skill dd-instrument-code-coverage \
   --skill dd-instrument-llmo \
   --skill dd-instrument-product-analytics \
   --skill dd-instrument-rum \
