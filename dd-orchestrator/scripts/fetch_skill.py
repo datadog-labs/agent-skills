@@ -2,8 +2,8 @@
 """Fetch a catalog skill from its public source so the orchestrator can INVOKE it even
 when it is not installed in the session registry — invoke, not install.
 
-Always fetches the NEWEST version: agent-skills is read at `main`, dd-source via the live
-onboarding-API render. Nothing is pinned. The skill (SKILL.md + any references/ and
+Always fetches the NEWEST version: agent-skills is read at `main`. Nothing is pinned.
+The skill (SKILL.md + any references/ and
 scripts/) is written into a run-scoped temp dir; the orchestrator then executes that
 SKILL.md inline. See spec one-orchestrator-to-rule-them-all (fetch-and-invoke).
 
@@ -29,7 +29,6 @@ CATALOG = os.path.join(SKILL, "catalog.json")
 
 RAW_HOST = "raw.githubusercontent.com"
 ALLOWED_GH_REPO = "datadog-labs/agent-skills"     # the only public GitHub source
-API_HOST = "api.datadoghq.com"                     # dd-source onboarding render
 BRANCH = "main"                                     # always newest; never pinned
 
 
@@ -46,7 +45,6 @@ def resolve_target(node):
     """Pure (no network): the newest-version fetch target for a catalog node.
 
     Returns ("github", "datadog-labs/agent-skills", "<skill_dir>")  — fetch dir at main
-         or ("render", "<onboarding-api render url>")               — single md, newest
     Raises for any non-public / unknown source (fail closed).
     """
     src = node.get("source") or {}
@@ -62,8 +60,6 @@ def resolve_target(node):
         rel = "/".join(parts[4:])
         skill_dir = os.path.dirname(rel) if src.get("path_type", "file") == "file" else rel
         return ("github", org_repo, skill_dir)
-    if host == API_HOST and "/onboarding/skills/" in url:
-        return ("render", url)
     raise RuntimeError(f"unsupported/non-public source: {url!r}")
 
 
@@ -91,19 +87,13 @@ def _node(catalog_path, skill_id):
 
 def fetch(skill_id, dest=None, catalog_path=CATALOG):
     node = _node(catalog_path, skill_id)
-    kind, *rest = resolve_target(node)
+    _, org_repo, skill_dir = resolve_target(node)
     # Run-scoped destination: a fresh dir per fetch so a partial/older fetch can never leave
     # stale files (e.g. an upstream-deleted script or a leftover SKILL.md) to be executed, and
     # concurrent fetches cannot interleave. Caller reads the returned path, so a unique dir is fine.
     dest = dest or tempfile.mkdtemp(prefix=f"dd-orch-{skill_id}-")
     os.makedirs(dest, exist_ok=True)
-    if kind == "github":
-        org_repo, skill_dir = rest
-        _fetch_github_dir(org_repo, skill_dir, dest)
-    else:  # render
-        (url,) = rest
-        with open(os.path.join(dest, "SKILL.md"), "w") as f:
-            f.write(_get(url))
+    _fetch_github_dir(org_repo, skill_dir, dest)
     if not os.path.exists(os.path.join(dest, "SKILL.md")):
         raise RuntimeError(f"fetched {skill_id} but no SKILL.md landed in {dest}")
     return dest
