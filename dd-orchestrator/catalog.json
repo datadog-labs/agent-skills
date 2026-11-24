@@ -1,14 +1,11 @@
 {
   "_schema_version": 1,
-  "_generated_by": "gen_public_catalog.py — public sources only (agent-skills GitHub + dd-source GA onboarding-API renders)",
+  "_generated_by": "gen_public_catalog.py — public sources only (agent-skills GitHub)",
   "_source_refs": {
-    "dd-source": "da52e4066d3c753b5382549f4bc09fbe291bb2f1",
     "agent-skills": "0787c9d95d0c73426f5ccee45f35df7a5479b792",
     "agentic-onboarding-evals": "main"
   },
-  "_excluded": [
-    "agent-install-aix@s1"
-  ],
+  "_excluded": [],
   "url_host_base": "https://github.com",
   "kinds": [
     "foundation",
@@ -20,82 +17,6 @@
     "internal"
   ],
   "nodes": [
-    {
-      "key": "aws-integration-setup@s1",
-      "id": "aws-integration-setup",
-      "kind": "cloud-connect",
-      "product": null,
-      "action": "connect",
-      "platform": [],
-      "cloud": [
-        "aws"
-      ],
-      "scope": [],
-      "when": "day-1-required",
-      "requires": [
-        {
-          "category": "foundation"
-        }
-      ],
-      "suggests": [],
-      "delivers": [],
-      "unsupported_products": [],
-      "trigger_products": [],
-      "invokes": [],
-      "composes": [],
-      "caveat": "",
-      "source": {
-        "repo": "dd-source",
-        "url": "https://api.datadoghq.com/api/v2/onboarding/skills/aws-integration-setup?format=md",
-        "path_type": "file"
-      },
-      "status": "duplicate",
-      "duplicate_of": "dd-aws-integration@s2",
-      "issues": [
-        "dangling requires:orchestrator remapped to category:foundation"
-      ],
-      "lifecycle": "ga",
-      "enabled": true,
-      "visibility": "public"
-    },
-    {
-      "key": "azure-integration-setup@s1",
-      "id": "azure-integration-setup",
-      "kind": "cloud-connect",
-      "product": null,
-      "action": "connect",
-      "platform": [],
-      "cloud": [
-        "azure"
-      ],
-      "scope": [],
-      "when": "day-1-required",
-      "requires": [
-        {
-          "category": "foundation"
-        }
-      ],
-      "suggests": [],
-      "delivers": [],
-      "unsupported_products": [],
-      "trigger_products": [],
-      "invokes": [],
-      "composes": [],
-      "caveat": "",
-      "source": {
-        "repo": "dd-source",
-        "url": "https://api.datadoghq.com/api/v2/onboarding/skills/azure-integration-setup?format=md",
-        "path_type": "file"
-      },
-      "status": "duplicate",
-      "duplicate_of": "dd-azure-integration@s2",
-      "issues": [
-        "dangling requires:orchestrator remapped to category:foundation"
-      ],
-      "lifecycle": "ga",
-      "enabled": true,
-      "visibility": "public"
-    },
     {
       "key": "dd-aws-integration@s2",
       "id": "dd-aws-integration",
@@ -241,168 +162,6 @@
       "visibility": "public"
     },
     {
-      "key": "gcp-integration-setup@s1",
-      "id": "gcp-integration-setup",
-      "kind": "cloud-connect",
-      "product": null,
-      "action": "connect",
-      "platform": [],
-      "cloud": [
-        "gcp"
-      ],
-      "scope": [],
-      "when": "day-1-required",
-      "requires": [
-        {
-          "category": "foundation"
-        }
-      ],
-      "suggests": [],
-      "delivers": [],
-      "unsupported_products": [],
-      "trigger_products": [],
-      "invokes": [],
-      "composes": [],
-      "caveat": "",
-      "source": {
-        "repo": "dd-source",
-        "url": "https://api.datadoghq.com/api/v2/onboarding/skills/gcp-integration-setup?format=md",
-        "path_type": "file"
-      },
-      "status": "duplicate",
-      "duplicate_of": "dd-gcp-integration@s2",
-      "issues": [
-        "dangling requires:orchestrator remapped to category:foundation"
-      ],
-      "lifecycle": "ga",
-      "enabled": true,
-      "visibility": "public"
-    },
-    {
-      "key": "oci-integration-setup@s1",
-      "id": "oci-integration-setup",
-      "kind": "cloud-connect",
-      "product": null,
-      "action": "connect",
-      "platform": [],
-      "cloud": [
-        "oci"
-      ],
-      "scope": [],
-      "when": "day-1-required",
-      "requires": [
-        {
-          "category": "foundation"
-        }
-      ],
-      "suggests": [],
-      "delivers": [],
-      "unsupported_products": [],
-      "trigger_products": [],
-      "invokes": [],
-      "composes": [],
-      "caveat": "",
-      "source": {
-        "repo": "dd-source",
-        "url": "https://api.datadoghq.com/api/v2/onboarding/skills/oci-integration-setup?format=md",
-        "path_type": "file"
-      },
-      "status": "duplicate",
-      "duplicate_of": "dd-oci-integration@s2",
-      "issues": [
-        "dangling requires:orchestrator remapped to category:foundation"
-      ],
-      "lifecycle": "ga",
-      "enabled": true,
-      "visibility": "public"
-    },
-    {
-      "key": "aws-log-forwarding-setup@s1",
-      "id": "aws-log-forwarding-setup",
-      "kind": "cloud-connect",
-      "product": "logs",
-      "action": "log-forward",
-      "platform": [],
-      "cloud": [
-        "aws"
-      ],
-      "scope": [],
-      "when": "day-1-required",
-      "requires": [
-        {
-          "category": "foundation"
-        },
-        {
-          "skill": "aws-integration-setup"
-        }
-      ],
-      "suggests": [],
-      "delivers": [],
-      "unsupported_products": [],
-      "trigger_products": [
-        "logs"
-      ],
-      "invokes": [],
-      "composes": [],
-      "caveat": "",
-      "source": {
-        "repo": "dd-source",
-        "url": "https://api.datadoghq.com/api/v2/onboarding/skills/aws-log-forwarding-setup?format=md",
-        "path_type": "file"
-      },
-      "status": "canonical",
-      "duplicate_of": null,
-      "issues": [
-        "dangling requires:orchestrator remapped to category:foundation"
-      ],
-      "lifecycle": "ga",
-      "enabled": true,
-      "visibility": "public"
-    },
-    {
-      "key": "azure-log-forwarding-setup@s1",
-      "id": "azure-log-forwarding-setup",
-      "kind": "cloud-connect",
-      "product": "logs",
-      "action": "log-forward",
-      "platform": [],
-      "cloud": [
-        "azure"
-      ],
-      "scope": [],
-      "when": "day-1-required",
-      "requires": [
-        {
-          "category": "foundation"
-        },
-        {
-          "skill": "azure-integration-setup"
-        }
-      ],
-      "suggests": [],
-      "delivers": [],
-      "unsupported_products": [],
-      "trigger_products": [
-        "logs"
-      ],
-      "invokes": [],
-      "composes": [],
-      "caveat": "",
-      "source": {
-        "repo": "dd-source",
-        "url": "https://api.datadoghq.com/api/v2/onboarding/skills/azure-log-forwarding-setup?format=md",
-        "path_type": "file"
-      },
-      "status": "canonical",
-      "duplicate_of": null,
-      "issues": [
-        "dangling requires:orchestrator remapped to category:foundation"
-      ],
-      "lifecycle": "ga",
-      "enabled": true,
-      "visibility": "public"
-    },
-    {
       "key": "dd-aws-log-forwarding@s2",
       "id": "dd-aws-log-forwarding",
       "kind": "cloud-connect",
@@ -437,8 +196,8 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-aws-log-forwarding/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "aws-log-forwarding-setup@s1",
+      "status": "canonical",
+      "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
       "enabled": true,
@@ -479,8 +238,8 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-azure-log-forwarding/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "azure-log-forwarding-setup@s1",
+      "status": "canonical",
+      "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
       "enabled": true,
@@ -521,53 +280,10 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-gcp-log-forwarding/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "gcp-log-forwarding-setup@s1",
-      "issues": [],
-      "lifecycle": null,
-      "enabled": true,
-      "visibility": "public"
-    },
-    {
-      "key": "gcp-log-forwarding-setup@s1",
-      "id": "gcp-log-forwarding-setup",
-      "kind": "cloud-connect",
-      "product": "logs",
-      "action": "log-forward",
-      "platform": [],
-      "cloud": [
-        "gcp"
-      ],
-      "scope": [],
-      "when": "day-1-required",
-      "requires": [
-        {
-          "category": "foundation"
-        },
-        {
-          "skill": "gcp-integration-setup"
-        }
-      ],
-      "suggests": [],
-      "delivers": [],
-      "unsupported_products": [],
-      "trigger_products": [
-        "logs"
-      ],
-      "invokes": [],
-      "composes": [],
-      "caveat": "",
-      "source": {
-        "repo": "dd-source",
-        "url": "https://api.datadoghq.com/api/v2/onboarding/skills/gcp-log-forwarding-setup?format=md",
-        "path_type": "file"
-      },
       "status": "canonical",
       "duplicate_of": null,
-      "issues": [
-        "dangling requires:orchestrator remapped to category:foundation"
-      ],
-      "lifecycle": "ga",
+      "issues": [],
+      "lifecycle": null,
       "enabled": true,
       "visibility": "public"
     },
@@ -748,36 +464,6 @@
       "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
-      "enabled": true,
-      "visibility": "public"
-    },
-    {
-      "key": "orchestrator@s1",
-      "id": "orchestrator",
-      "kind": "internal",
-      "product": null,
-      "action": "",
-      "platform": [],
-      "cloud": [],
-      "scope": [],
-      "when": "day-1-required",
-      "requires": [],
-      "suggests": [],
-      "delivers": [],
-      "unsupported_products": [],
-      "trigger_products": [],
-      "invokes": [],
-      "composes": [],
-      "caveat": "",
-      "source": {
-        "repo": "dd-source",
-        "url": "https://api.datadoghq.com/api/v2/onboarding/skills/orchestrator?format=md",
-        "path_type": "file"
-      },
-      "status": "internal",
-      "duplicate_of": null,
-      "issues": [],
-      "lifecycle": "ga",
       "enabled": true,
       "visibility": "public"
     },
@@ -1745,51 +1431,6 @@
       "visibility": "public"
     },
     {
-      "key": "agent-install-docker@s1",
-      "id": "agent-install-docker",
-      "kind": "platform-install",
-      "product": null,
-      "action": "install-agent",
-      "platform": [
-        "docker"
-      ],
-      "cloud": [],
-      "scope": [],
-      "when": "day-1-required",
-      "requires": [
-        {
-          "category": "foundation"
-        }
-      ],
-      "suggests": [
-        {
-          "category": "cloud-connect"
-        }
-      ],
-      "delivers": [
-        "infra",
-        "logs"
-      ],
-      "unsupported_products": [],
-      "trigger_products": [],
-      "invokes": [],
-      "composes": [],
-      "caveat": "",
-      "source": {
-        "repo": "dd-source",
-        "url": "https://api.datadoghq.com/api/v2/onboarding/skills/agent-install-docker?format=md",
-        "path_type": "file"
-      },
-      "status": "canonical",
-      "duplicate_of": null,
-      "issues": [
-        "dangling requires:orchestrator remapped to category:foundation"
-      ],
-      "lifecycle": "ga",
-      "enabled": true,
-      "visibility": "public"
-    },
-    {
       "key": "agent-install-docker@s2",
       "id": "agent-install-docker",
       "kind": "platform-install",
@@ -1825,55 +1466,10 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-docker/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "agent-install-docker@s1",
-      "issues": [],
-      "lifecycle": null,
-      "enabled": true,
-      "visibility": "public"
-    },
-    {
-      "key": "agent-install-kubernetes@s1",
-      "id": "agent-install-kubernetes",
-      "kind": "platform-install",
-      "product": null,
-      "action": "install-agent",
-      "platform": [
-        "kubernetes"
-      ],
-      "cloud": [],
-      "scope": [],
-      "when": "day-1-required",
-      "requires": [
-        {
-          "category": "foundation"
-        }
-      ],
-      "suggests": [
-        {
-          "category": "cloud-connect"
-        }
-      ],
-      "delivers": [
-        "infra",
-        "logs"
-      ],
-      "unsupported_products": [],
-      "trigger_products": [],
-      "invokes": [],
-      "composes": [],
-      "caveat": "",
-      "source": {
-        "repo": "dd-source",
-        "url": "https://api.datadoghq.com/api/v2/onboarding/skills/agent-install-kubernetes?format=md",
-        "path_type": "file"
-      },
       "status": "canonical",
       "duplicate_of": null,
-      "issues": [
-        "dangling requires:orchestrator remapped to category:foundation"
-      ],
-      "lifecycle": "ga",
+      "issues": [],
+      "lifecycle": null,
       "enabled": true,
       "visibility": "public"
     },
@@ -1913,55 +1509,10 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-kubernetes/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "agent-install-kubernetes@s1",
-      "issues": [],
-      "lifecycle": null,
-      "enabled": true,
-      "visibility": "public"
-    },
-    {
-      "key": "agent-install-linux@s1",
-      "id": "agent-install-linux",
-      "kind": "platform-install",
-      "product": null,
-      "action": "install-agent",
-      "platform": [
-        "linux"
-      ],
-      "cloud": [],
-      "scope": [],
-      "when": "day-1-required",
-      "requires": [
-        {
-          "category": "foundation"
-        }
-      ],
-      "suggests": [
-        {
-          "category": "cloud-connect"
-        }
-      ],
-      "delivers": [
-        "infra",
-        "logs"
-      ],
-      "unsupported_products": [],
-      "trigger_products": [],
-      "invokes": [],
-      "composes": [],
-      "caveat": "",
-      "source": {
-        "repo": "dd-source",
-        "url": "https://api.datadoghq.com/api/v2/onboarding/skills/agent-install-linux?format=md",
-        "path_type": "file"
-      },
       "status": "canonical",
       "duplicate_of": null,
-      "issues": [
-        "dangling requires:orchestrator remapped to category:foundation"
-      ],
-      "lifecycle": "ga",
+      "issues": [],
+      "lifecycle": null,
       "enabled": true,
       "visibility": "public"
     },
@@ -2001,55 +1552,10 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-linux/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "agent-install-linux@s1",
-      "issues": [],
-      "lifecycle": null,
-      "enabled": true,
-      "visibility": "public"
-    },
-    {
-      "key": "agent-install-macos@s1",
-      "id": "agent-install-macos",
-      "kind": "platform-install",
-      "product": null,
-      "action": "install-agent",
-      "platform": [
-        "macos"
-      ],
-      "cloud": [],
-      "scope": [],
-      "when": "day-1-required",
-      "requires": [
-        {
-          "category": "foundation"
-        }
-      ],
-      "suggests": [
-        {
-          "category": "cloud-connect"
-        }
-      ],
-      "delivers": [
-        "infra",
-        "logs"
-      ],
-      "unsupported_products": [],
-      "trigger_products": [],
-      "invokes": [],
-      "composes": [],
-      "caveat": "",
-      "source": {
-        "repo": "dd-source",
-        "url": "https://api.datadoghq.com/api/v2/onboarding/skills/agent-install-macos?format=md",
-        "path_type": "file"
-      },
       "status": "canonical",
       "duplicate_of": null,
-      "issues": [
-        "dangling requires:orchestrator remapped to category:foundation"
-      ],
-      "lifecycle": "ga",
+      "issues": [],
+      "lifecycle": null,
       "enabled": true,
       "visibility": "public"
     },
@@ -2089,55 +1595,10 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-macos/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "agent-install-macos@s1",
-      "issues": [],
-      "lifecycle": null,
-      "enabled": true,
-      "visibility": "public"
-    },
-    {
-      "key": "agent-install-windows@s1",
-      "id": "agent-install-windows",
-      "kind": "platform-install",
-      "product": null,
-      "action": "install-agent",
-      "platform": [
-        "windows"
-      ],
-      "cloud": [],
-      "scope": [],
-      "when": "day-1-required",
-      "requires": [
-        {
-          "category": "foundation"
-        }
-      ],
-      "suggests": [
-        {
-          "category": "cloud-connect"
-        }
-      ],
-      "delivers": [
-        "infra",
-        "logs"
-      ],
-      "unsupported_products": [],
-      "trigger_products": [],
-      "invokes": [],
-      "composes": [],
-      "caveat": "",
-      "source": {
-        "repo": "dd-source",
-        "url": "https://api.datadoghq.com/api/v2/onboarding/skills/agent-install-windows?format=md",
-        "path_type": "file"
-      },
       "status": "canonical",
       "duplicate_of": null,
-      "issues": [
-        "dangling requires:orchestrator remapped to category:foundation"
-      ],
-      "lifecycle": "ga",
+      "issues": [],
+      "lifecycle": null,
       "enabled": true,
       "visibility": "public"
     },
@@ -2177,8 +1638,8 @@
         "url": "https://github.com/datadog-labs/agent-skills/blob/main/dd-agent-install-windows/SKILL.md",
         "path_type": "file"
       },
-      "status": "duplicate",
-      "duplicate_of": "agent-install-windows@s1",
+      "status": "canonical",
+      "duplicate_of": null,
       "issues": [],
       "lifecycle": null,
       "enabled": true,

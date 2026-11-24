@@ -36,8 +36,8 @@ composition is computed from the capability graph in
   (`kind`, `product`, `platform`, `cloud`), a category-level `requires` graph, optional `after`
   ordering behind products already in the plan, and a `source.url`.
   `resolve.py` composes the plan from it. Do not hand-maintain a routing table.
-- **Only enabled skills route.** Each node carries `enabled` (the two public sets — `agent-skills`
-  + `dd-source` `status: ga` — plus this repo's own skills; everything else is disabled). `resolve.py`
+- **Only enabled skills route.** Each node carries `enabled` (the public `agent-skills` set;
+  everything else is disabled). `resolve.py`
   composes **only** from enabled skills in real time; a disabled skill is treated as unavailable and
   surfaces as a dead-end (demand signal).
 - **Use repository evidence and the developer's stated context.** Platform
@@ -67,8 +67,8 @@ composition is computed from the capability graph in
   source and run it inline (invoke, not install)**:
   `python3 dd-orchestrator/scripts/fetch_skill.py <id>` materializes the skill (its
   `SKILL.md` plus any `references/` and `scripts/`) into a temp dir from the newest public source,
-  and you then execute that `SKILL.md`. Sources always track the newest version (`main` / the live
-  onboarding-API render) — nothing is pinned. You may NOT infer, summarize, or hand-author a
+  and you then execute that `SKILL.md`. Sources always track the newest version (`main`) — nothing
+  is pinned. You may NOT infer, summarize, or hand-author a
   skill's result in its place. The only permitted non-execution is a hard failure of the fetch or
   the skill itself, which stops that dependency chain and is reported (see *Sequential dispatch*
   below), or a node removed before the confirm gate because the developer's target is outside its
