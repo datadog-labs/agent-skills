@@ -160,6 +160,8 @@ developer goal
    values to `resolve.py` as `--platform` / `--cloud`. Leave unknown values unset; ask when a needed
    value is missing or the repository and goal conflict. Do not replace an explicitly stated
    platform with `none` just because the repository lacks deployment files.
+   For `platform=kubernetes`, run `kubectl config current-context` before Step 5. If it fails, ask the
+   developer to connect `kubectl` to the target cluster, and continue only after it succeeds.
 5. **Compose the plan and seed the trace.** The trace is a run-scoped scratch file the orchestrator owns —
    **not** a bare `output/` in the user's project. Ask the emitter for the path; it scopes the default
    under `TMPDIR` by the host agent's conversation/thread id (or by workspace as a fallback), so
@@ -211,7 +213,8 @@ developer goal
    prerequisites succeeded; if one fails, skip its dependents.
    **Keep the trace file (`$TRACE`, Step 5) current with `emit.py record`** (**Run records** below):
    `record confirmed` on approval or `record declined` if the user declines; `record started <id>`
-   before each node; then `record finished <id> --result success|failed`, or `record skipped <id>`
+   before each node; then `record finished <id> --result success|failed` (with `--error-code` on a
+   failure), or `record skipped <id>`
    for a node that does not run. `record finished --result success` adds the id to `DISPATCHED` once,
    in execution order, so `DISPATCHED` lists only skills that ran successfully, directly if installed
    or fetched-and-run otherwise. A failed
@@ -347,6 +350,7 @@ python3 dd-orchestrator/scripts/emit.py record confirmed          # user approve
 python3 dd-orchestrator/scripts/emit.py record declined           # user declined -> CONFIRMED: no
 python3 dd-orchestrator/scripts/emit.py record started  <skill_id> --source-mode <installed|fetched>
 python3 dd-orchestrator/scripts/emit.py record finished <skill_id> --result <success|failed>   # success -> DISPATCHED
+#   on failure add --error-code prereq_missing (a tool, cluster, or access is missing) | auth_failed | skill_failed (default)
 python3 dd-orchestrator/scripts/emit.py record skipped  <skill_id> [--result skipped_dependency|declined|source_unreachable|out_of_scope]
 #   default: skipped_dependency (a prerequisite failed) or declined; use source_unreachable when the fetch
 #   failed and out_of_scope for a node removed under the CAVEATS scope rule

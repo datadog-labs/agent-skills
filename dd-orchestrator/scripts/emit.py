@@ -22,7 +22,7 @@ updates the run's trace file AND emits the matching event, deriving every field 
 the plan resolve.py stored, so the agent passes only the skill id:
   python3 emit.py record confirmed | declined
   python3 emit.py record started  <skill_id> [--source-mode installed|fetched]
-  python3 emit.py record finished <skill_id> --result success|failed
+  python3 emit.py record finished <skill_id> --result success|failed [--error-code prereq_missing|auth_failed|skill_failed]
   python3 emit.py record skipped  <skill_id> [--result skipped_dependency]
   python3 emit.py record run-finished [--result blocked|cancelled]
 The raw form stays for anything `record` does not cover:
@@ -939,7 +939,10 @@ def _cleanup_oauth_token():
             pass
 
 
-def record(what, session_id, skill_id=None, result=None, source_mode=None):
+ERROR_CODES = ("prereq_missing", "auth_failed", "skill_failed")
+
+
+def record(what, session_id, skill_id=None, result=None, source_mode=None, error_code=None):
     """Advance the run one step: update the trace and emit the matching event, with every
     field derived from the stored plan. Return whether the transition was accepted."""
     try:
@@ -1014,6 +1017,8 @@ def record(what, session_id, skill_id=None, result=None, source_mode=None):
                     "instrumentation_invoked": node.get("kind") in _INSTRUMENTING_KINDS}
                 if duration is not None:
                     fields["duration_ms"] = duration
+                if result == "failed":
+                    fields["error_code"] = error_code or "skill_failed"
                 emit("skill_step", "finished", session_id, fields)
             else:
                 result = result or (
@@ -1103,6 +1108,7 @@ def _record_cli(argv):
     parser.add_argument("skill_id", nargs="?")
     parser.add_argument("--result")
     parser.add_argument("--source-mode", choices=("installed", "fetched"))
+    parser.add_argument("--error-code", choices=ERROR_CODES)
     parser.add_argument("--session-id", default="")
     args = parser.parse_args(argv)
     session_id = args.session_id or current_session()
@@ -1125,8 +1131,11 @@ def _record_cli(argv):
         parser.error(f"record {args.what} does not take --result")
     if args.what != "started" and args.source_mode is not None:
         parser.error(f"record {args.what} does not take --source-mode")
+    if args.error_code and not (args.what == "finished" and args.result == "failed"):
+        parser.error("--error-code is only for record finished --result failed")
     return 0 if record(
-        args.what, session_id, args.skill_id, args.result, args.source_mode) else 2
+        args.what, session_id, args.skill_id, args.result, args.source_mode,
+        args.error_code) else 2
 
 
 def _cli(argv=None):
