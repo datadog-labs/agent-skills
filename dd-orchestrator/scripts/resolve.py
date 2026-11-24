@@ -530,8 +530,12 @@ class Router:
         def _proc_order(nm):
             t = normalize_product(nm, self.product_tokens)
             return (1 if t in self.installer_products else 0, t or "", str(nm))
+        # (first dead-end index, product token) per product, so each dead-end carries the
+        # bounded token of the product that produced it (telemetry demand signal).
+        gap_starts = []
         for name in sorted(products, key=_proc_order):
             tok = normalize_product(name, self.product_tokens)
+            gap_starts.append((len(dead_ends), tok or ""))
             if tok is None:
                 guess = self._nearest_product(name)
                 hint = f' — did you mean "{guess[0]}" ({guess[1]})?' if guess else ""
@@ -594,6 +598,11 @@ class Router:
                         continue
                     add(v)
                     dependencies.add((v["key"], m["key"]))
+        gap_starts.append((len(dead_ends), ""))
+        gap_product = {}
+        for (start, tok), (end, _) in zip(gap_starts, gap_starts[1:]):
+            for d in dead_ends[start:end]:
+                gap_product.setdefault(d, tok)
 
         # `after` orders a node behind every planned skill of the named product
         # (its enabler and verifier) without staging that product when it is absent.
@@ -683,11 +692,13 @@ class Router:
                     suggested[t["key"]] = {"id": t["id"], "kind": t["kind"], "product": t["product"],
                                            "url": t["source"]["url"], "source": t["source"],
                                            "suggested_by": n["id"]}
+        unique_dead_ends = list(dict.fromkeys(dead_ends))
         return {"plan": ordered,
                 "dag": dag,
                 "suggested": list(suggested.values()),
                 "caveats": list(dict.fromkeys(caveats)),
-                "dead_ends": list(dict.fromkeys(dead_ends)),
+                "dead_ends": unique_dead_ends,
+                "dead_end_products": [gap_product.get(d, "") for d in unique_dead_ends],
                 "choices": [{"need": need, "options": sorted(options)}
                             for need, options in choice_options.items()]}
 
@@ -901,13 +912,13 @@ def _emit_telemetry(session_id, args, products, router, res):
                 step["depends_on"] = ",".join(str(p) for p in deps)
             emit.emit("skill_step", "planned", session_id, step, critical=True)
 
-        # ponytail: one coverage_gap per dead-end, counted only. resolve.py's dead_ends are
-        # free text and privacy (proposal §8) forbids echoing them; splitting them into
-        # per-product tokens is a follow-up. dead_end_count (above) already carries the total.
-        for _dead_end in res["dead_ends"]:
+        # One coverage_gap per dead-end. The free-text reason is never sent (privacy,
+        # proposal §8); only the bounded product token, empty when no product owns the gap.
+        for product in res["dead_end_products"]:
             emit.emit("skill_step", "planned", session_id, {
                 **base,
                 "step_kind": "coverage_gap",
+                "product": product,
                 "skill_invoked": False,
                 "instrumentation_invoked": False,
                 "result": "not_automated",

@@ -74,7 +74,8 @@ composition is computed from the capability graph in
   below), or a node removed before the confirm gate because the developer's target is outside its
   `CAVEATS:` scope (see the PLAN block) — never a silent skip. If `fetch_skill.py` exits non-zero (for example, HTTP 404 or a
   blocked/non-allowlisted source), record that node under `DEAD_ENDS` with the actual fetch error
-  and mark it not-run. Stop its dependency chain. Do not substitute a local, cached, vendored, or
+  and mark it not-run with `record skipped <id> --result source_unreachable`. Fetch before
+  `record started`: a started node can no longer be skipped. Stop its dependency chain. Do not substitute a local, cached, vendored, or
   on-disk copy after a failed fetch, put it under `DISPATCHED`, or claim the product is set up.
 - **Sequential dispatch — chains first, stop on failure.** Run the plan strictly in `resolve.py`'s
   order (it is deterministic and independent of the product request order, and keeps each dependency
@@ -159,8 +160,7 @@ developer goal
    Terraform/SDK/provider signals) or an unambiguous platform/cloud stated in the goal. Pass known
    values to `resolve.py` as `--platform` / `--cloud`. Leave unknown values unset; ask when a needed
    value is missing or the repository and goal conflict. Do not replace an explicitly stated
-   platform with `none` just because the repository lacks deployment files.
-5. **Compose the plan and seed the trace.** The trace is a run-scoped scratch file the orchestrator owns —
+   platform with `none` just because the repository lacks deployment files.5. **Compose the plan and seed the trace.** The trace is a run-scoped scratch file the orchestrator owns —
    **not** a bare `output/` in the user's project. Ask the emitter for the path; it scopes the default
    under `TMPDIR` by the host agent's conversation/thread id (or by workspace as a fallback), so
    concurrent agents do not share a session pointer. `DD_ORCH_OUTPUT_DIR` overrides the directory.
@@ -210,8 +210,10 @@ developer goal
    with the next node. Do not emit another account lifecycle event. Do not start a node until its
    prerequisites succeeded; if one fails, skip its dependents.
    **Keep the trace file (`$TRACE`, Step 5) current with `emit.py record`** (**Run records** below):
-   `record confirmed` on approval or `record declined` if the user declines; `record started <id>`
-   before each node; then `record finished <id> --result success|failed`, or `record skipped <id>`
+   `record confirmed` on approval or `record declined` if the user declines; for a node that is not
+   installed, run `fetch_skill.py` first (a failed fetch is `record skipped <id> --result
+   source_unreachable`); `record started <id>` before each node that runs; then `record finished <id> --result success|failed` (with `--error-code` on a
+   failure), or `record skipped <id>`
    for a node that does not run. `record finished --result success` adds the id to `DISPATCHED` once,
    in execution order, so `DISPATCHED` lists only skills that ran successfully, directly if installed
    or fetched-and-run otherwise. A failed
@@ -347,6 +349,7 @@ python3 dd-orchestrator/scripts/emit.py record confirmed          # user approve
 python3 dd-orchestrator/scripts/emit.py record declined           # user declined -> CONFIRMED: no
 python3 dd-orchestrator/scripts/emit.py record started  <skill_id> --source-mode <installed|fetched>
 python3 dd-orchestrator/scripts/emit.py record finished <skill_id> --result <success|failed>   # success -> DISPATCHED
+#   on failure add --error-code prereq_missing (a tool, cluster, or access is missing) | auth_failed | skill_failed (default)
 python3 dd-orchestrator/scripts/emit.py record skipped  <skill_id> [--result skipped_dependency|declined|source_unreachable|out_of_scope]
 #   default: skipped_dependency (a prerequisite failed) or declined; use source_unreachable when the fetch
 #   failed and out_of_scope for a node removed under the CAVEATS scope rule
