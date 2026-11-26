@@ -120,6 +120,14 @@ Worked example: if `dist/main.js` is served at `https://example.com/static/main.
 `minifiedPathPrefix` is `https://example.com/static/` or `/static/`. If JS is served from the
 server root, `/` is valid.
 
+The app's URL isn't always where its JS is served. When you know the page's URL, check the HTML
+that loads the bundle, often an `index.html` in the project root. A page served from
+`https://example.com/` with `<script src="/dist/bundle.js">` loads the build from
+`https://example.com/dist/`, so that's the prefix, not `/`. Only a script that points at the
+build output counts, not a source entry like Vite's `/src/main.js`, which the build rewrites.
+If nobody told you where the page is served, don't take the prefix from that script path: the
+page may only be used in development. Finish the checks below, and ask if they don't answer it.
+
 This is the field most often wrong, and it cannot be derived from the bundler config alone. Before
 asking the user, check the repo for how it actually deploys:
 
@@ -370,8 +378,10 @@ Error Tracking is un-minified.
 - Leaving `service` or `releaseVersion` different from the values in `datadogRum.init()`. The upload
   succeeds and the sourcemaps are never matched to any error. This is silent.
 - Forgetting the bundler sourcemap setting in step 4. The build passes with only a warning.
-- Guessing `minifiedPathPrefix` from the output directory instead of the served URL. `dist/` is not
-  a URL prefix.
+- Guessing `minifiedPathPrefix` from the output directory instead of the served URL. `dist/` is
+  only part of the prefix when the page loads the bundle from `/dist/`.
+- Using the app's URL as the prefix when the page loads its bundle from a subfolder, like
+  `/dist/bundle.js`.
 - Putting `apiKey` in the committed config file instead of the build environment.
 - Setting `enableGit: true` because a ticket said to "enable git". It is already the default;
   setting it changes nothing.
