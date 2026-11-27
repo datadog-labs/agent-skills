@@ -28,7 +28,7 @@ eval harness, and Datadog MCP or `pup`).
 | `references/eval_audit.md` | Three hard-STOP pre-climb gates: Gate 1 (harness trust), Gate 2 (zero triage), Gate 3 (climbability) |
 | `references/reporting.md` | LLM-Obs `auto_experiment_score` + per-case `auto_experiment_case_score` contracts, tag normalization, `narrative.md`, final report |
 | `references/eval_harness_template.{py,mjs}` | Language-parity harness skeletons (`generate` on redacted row, `grade` on full row, `AUTO_EXP_SPLIT`, `AUTO_EXP_WORKERS`, `AUTO_EXP_REGRADE`) |
-| `scripts/stats.py` & `scripts/loop_helper.py` | Copied to `.auto_experiment/`; deterministic CLI for `split`, `calibrate`, `check-memorization`, `distribution`, `audit`, `decide`, `record`, `stop-check`, `build-tags`, `submit-payload`, `case-payloads`, `render-narrative`, `verify-final` |
+| `scripts/stats.py` & `scripts/loop_helper.py` | Copied to `.auto_experiment/`; deterministic CLI for `split`, `calibrate`, `check-memorization`, `distribution`, `audit`, `decide`, `pool-confirm`, `record`, `stop-check`, `build-tags`, `submit-payload`, `case-payloads`, `render-narrative`, `verify-final` |
 
 **Split vocabulary:** This skill names the two splits **`val`** (the 70% search/analysis split —
 equivalent to **`train`** in standard ML / Anthropic's `eval-hillclimb.md`, read by census,
@@ -430,8 +430,10 @@ every iteration to evaluate the exact state machine (`continue` | `stall_triage`
      `local_file` mode — never both).
    - Best code: `git checkout <best_sha> -- <files_to_optimize>` → run with
      `AUTO_EXP_RESULTS=.auto_experiment/holdout/confirm_best.test.jsonl`.
-   - Pool each side with its existing `test` runs and compute `paired_bootstrap_delta`,
-     `paired_case_test`, `t_two_sample`, `wilson` (if binary), and `n_moved` via `stats.py`.
+   - Pool each side with its existing `test` runs via
+     `python .auto_experiment/loop_helper.py pool-confirm --baseline-results … --best-results … --min-delta <d> --direction <dir> --dataset-id <test_id>`,
+     which computes `paired_bootstrap_delta`, `paired_case_test`, `t_two_sample`, `wilson` (if
+     binary), `n_moved`, and `merge_recommendation` deterministically.
    - *(3-way split: run baseline vs best on the untouched `test` split instead. `all_rows`: skip
      holdout claims and label results in-sample.)*
 3. **Determine `merge_recommendation`:**
