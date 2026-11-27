@@ -450,7 +450,9 @@ def evaluate_line(line: dict, rep: int) -> "tuple[dict | None, dict | None]":
         "rep": rep,
         "iteration": ITERATION,
         "input": _input_text(line)[:500],
-        "output": output[:500],
+        # Store the FULL output (never truncated): AUTO_EXP_REGRADE=1 re-grades directly from this
+        # field, so truncating it to 500 chars silently feeds clipped text to the grader.
+        "output": output,
         "score": float(score),
         "justification": justification,
         "trace_id": (link or {}).get("trace_id"),
@@ -508,7 +510,14 @@ def _regrade(path: Path) -> "tuple[list[dict], list[dict]]":
     errors: list[dict] = []
     for row in rows:
         line = by_id.get(row.get("id"), {"id": row.get("id"), "input": row.get("input")})
-        generation = {"output": row.get("output") or "", "model": row.get("model")}
+        generation = {
+            "output": row.get("output") or "",
+            "model": row.get("model"),
+            "usage": row.get("usage") or {},
+            "latency_s": row.get("latency_s"),
+            "stop_reason": row.get("stop_reason"),
+            "refusal": bool(row.get("refusal")),
+        }
         try:
             score, justification = grade(line, generation)
         except HarnessError as exc:

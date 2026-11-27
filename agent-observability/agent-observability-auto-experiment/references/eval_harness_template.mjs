@@ -323,7 +323,9 @@ async function evaluateLine(line, rep) {
       rep,
       iteration: ITERATION,
       input: (inputText(line) || "").slice(0, 500),
-      output: output.slice(0, 500),
+      // Store the FULL output (never truncated): AUTO_EXP_REGRADE=1 re-grades directly from this
+      // field, so truncating it to 500 chars silently feeds clipped text to the grader.
+      output,
       score: Number(score),
       justification,
       trace_id: link ? link.trace_id : null,
@@ -370,7 +372,14 @@ async function regrade(file) {
   const errors = [];
   for (const row of rows) {
     const line = byId.get(row.id) || { id: row.id, input: row.input };
-    const generation = { output: row.output || "", model: row.model };
+    const generation = {
+      output: row.output || "",
+      model: row.model,
+      usage: row.usage || {},
+      latency_s: row.latency_s ?? null,
+      stop_reason: row.stop_reason ?? null,
+      refusal: Boolean(row.refusal),
+    };
     try {
       const [score, justification] = await grade(line, generation);
       results.push({ ...row, score: Number(score), justification });
