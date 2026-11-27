@@ -492,9 +492,12 @@ it instead of an LLM judge**:
 
 ## Eval-harness spec (`_eval_harness_skill`)
 
-**Companion.** `references/stats.py` is copied to `.auto_experiment/stats.py` alongside the harness
-(always Python, orchestrator-side — the harness matches the code under test's runtime, the
-orchestrator does not).
+**Companions.** `references/stats.py` and `references/loop_helper.py` are copied to
+`.auto_experiment/` alongside the harness (always Python, orchestrator-side — the harness matches
+the code under test's runtime, the orchestrator does not). Use `loop_helper.py` (`split`,
+`calibrate`, `check-memorization`, `decide`, `build-tags`, `render-narrative`, `verify-final`) so
+deterministic math, audit rules, and tag normalization are executed by tested code instead of by
+hand.
 
 **Language.** Python (`.auto_experiment/eval_harness.py`, from `references/eval_harness_template.py`)
 or Node/ESM (`.auto_experiment/eval_harness.mjs`, from `references/eval_harness_template.mjs`).

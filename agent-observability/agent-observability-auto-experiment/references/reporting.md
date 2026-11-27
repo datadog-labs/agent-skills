@@ -49,7 +49,9 @@ Shape of the single iteration-level metric:
     `2` for the next, …), `<sha>` is the **full 40-character** Git commit SHA from
     `git rev-parse HEAD` (**never** an abbreviated 7/8-char hash), and `<decision>` is `kept`,
     `discarded`, `baseline`, or `no_change`.
-  - ⚠️ **Datadog NORMALIZES tag values — encode accordingly.** Tag values are lowercased and some
+  - ⚠️ **Datadog NORMALIZES tag values — encode accordingly.** Use
+    `python .auto_experiment/loop_helper.py build-tags …` to generate the exact tag array so these
+    rules are enforced mechanically. Tag values are lowercased and some
     characters are rewritten, so a tag is **not** a byte-faithful channel. Two rules follow, both
     learned from inspecting really-ingested events rather than from review:
     - **Never put a leading `+` in a tag value.** It is rewritten to `_`: a tag sent as

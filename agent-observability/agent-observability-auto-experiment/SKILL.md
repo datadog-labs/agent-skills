@@ -1105,9 +1105,17 @@ on a **redacted** row; `grade` scores it against the reference or `evaluators` v
 - **Node** → copy `references/eval_harness_template.mjs` to `.auto_experiment/eval_harness.mjs` (use
   `npx tsx` for TypeScript entrypoints).
 
-Also copy **`references/stats.py`** to `.auto_experiment/stats.py` — the paired bootstrap, paired
-case-level t-test, two-sample t-test, Wilson interval, and noise floor that the orchestrator calls
-every iteration (always Python regardless of `runtime`).
+Also copy **`references/stats.py`** and **`references/loop_helper.py`** to `.auto_experiment/` —
+they are always Python regardless of `runtime`. Use `loop_helper.py` instead of hand-computing
+deterministic operations:
+- `split` (Step 1 stratified split + corpus-size gate + zero-overlap/sum checks)
+- `calibrate` (Step 2.4 resolvable `min_delta`, `runs`, and `guardrail_floors`)
+- `check-memorization` (Step 3 mechanical 5-gram scan over `git diff`)
+- `decide` (Step 4 / Iterations 2+ 3-valued mechanism audit, keep/discard matrix, `stats.py`
+  confidence labels, suspicion trigger, and nearest-rank `score_distribution`)
+- `build-tags` (Datadog normalization-safe tag array for `auto_experiment_score`)
+- `render-narrative` (`.auto_experiment/narrative.md` status table)
+- `verify-final` (Final report Step 5 verification gate)
 
 Record `runtime` and `harness_path` in `config.json`. Both templates share the exact same env vars
 (`AUTO_EXP_SPLIT`, `AUTO_EXP_DATASET_ID`, `AUTO_EXP_DATA`, `AUTO_EXP_RESULTS`, `AUTO_EXP_RUNS`,
@@ -1502,10 +1510,12 @@ Full presentation contract is in `references/reporting.md`.
    }
    ```
 5. **Final verification gate — run BEFORE marking the experiment completed:**
-   - If `split_mode != "all_rows"`: confirm `final_result.test` is populated, its `dataset_id` (or
+   Run `python .auto_experiment/loop_helper.py verify-final --config .auto_experiment/config.json`
+   (must exit 0), confirming:
+   - If `split_mode != "all_rows"`: `final_result.test` is populated, its `dataset_id` (or
      `data_path`) is the **`test`** split (never `val`), `scored + excluded == test_case_count` on
      both baseline and best confirm runs, and `stdout.split == "test"` was verified on both.
-   - Confirm `merge_recommendation`, `selection_rounds`, `n_moved`, and `noise_calibration` are all
+   - `merge_recommendation`, `selection_rounds`, `n_moved`, and `noise_calibration` are all
      populated in `config.json`.
    - If any check fails, fix it before proceeding to step 6.
 6. **Print the final report** (per `references/reporting.md`): confirmed `test` headline with
