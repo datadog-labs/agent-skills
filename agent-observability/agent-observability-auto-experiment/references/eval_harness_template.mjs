@@ -285,6 +285,17 @@ function referenceText(line) {
   return null;
 }
 
+function validateScore(raw) {
+  if (typeof raw === "boolean" || raw === null || raw === undefined || raw === "") {
+    throw new HarnessError("judge_error", `grade() returned invalid score ${JSON.stringify(raw)}; expected [0, 1]`);
+  }
+  const val = Number(raw);
+  if (!Number.isFinite(val) || val < 0 || val > 1) {
+    throw new HarnessError("judge_error", `grade() returned out-of-range/non-finite score ${raw}; expected [0, 1]`);
+  }
+  return val;
+}
+
 async function evaluateLine(line, rep) {
   const started = Date.now();
   let generation;
@@ -299,7 +310,9 @@ async function evaluateLine(line, rep) {
     generation = normalizeGeneration(raw);
     if (generation.output === null || generation.output === undefined) return [null, null];
     link = await exportSpanLink();
-    [score, justification] = await grade(line, generation);
+    const [rawScore, rawJustification] = await grade(line, generation);
+    score = validateScore(rawScore);
+    justification = rawJustification;
   } catch (err) {
     return [
       null,
@@ -416,8 +429,9 @@ async function regrade(file) {
           : {},
     };
     try {
-      const [score, justification] = await grade(line, generation);
-      return [{ ...row, score: Number(score), justification }, null];
+      const [rawScore, justification] = await grade(line, generation);
+      const score = validateScore(rawScore);
+      return [{ ...row, score, justification }, null];
     } catch (err) {
       return [
         null,

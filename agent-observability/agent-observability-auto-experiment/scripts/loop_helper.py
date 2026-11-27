@@ -128,9 +128,13 @@ def cmd_split(args: argparse.Namespace) -> None:
             f"corpus size gate STOP: only {n} scoreable cases (< 10). Widen the source before splitting."
         )
     if n < 30 and not args.force_split:
+        if not args.all_out:
+            raise SystemExit(
+                f"all_rows split ({n} cases, < 30) requires --all-out so the output file is written "
+                "(or pass --force-split to force a val/test split)"
+            )
         stamped = [{**r, "split": "all"} for r in rows]
-        if args.all_out:
-            _write_jsonl(Path(args.all_out), stamped)
+        _write_jsonl(Path(args.all_out), stamped)
         print(json.dumps({
             "split_mode": "all_rows",
             "corpus_count": n,
@@ -157,7 +161,7 @@ def cmd_split(args: argparse.Namespace) -> None:
         if not args.select_out:
             raise SystemExit("--three-way requires --select-out")
         grouped = _collapse_small_strata(grouped, min_size=3)
-        val_ratio = args.ratio if args.ratio != 0.7 else 0.5
+        val_ratio = 0.5 if args.ratio is None else float(args.ratio)
         sel_ratio = float(args.select_ratio)
         if val_ratio <= 0 or sel_ratio <= 0 or (val_ratio + sel_ratio) >= 1.0:
             raise SystemExit("invalid three-way ratios: val_ratio and select_ratio must be > 0 and sum < 1")
@@ -215,6 +219,9 @@ def cmd_split(args: argparse.Namespace) -> None:
         }))
         return
 
+    ratio = 0.7 if args.ratio is None else float(args.ratio)
+    if not (0.0 < ratio < 1.0):
+        raise SystemExit(f"invalid --ratio {ratio}: must be strictly between 0 and 1")
     grouped = _collapse_small_strata(grouped, min_size=2)
     for label in sorted(grouped):
         group = grouped[label]
@@ -222,7 +229,7 @@ def cmd_split(args: argparse.Namespace) -> None:
             group,
             key=lambda r: hashlib.sha256(f"{args.seed}:{r.get('id')}".encode()).hexdigest(),
         )
-        n_test = max(1, round(len(ranked) * (1.0 - args.ratio))) if len(ranked) >= 2 else 0
+        n_test = max(1, round(len(ranked) * (1.0 - ratio))) if len(ranked) >= 2 else 0
         n_val = len(ranked) - n_test
         g_val = [{**r, "split": "val"} for r in ranked[:n_val]]
         g_test = [{**r, "split": "test"} for r in ranked[n_val:]]
@@ -266,6 +273,7 @@ def cmd_audit_corpus(args: argparse.Namespace) -> None:
         name, path_str = spec.split("=", 1)
         rows = _read_jsonl(Path(path_str))
         ids: set[str] = set()
+        dup_ids: set[str] = set()
         missing_id = 0
         missing_input = 0
         in_lens: list[int] = []
@@ -275,7 +283,10 @@ def cmd_audit_corpus(args: argparse.Namespace) -> None:
             if cid in (None, ""):
                 missing_id += 1
             else:
-                ids.add(str(cid))
+                sid = str(cid)
+                if sid in ids:
+                    dup_ids.add(sid)
+                ids.add(sid)
             inp = r.get("input")
             if inp in (None, ""):
                 missing_input += 1
@@ -288,6 +299,8 @@ def cmd_audit_corpus(args: argparse.Namespace) -> None:
                 ref_lens.append(len(ref if isinstance(ref, str) else json.dumps(ref)))
         if missing_id:
             errors.append(f"{name}: {missing_id} rows missing id")
+        if dup_ids:
+            errors.append(f"{name}: duplicate ids within split (e.g. {sorted(dup_ids)[:5]})")
         if missing_input:
             errors.append(f"{name}: {missing_input} rows missing input")
         in_sorted = sorted(in_lens)
@@ -295,6 +308,7 @@ def cmd_audit_corpus(args: argparse.Namespace) -> None:
         split_stats[name] = {
             "rows": len(rows),
             "unique_ids": len(ids),
+            "duplicate_ids": sorted(dup_ids)[:20],
             "missing_id": missing_id,
             "missing_input": missing_input,
             "input_len_min": in_sorted[0] if in_sorted else None,
@@ -1234,6 +1248,9 @@ def cmd_stop_check(args: argparse.Namespace) -> None:
             else:
                 prompt_discard_streak = 0
         elif dec == "no_change":
+            # Per SKILL.md Stop conditions: `no_change` iterations neither increment nor reset
+            # discard streaks (three discards separated only by unscored `no_change` probes still
+            # constitute a plateau of 3 consecutive *scored* discards).
             no_change_streak += 1
 
     scope = cfg.get("files_to_optimize") or []
@@ -1473,7 +1490,7 @@ def main() -> None:
     sp.add_argument("--all-out")
     sp.add_argument("--seed", type=int, default=0)
     sp.add_argument("--stratify-by")
-    sp.add_argument("--ratio", type=float, default=0.7)
+    sp.add_argument("--ratio", type=float, default=None, help="val fraction (defaults: 0.7 for 2-way, 0.5 for 3-way)")
     sp.add_argument("--select-ratio", type=float, default=0.25)
     sp.add_argument("--three-way", action="store_true")
     sp.add_argument("--force-split", action="store_true")

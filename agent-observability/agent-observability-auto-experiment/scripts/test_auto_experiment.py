@@ -111,16 +111,27 @@ class TestLoopHelper(unittest.TestCase):
         r = _run_helper(["split", "--input", str(tiny), "--val-out", str(self.tdir / "v.jsonl"), "--test-out", str(self.tdir / "t.jsonl")])
         self.assertNotEqual(r.returncode, 0)
 
-        # 10-29 -> all_rows
+        # 10-29 -> all_rows: omitting --all-out must error; passing --all-out writes the file
         small = self.tdir / "small.jsonl"
         small.write_text("".join(json.dumps({"id": f"i{i}", "input": "x"}) + "\n" for i in range(20)))
+        r_no_out = _run_helper(["split", "--input", str(small), "--val-out", str(self.tdir / "v.jsonl"), "--test-out", str(self.tdir / "t.jsonl")])
+        self.assertNotEqual(r_no_out.returncode, 0)
         r = _run_helper(["split", "--input", str(small), "--val-out", str(self.tdir / "v.jsonl"), "--test-out", str(self.tdir / "t.jsonl"), "--all-out", str(self.tdir / "a.jsonl")])
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(json.loads(r.stdout)["split_mode"], "all_rows")
+        self.assertTrue((self.tdir / "a.jsonl").exists())
 
-        # 120 -> three-way stratified
+        # 120 -> three-way stratified, AND explicit --ratio 0.7 is honored (not rewritten to 0.5)
         corp = self.tdir / "corp.jsonl"
         corp.write_text("".join(json.dumps({"id": f"c{i}", "input": f"q {i}", "expected_output": "A" if i % 2 == 0 else "B"}) + "\n" for i in range(120)))
+        r3_70 = _run_helper([
+            "split", "--three-way", "--ratio", "0.7", "--select-ratio", "0.15", "--input", str(corp),
+            "--val-out", str(self.tdir / "val70.jsonl"),
+            "--select-out", str(self.tdir / "sel70.jsonl"),
+            "--test-out", str(self.tdir / "test70.jsonl"),
+        ])
+        self.assertEqual(r3_70.returncode, 0, r3_70.stderr)
+        self.assertEqual(json.loads(r3_70.stdout)["val_case_count"], 84)
         r3 = _run_helper([
             "split", "--three-way", "--input", str(corp),
             "--val-out", str(self.tdir / "val.jsonl"),
@@ -142,11 +153,14 @@ class TestLoopHelper(unittest.TestCase):
         self.assertGreater(sp_u["test_case_count"], 0)
         self.assertEqual(sp_u["val_case_count"] + sp_u["test_case_count"], 40)
 
-        # audit-corpus passes on disjoint splits and fails on overlap
+        # audit-corpus passes on disjoint splits, fails on overlap AND on duplicate ids within a split
         r_ac = _run_helper(["audit-corpus", "--splits", f"val={self.tdir/'val.jsonl'}", f"select={self.tdir/'sel.jsonl'}", f"test={self.tdir/'test.jsonl'}"])
         self.assertEqual(r_ac.returncode, 0, r_ac.stderr)
         r_ov = _run_helper(["audit-corpus", "--splits", f"val={self.tdir/'val.jsonl'}", f"test={self.tdir/'val.jsonl'}"])
         self.assertNotEqual(r_ov.returncode, 0)
+        dup_split = self.tdir / "dup_id.jsonl"
+        dup_split.write_text(json.dumps({"id": "same", "input": "a"}) + "\n" + json.dumps({"id": "same", "input": "b"}) + "\n")
+        self.assertNotEqual(_run_helper(["audit-corpus", "--splits", f"val={dup_split}"]).returncode, 0)
 
     def test_calibrate_distribution_memorization_and_verify_mean(self) -> None:
         r = _run_helper(["calibrate", "--val-stdev", "0.02", "--test-stdev", "0.05", "--max-runs", "5", "--judge-flip-rate", "0.01", "--guardrails-json", '{"cost_usd":{"baseline":0.02,"stdev":0.001}}'])
@@ -493,6 +507,28 @@ class TestHarnessTemplateParity(unittest.TestCase):
                 orig_rows = [json.loads(l) for l in (tdir / "holdout" / "eval_results.test.jsonl").read_text().splitlines() if l.strip()]
                 self.assertEqual(len(orig_rows), 9, f"{label}: partial regrade overwrote stored outputs!")
                 self.assertTrue((tdir / "holdout" / "eval_results.test.regrade_partial.jsonl").exists())
+
+            # Verify out-of-range / NaN / non-numeric score from grade() is recorded as judge_error (not NaN mean or crash)
+            py_badscore = py_wired.replace(
+                'return (1.0 if "FINAL_TAIL_TOKEN" in generation["output"] else 0.0, "checked")',
+                'if line["id"] == "trunc": return (float("nan"), "bad")\n    if line["id"] == "refuse": return (1.5, "too big")\n    return (1.0 if "FINAL_TAIL_TOKEN" in generation["output"] else 0.0, "checked")',
+            )
+            mjs_badscore = mjs_wired.replace(
+                'return [generation.output.includes("FINAL_TAIL_TOKEN") ? 1.0 : 0.0, "checked"];',
+                'if (line.id === "trunc") return [Number.NaN, "bad"];\n  if (line.id === "refuse") return [1.5, "too big"];\n  return [generation.output.includes("FINAL_TAIL_TOKEN") ? 1.0 : 0.0, "checked"];',
+            )
+            (tdir / "eval_harness_badscore.py").write_text(py_badscore)
+            (tdir / "eval_harness_badscore.mjs").write_text(mjs_badscore)
+            bs_cmds = [("py", [sys.executable, "eval_harness_badscore.py"])]
+            if node_bin:
+                bs_cmds.append(("mjs", [node_bin, "eval_harness_badscore.mjs"]))
+            for label, cmd in bs_cmds:
+                r_bs = run(cmd, {"AUTO_EXP_SPLIT": "test", "AUTO_EXP_DATASET_ID": "ds-test", "AUTO_EXP_RUNS": "3"})
+                self.assertEqual(r_bs.returncode, 0, f"{label} badscore: {r_bs.stderr}")
+                bs_j = json.loads(r_bs.stdout)
+                self.assertEqual(bs_j["scored"], 1)  # only ok1 valid; trunc/refuse classified as judge_error
+                self.assertEqual(bs_j["mean"], 1.0)
+                self.assertEqual(bs_j["errored_cases"], 3)  # err + trunc + refuse
 
             if node_bin:
                 for sp in ("test", "select"):

@@ -402,6 +402,19 @@ def _reference_text(line: dict) -> "str | None":
     return None
 
 
+def _validate_score(raw) -> float:
+    """Validate that `grade()` returned a finite numeric score in [0, 1]."""
+    if isinstance(raw, bool):
+        raise HarnessError("judge_error", f"grade() returned bool {raw!r}; expected numeric score in [0, 1]")
+    try:
+        val = float(raw)
+    except (TypeError, ValueError) as exc:
+        raise HarnessError("judge_error", f"grade() returned non-numeric score {raw!r}: {exc}") from exc
+    if not (val == val and val not in (float("inf"), float("-inf")) and 0.0 <= val <= 1.0):
+        raise HarnessError("judge_error", f"grade() returned out-of-range/non-finite score {val!r}; expected [0, 1]")
+    return val
+
+
 def evaluate_line(line: dict, rep: int) -> "tuple[dict | None, dict | None]":
     """Score ONE datapoint once. Returns (result_row, error_row); exactly one is non-None.
 
@@ -421,7 +434,8 @@ def evaluate_line(line: dict, rep: int) -> "tuple[dict | None, dict | None]":
         if generation.get("output") is None:
             return None, None
         link = _export_span_link()
-        score, justification = grade(line, generation)
+        raw_score, justification = grade(line, generation)
+        score = _validate_score(raw_score)
     except HarnessError as exc:
         return None, {
             "id": line.get("id"),
@@ -518,7 +532,8 @@ def _regrade_one(row: dict, by_id: dict) -> "tuple[dict | None, dict | None]":
         "signals": row.get("signals") if isinstance(row.get("signals"), dict) else {},
     }
     try:
-        score, justification = grade(line, generation)
+        raw_score, justification = grade(line, generation)
+        score = _validate_score(raw_score)
     except HarnessError as exc:
         return None, {
             "id": row.get("id"),
