@@ -177,10 +177,10 @@ class TestLoopHelper(unittest.TestCase):
         ct_up = self._wj("ct_up.json", {**cand, "dataset_id": "t1"})
         ct_flat = self._wj("ct_flat.json", {**base, "dataset_id": "t1"})
 
-        # Kept + significant
-        r_keep = _run_helper(["decide", "--best-val", bv, "--cand-val", cv, "--best-test", bt, "--cand-test", ct_up, "--min-delta", "0.02"])
+        # Kept + significant with lever_layer
+        r_keep = _run_helper(["decide", "--best-val", bv, "--cand-val", cv, "--best-test", bt, "--cand-test", ct_up, "--min-delta", "0.02", "--lever-layer", "retrieval"])
         dec = json.loads(r_keep.stdout)
-        self.assertEqual((dec["decision"], dec["basis"], dec["n_moved"]), ("kept", "significant", 4))
+        self.assertEqual((dec["decision"], dec["basis"], dec["n_moved"], dec["lever_layer"]), ("kept", "significant", 4, "retrieval"))
         res_path = self._wj("result.json", dec)
 
         # Overfit veto
@@ -195,22 +195,39 @@ class TestLoopHelper(unittest.TestCase):
         r_aud = _run_helper(["audit", "--best", bv, "--candidate", cv, "--best-excluded", "0", "--cand-excluded", "0"])
         self.assertEqual(len(json.loads(r_aud.stdout)["flipped_up"]), 4)
 
-        # submit-payload (normal + no_change)
+        # submit-payload carries lever_layer tag and no leading '+'
         r_sp = _run_helper(["submit-payload", "--experiment-id", "exp-1", "--result", res_path, "--iteration", "1", "--sha", "a" * 40, "--decision", "kept", "--reasoning", "KEPT sig", "--time-start-ms", "1000", "--time-end-ms", "2000"])
         tags = json.loads(r_sp.stdout)["metrics"][0]["tags"]
         self.assertFalse(any(":+" in t for t in tags))
         self.assertIn("split:test", tags)
+        self.assertIn("lever_layer:retrieval", tags)
+
+        # summarize-signals contrasts passing vs failing rows and lists failing trace_ids
+        sig_jsonl = self.tdir / "sig.jsonl"
+        sig_jsonl.write_text("\n".join([
+            json.dumps({"id": "p1", "rep": 0, "score": 1.0, "trace_id": "t_ok", "span_id": "s_ok", "signals": {"retrieved_count": 5, "tools_called": ["search"], "branch": "fast"}}),
+            json.dumps({"id": "f1", "rep": 0, "score": 0.0, "trace_id": "t_bad", "span_id": "s_bad", "signals": {"retrieved_count": 0, "tools_called": [], "branch": "fallback", "apm_trace_id": "apm_99"}}),
+        ]) + "\n")
+        r_sig = _run_helper(["summarize-signals", "--results-jsonl", str(sig_jsonl)])
+        self.assertEqual(r_sig.returncode, 0, r_sig.stderr)
+        sig = json.loads(r_sig.stdout)
+        self.assertEqual(sig["passing"]["numeric_means"]["retrieved_count"], 5.0)
+        self.assertEqual(sig["failing"]["numeric_means"]["retrieved_count"], 0.0)
+        self.assertEqual(sig["failing_traces_to_inspect"][0]["apm_trace_id"], "apm_99")
 
         # check-climbability
         r_cc = _run_helper(["check-climbability", "--val-stdout", bv, "--test-stdout", bt, "--min-shippable-delta", "0.50"])
         self.assertEqual(json.loads(r_cc.stdout)["preflight"], "GO")
 
-        # record + stop-check + render-narrative + pool-confirm + verify-final
+        # record + stop-check (2 prompt discards with code in scope -> require_non_prompt_lever=True!)
         cfg = self.tdir / "config.json"
-        cfg.write_text(json.dumps({"max_iterations": 8, "split_mode": "val_test", "val_dataset_id": "d1", "test_dataset_id": "t1", "test_case_count": 10, "iteration_results": []}))
+        cfg.write_text(json.dumps({"max_iterations": 8, "files_to_optimize": ["backend/search.py", "prompts/sys.md"], "split_mode": "val_test", "val_dataset_id": "d1", "test_dataset_id": "t1", "test_case_count": 10, "iteration_results": []}))
         _run_helper(["record", "--config", str(cfg), "--row", json.dumps({"iteration": 0, "decision": "baseline", "basis": "baseline", "sha": "0" * 40, "val": {"after": 0.4}, "test": {"after": 0.4, "scored": 10, "excluded": 0, "errored": 0}, "time_start": "2026-10-01T00:00:00Z", "time_end": "2026-10-01T00:01:00Z"})])
-        for i in (1, 2, 3):
-            _run_helper(["record", "--config", str(cfg), "--row", json.dumps({"iteration": i, "decision": "discarded", "basis": "overfit", "sha": str(i) * 40, "val": {"after": 0.5}, "test": {"after": 0.4, "delta": 0.0, "scored": 10, "excluded": 0, "errored": 0}})])
+        for i in (1, 2):
+            _run_helper(["record", "--config", str(cfg), "--row", json.dumps({"iteration": i, "lever_layer": "prompt", "decision": "discarded", "basis": "overfit", "sha": str(i) * 40, "val": {"after": 0.5}, "test": {"after": 0.4, "delta": 0.0, "scored": 10, "excluded": 0, "errored": 0}})])
+        sc2 = json.loads(_run_helper(["stop-check", "--config", str(cfg)]).stdout)
+        self.assertTrue(sc2["require_non_prompt_lever"])
+        _run_helper(["record", "--config", str(cfg), "--row", json.dumps({"iteration": 3, "lever_layer": "prompt", "decision": "discarded", "basis": "overfit", "sha": "3" * 40, "val": {"after": 0.5}, "test": {"after": 0.4, "delta": 0.0, "scored": 10, "excluded": 0, "errored": 0}})])
         self.assertEqual(json.loads(_run_helper(["stop-check", "--config", str(cfg)]).stdout)["action"], "stall_triage")
 
         # pool-confirm

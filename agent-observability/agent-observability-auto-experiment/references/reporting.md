@@ -104,8 +104,10 @@ Shape of the single iteration-level metric:
     - **Goal and guardrail tags:** `goal_target:<score|cost_usd|latency_s>` and
       `goal_direction:<higher|lower>`, plus per held metric `hold_<metric>_ratio:<X.XXXX>` and
       `hold_<metric>_status:<ok|within_noise|regressed>`.
-    - **Integrity tags:** `suspicious:<true|false>` (the concern sentence goes in `reasoning`) and
-      `grader_version:<int>` (scores from different grader versions are not comparable).
+    - **Integrity & lever tags:** `suspicious:<true|false>` (the concern sentence goes in
+      `reasoning`), `lever_layer:<retrieval|tool_io|preprocessing|control_flow|postprocessing|model_params|prompt>`
+      (so code vs prompt changes are filterable in Datadog), and `grader_version:<int>` (scores from
+      different grader versions are not comparable).
     - **Timing tags:** `time_start_ms:<epoch_millis>` and `time_end_ms:<epoch_millis>` — exact
       integer epoch milliseconds matching the ISO-8601 timestamps in `iteration_results`.
   - **Distribution tags (required on every scored iteration):**
@@ -253,11 +255,11 @@ Two parts, in this order:
 **1. The status table.** Row 0 is the baseline; one row per iteration after that.
 
 ```
-| iter | change (one line)        | test  | val   | Δtest  | n_moved | basis        | $/case | p50 s | scored/excl/err | sha     |
-|------|--------------------------|-------|-------|--------|---------|--------------|--------|-------|-----------------|---------|
-| 0    | baseline                 | 0.62  | 0.60  |   —    |    —    | baseline     | 0.026  | 19.8  | 34/2/0          | fd0fbab |
-| 1    | when-to-retrieve rule    | 0.70  | 0.73  | +0.08  |   5/34  | significant  | 0.030  | 19.5  | 34/2/0          | 33ec6e0 |
-| 2    | reworded the tool desc   | 0.62  | 0.71  | +0.00  |   0/34  | overfit      | 0.029  | 19.6  | 34/2/1          | a91c440 |
+| iter | layer     | change (one line)        | test  | val   | Δtest  | n_moved | basis        | $/case | p50 s | scored/excl/err | sha     |
+|------|-----------|--------------------------|-------|-------|--------|---------|--------------|--------|-------|-----------------|---------|
+| 0    | —         | baseline                 | 0.62  | 0.60  |   —    |    —    | baseline     | 0.026  | 19.8  | 34/2/0          | fd0fbab |
+| 1    | retrieval | normalize search query   | 0.70  | 0.73  | +0.08  |   5/34  | significant  | 0.030  | 19.5  | 34/2/0          | 33ec6e0 |
+| 2    | prompt    | reworded the tool desc   | 0.62  | 0.71  | +0.00  |   0/34  | overfit      | 0.029  | 19.6  | 34/2/1          | a91c440 |
 ```
 
 - **Flag only the deltas that clear noise.** De-emphasize the rest so the user's eye lands on what

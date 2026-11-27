@@ -7,7 +7,7 @@ description: >-
   val (labeling within-noise gains tentative), and repeats. This is the skill published as
   "Autoresearch" in Datadog Agent Observability. Use when the user says "run an auto experiment",
   "run autoresearch", "hill-climb this code", "iteratively improve X and measure the delta",
-  "optimize this prompt/file against my traces", "auto-optimize against LLM-Obs", or wants the
+  "optimize this code/agent/pipeline/prompt against my traces", "auto-optimize against LLM-Obs", or wants the
   local equivalent of the auto_experiments worker. Works from an ml_app, a dataset_id, an
   annotation_queue_id (a queue of human-labelled interactions), a list of trace_ids, or (by
   exception) a local dataset file. The corpus and its val/test splits live in Datadog LLM-Obs
@@ -28,7 +28,7 @@ eval harness, and Datadog MCP or `pup`).
 | `references/eval_audit.md` | Three hard-STOP pre-climb gates: Gate 1 (harness trust), Gate 2 (zero triage), Gate 3 (climbability) |
 | `references/reporting.md` | LLM-Obs `auto_experiment_score` + per-case `auto_experiment_case_score` contracts, tag normalization, `narrative.md`, final report |
 | `references/eval_harness_template.{py,mjs}` | Language-parity harness skeletons (`generate` on redacted row, `grade` on full row, `AUTO_EXP_SPLIT`, `AUTO_EXP_WORKERS`, `AUTO_EXP_REGRADE`) |
-| `scripts/stats.py` & `scripts/loop_helper.py` | Copied to `.auto_experiment/`; deterministic CLI for `split`, `audit-corpus`, `verify-mean`, `check-climbability`, `calibrate`, `check-memorization`, `distribution`, `audit`, `decide`, `pool-confirm`, `record`, `stop-check`, `build-tags`, `submit-payload`, `case-payloads`, `render-narrative`, `verify-final` |
+| `scripts/stats.py` & `scripts/loop_helper.py` | Copied to `.auto_experiment/`; deterministic CLI for `split`, `audit-corpus`, `summarize-signals`, `verify-mean`, `check-climbability`, `calibrate`, `check-memorization`, `distribution`, `audit`, `decide`, `pool-confirm`, `record`, `stop-check`, `build-tags`, `submit-payload`, `case-payloads`, `render-narrative`, `verify-final` |
 
 **Split vocabulary:** This skill names the two splits **`val`** (the 70% search/analysis split —
 equivalent to **`train`** in standard ML / Anthropic's `eval-hillclimb.md`, read by census,
@@ -321,9 +321,11 @@ in `local_file` mode), record `val_dataset_id`, `test_dataset_id`, `val_case_cou
    AUTO_EXP_SPLIT=val  AUTO_EXP_DATASET_ID=<val_id>  AUTO_EXP_RUNS=3 AUTO_EXP_ITERATION=0 python .auto_experiment/eval_harness.py
    AUTO_EXP_SPLIT=test AUTO_EXP_DATASET_ID=<test_id> AUTO_EXP_RUNS=3 AUTO_EXP_ITERATION=0 python .auto_experiment/eval_harness.py
    ```
-   Price baseline rows from `config.json.prices`, record baseline cost & p50/p95 latency, and
-   **inspect the baseline execution signals + linked LLM-Obs/APM traces on failing `val` cases** so
-   you know what the code actually did during baseline execution (not just what text came out).
+   Price baseline rows from `config.json.prices`, record baseline cost & p50/p95 latency, and run
+   `python .auto_experiment/loop_helper.py summarize-signals --results-jsonl .auto_experiment/eval_results.val.jsonl`
+   to contrast execution `signals` between passing vs failing `val` cases and pull the failing
+   `trace_id`s for **LLM-Obs child-span & APM trace inspection** so you know what the code actually
+   did during baseline execution (not just what text came out).
    Commit harness, `stats.py`, `loop_helper.py`, `config.json`, and `eval_results.val.jsonl`
    (keeping `holdout/` gitignored). **Defer iteration-0 LLM-Obs reporting until Step 2.4.**
 
@@ -374,10 +376,12 @@ Spawn a fresh sub-agent (with the 4 verbatim briefing rules, `census.json`'s `co
 bucket `likely_layer`/`code_locations`/`trace_evidence`) to make **ONE focused change** targeting
 the largest reachable `census.json` bucket **at the code layer where the failure originates**.
 Enforce the **code-before-prompt rule** (`rubrics.md`): do not tweak a prompt to work around broken
-retrieval, tool I/O, preprocessing, routing, parsing, or parameters; if 2 consecutive prompt-only
-iterations were discarded while non-prompt code is in scope, require the next attempt to target a
-code/tool/retrieval/parameter lever. Record `lever_layer` on `result.json`. Commit on the scratch
-branch, then run before spending a full two-split eval:
+retrieval, tool I/O, preprocessing, routing, parsing, or parameters; if `loop_helper.py stop-check`
+reports `require_non_prompt_lever: true` (2 consecutive discarded prompt-only iterations while
+non-prompt code is in scope), the next attempt MUST target a code/tool/retrieval/parameter lever.
+Pass `--lever-layer` into `loop_helper.py decide` so `result.json`, `narrative.md`, and LLM-Obs tags
+record which layer changed. Commit on the scratch branch, then run before spending a full two-split
+eval:
 
 1. **Feasibility probe + ceiling sizing** (`rubrics.md`): if probe reaches 0 failing `val` cases or
    targeted bucket ceiling `< min_delta` → record `no_change`, skip full eval.

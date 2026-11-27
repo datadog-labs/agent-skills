@@ -9,6 +9,7 @@ final verification gate out of prose and into tested stdlib Python.
 Subcommands:
   split               Stratified deterministic corpus split + corpus-size gate
   audit-corpus        Gate 1 Tier-1 corpus checks (dupes, schema, lengths, zero split overlap)
+  summarize-signals   Compare execution signals on passing vs failing rows + list failing trace_ids
   verify-mean         Gate 1 + per-iteration raw-row mean recomputation check to 1e-9
   check-climbability  Gate 3 climbability, saturation class, and val/test population check
   calibrate           Resolvable min_delta, runs, and per-guardrail floors
@@ -307,6 +308,75 @@ def cmd_audit_corpus(args: argparse.Namespace) -> None:
         raise SystemExit(1)
 
 
+def cmd_summarize_signals(args: argparse.Namespace) -> None:
+    """Compare execution `signals` between passing and failing rows to surface code-layer root causes."""
+    rows = _read_jsonl(Path(args.results_jsonl))
+    if not rows:
+        raise SystemExit(f"no rows in {args.results_jsonl}")
+    threshold = float(args.pass_threshold)
+    # Aggregate per case id (mean score across reps, merge signals from latest rep)
+    by_id: dict[str, list[dict]] = {}
+    for r in rows:
+        by_id.setdefault(str(r["id"]), []).append(r)
+
+    passing, failing = [], []
+    failing_trace_ids: list[dict] = []
+    cases_with_signals = 0
+    for cid, case_rows in sorted(by_id.items()):
+        mean_score = sum(float(r["score"]) for r in case_rows) / len(case_rows)
+        last = case_rows[-1]
+        sig = last.get("signals") if isinstance(last.get("signals"), dict) else {}
+        if sig:
+            cases_with_signals += 1
+        entry = {"id": cid, "score_mean": mean_score, "signals": sig, "trace_id": last.get("trace_id"), "span_id": last.get("span_id")}
+        if mean_score >= threshold:
+            passing.append(entry)
+        else:
+            failing.append(entry)
+            if last.get("trace_id") or sig.get("apm_trace_id"):
+                failing_trace_ids.append({
+                    "id": cid,
+                    "score_mean": round(mean_score, 4),
+                    "llmobs_trace_id": last.get("trace_id"),
+                    "llmobs_span_id": last.get("span_id"),
+                    "apm_trace_id": sig.get("apm_trace_id"),
+                })
+
+    def _agg_group(group: list[dict]) -> dict:
+        if not group:
+            return {"count": 0, "numeric_means": {}, "categorical_counts": {}, "list_item_counts": {}}
+        num_buckets: dict[str, list[float]] = {}
+        cat_buckets: dict[str, dict[str, int]] = {}
+        list_buckets: dict[str, dict[str, int]] = {}
+        for item in group:
+            for k, v in item["signals"].items():
+                if isinstance(v, bool):
+                    cat_buckets.setdefault(k, {})[str(v).lower()] = cat_buckets.setdefault(k, {}).get(str(v).lower(), 0) + 1
+                elif isinstance(v, (int, float)):
+                    num_buckets.setdefault(k, []).append(float(v))
+                elif isinstance(v, str):
+                    cat_buckets.setdefault(k, {})[v] = cat_buckets.setdefault(k, {}).get(v, 0) + 1
+                elif isinstance(v, list):
+                    for el in v:
+                        key = str(el)
+                        list_buckets.setdefault(k, {})[key] = list_buckets.setdefault(k, {}).get(key, 0) + 1
+        return {
+            "count": len(group),
+            "numeric_means": {k: round(sum(vs) / len(vs), 4) for k, vs in sorted(num_buckets.items())},
+            "categorical_counts": {k: dict(sorted(d.items())) for k, d in sorted(cat_buckets.items())},
+            "list_item_counts": {k: dict(sorted(d.items())) for k, d in sorted(list_buckets.items())},
+        }
+
+    print(json.dumps({
+        "total_cases": len(by_id),
+        "cases_with_signals": cases_with_signals,
+        "pass_threshold": threshold,
+        "passing": _agg_group(passing),
+        "failing": _agg_group(failing),
+        "failing_traces_to_inspect": failing_trace_ids[:30],
+    }, indent=2))
+
+
 def cmd_verify_mean(args: argparse.Namespace) -> None:
     rows = _read_jsonl(Path(args.results_jsonl))
     if not rows:
@@ -587,6 +657,7 @@ def cmd_decide(args: argparse.Namespace) -> None:
             "audit_failed_reasons": audit_failed_reasons,
             "suspicious": suspicious_reason,
             "suspicion_checked": False,
+            "lever_layer": args.lever_layer,
             "n_moved": (boot or {}).get("n_moved", 0),
         }, indent=2))
         return
@@ -700,6 +771,7 @@ def cmd_decide(args: argparse.Namespace) -> None:
         "audit_failed_reasons": audit_failed_reasons,
         "suspicious": suspicious_reason,
         "suspicion_checked": False,
+        "lever_layer": args.lever_layer,
         "n_moved": (boot_test or {}).get("n_moved", 0),
     }
     print(json.dumps(out, indent=2))
@@ -858,6 +930,8 @@ def _build_tags_list(
         tags.append(f"hold_{m}_status:{str(g['status']).lower()}")
 
     tags.append(f"suspicious:{str(bool(res.get('suspicious'))).lower()}")
+    if res.get("lever_layer"):
+        tags.append(f"lever_layer:{str(res['lever_layer']).lower()}")
 
     dist = res.get("score_distribution")
     if dist:
@@ -1006,6 +1080,7 @@ def cmd_stop_check(args: argparse.Namespace) -> None:
 
     discard_streak = 0
     no_change_streak = 0
+    prompt_discard_streak = 0
     for r in imp_rows:
         dec = r.get("decision")
         basis = r.get("basis")
@@ -1013,15 +1088,27 @@ def cmd_stop_check(args: argparse.Namespace) -> None:
             # Reset streak when stall triage dispatched artifact_gap to keep searching
             if r.get("stall_dispatch") == "artifact_gap":
                 discard_streak = 0
+                prompt_discard_streak = 0
             continue
         if dec == "kept":
             discard_streak = 0
             no_change_streak = 0
+            prompt_discard_streak = 0
         elif dec == "discarded":
             discard_streak += 1
             no_change_streak = 0
+            if r.get("lever_layer") == "prompt":
+                prompt_discard_streak += 1
+            else:
+                prompt_discard_streak = 0
         elif dec == "no_change":
             no_change_streak += 1
+
+    scope = cfg.get("files_to_optimize") or []
+    has_non_prompt_code = any(
+        not str(f).lower().endswith((".md", ".txt", ".j2", ".jinja", ".jinja2"))
+        for f in scope
+    )
 
     if imp_done >= max_iters:
         out = {"action": "stop", "stop_reason": "reached max_iterations"}
@@ -1039,6 +1126,8 @@ def cmd_stop_check(args: argparse.Namespace) -> None:
         "improvement_iterations_done": imp_done,
         "iterations_left": iters_left,
         "plateau_discard_streak": discard_streak,
+        "prompt_discard_streak": prompt_discard_streak,
+        "require_non_prompt_lever": prompt_discard_streak >= 2 and has_non_prompt_code,
         "no_change_streak": no_change_streak,
         "stall_triage_ran": stall_triage_ran,
     })
@@ -1144,19 +1233,20 @@ def cmd_render_narrative(args: argparse.Namespace) -> None:
 
     if all_rows:
         lines = [
-            "| iter | change (one line) | in-sample | Δ | n_moved | basis | $/case | p50 s | scored/excl/err | sha |",
-            "|------|-------------------|-----------|---|---------|-------|--------|-------|-----------------|-----|",
+            "| iter | layer | change (one line) | in-sample | Δ | n_moved | basis | $/case | p50 s | scored/excl/err | sha |",
+            "|------|-------|-------------------|-----------|---|---------|-------|--------|-------|-----------------|-----|",
         ]
     else:
         lines = [
-            "| iter | change (one line) | test | val | Δtest | n_moved | basis | $/case | p50 s | scored/excl/err | sha |",
-            "|------|-------------------|------|-----|-------|---------|-------|--------|-------|-----------------|-----|",
+            "| iter | layer | change (one line) | test | val | Δtest | n_moved | basis | $/case | p50 s | scored/excl/err | sha |",
+            "|------|-------|-------------------|------|-----|-------|---------|-------|--------|-------|-----------------|-----|",
         ]
 
     base_cost = None
     base_p95 = None
     for row in rows:
         it = row.get("iteration", 0)
+        layer = str(row.get("lever_layer") or ("—" if it == 0 else "—"))
         change = str(row.get("change") or ("baseline" if it == 0 else "")).replace("|", "/")[:60]
         basis = row.get("basis") or row.get("decision") or "—"
         sha = str(row.get("sha") or "")[:7] or "—"
@@ -1183,11 +1273,11 @@ def cmd_render_narrative(args: argparse.Namespace) -> None:
         n_moved = "—" if it == 0 else str(row.get("n_moved", "—"))
         if all_rows:
             score_s = f"{t['after']:.4f}" if isinstance(t.get("after"), (int, float)) else "—"
-            lines.append(f"| {it} | {change}{warn} | {score_s} | {delta_s} | {n_moved} | {basis} | {cost_s} | {p50_s} | {counts} | {sha} |")
+            lines.append(f"| {it} | {layer} | {change}{warn} | {score_s} | {delta_s} | {n_moved} | {basis} | {cost_s} | {p50_s} | {counts} | {sha} |")
         else:
             ts = f"{t['after']:.4f}" if isinstance(t.get("after"), (int, float)) else "—"
             vs = f"{v['after']:.4f}" if isinstance(v.get("after"), (int, float)) else "—"
-            lines.append(f"| {it} | {change}{warn} | {ts} | {vs} | {delta_s} | {n_moved} | {basis} | {cost_s} | {p50_s} | {counts} | {sha} |")
+            lines.append(f"| {it} | {layer} | {change}{warn} | {ts} | {vs} | {delta_s} | {n_moved} | {basis} | {cost_s} | {p50_s} | {counts} | {sha} |")
 
     content = "\n".join(lines) + "\n\n" + (args.summary or "_Summary pending._") + "\n"
     Path(args.out).write_text(content)
@@ -1247,6 +1337,11 @@ def main() -> None:
     ac.add_argument("--splits", nargs="+", required=True, help="name=path pairs, e.g. val=v.jsonl test=t.jsonl")
     ac.set_defaults(func=cmd_audit_corpus)
 
+    ss = sub.add_parser("summarize-signals")
+    ss.add_argument("--results-jsonl", required=True)
+    ss.add_argument("--pass-threshold", type=float, default=1.0)
+    ss.set_defaults(func=cmd_summarize_signals)
+
     vm = sub.add_parser("verify-mean")
     vm.add_argument("--results-jsonl", required=True)
     vm.add_argument("--printed-mean", type=float, required=True)
@@ -1293,6 +1388,10 @@ def main() -> None:
     dec.add_argument("--target-ceiling", type=float)
     dec.add_argument("--guardrails-json")
     dec.add_argument("--memorization-verdict", choices=("clean", "explained", "memorized"), default="clean")
+    dec.add_argument(
+        "--lever-layer",
+        choices=("retrieval", "tool_io", "preprocessing", "control_flow", "postprocessing", "model_params", "prompt"),
+    )
     dec.set_defaults(func=cmd_decide)
 
     pc = sub.add_parser("pool-confirm")

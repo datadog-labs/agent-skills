@@ -42,6 +42,7 @@ ceremony.
 | Oracle probe | **Always** |
 | Ground-truth isolation | **Always** |
 | Mechanism wired | **Always** |
+| Execution signal & trace coverage | **Always** (confirm `generate()` populates `signals` and/or `trace_id`/`span_id` when code has tools, retrieval, branching, or instrumentation) |
 | Resolved-scope print | **Always** |
 | Headline recomputes from raw rows | **Always** (and every iteration) |
 | Tier-1 corpus checks (incl. `val ∩ test == ∅`) | **Always** |
@@ -120,6 +121,20 @@ to what was asked for. The harness surfaces this every run as `models_seen`.
 
 **On failure.** A provider fallback or capacity reroute means the score was served by a model nobody
 chose, and the comparison measures nothing. **STOP.**
+
+### Execution signal & trace coverage
+
+**Procedure.** On the smoke run, inspect the row written to `eval_results.val.jsonl`. If
+`files_to_optimize` includes non-prompt code (retrieval, tools, routing, preprocessing, parsing, or
+APM/LLM-Obs instrumentation), confirm `row["signals"]` is non-empty (capturing at least the key
+intermediate code signals, e.g. `tools_called`, `retrieved_count`, `branch_taken`, `retries`,
+`step_latencies_ms`, `apm_trace_id`) and that `trace_id`/`span_id` are populated when instrumented.
+
+**Pass.** Code-execution signals (and trace links when instrumented) land on every scored row.
+
+**On failure.** Do not start the pilot blind with `signals: {}` on a multi-step codebase — wire the
+intermediate signal capture in `generate()` now so Step 2.5's `summarize-signals` and census can
+localize code-layer bugs instead of guessing prompt edits from final text alone.
 
 ### Resolved-scope print
 
