@@ -329,12 +329,28 @@ class TestLoopHelper(unittest.TestCase):
         bt = mk_std("t1", cost_hi, lat_hi)
         ct = mk_std("t1", cost_lo, lat_lo)
 
-        # Optimizing cost_usd lower keeps a real cost drop even when quality score is flat
+        # Optimizing cost_usd lower keeps a real cost drop even when quality score is flat,
+        # AND score_distribution still reflects QUALITY scores (0.8), not cost_usd (0.02)!
         r_cost = _run_helper(["decide", "--target", "cost_usd", "--direction", "lower", "--best-val", bv, "--cand-val", cv, "--best-test", bt, "--cand-test", ct, "--min-delta", "0.005"])
         self.assertEqual(r_cost.returncode, 0, r_cost.stderr)
         dc = json.loads(r_cost.stdout)
         self.assertEqual((dc["target"], dc["decision"], dc["basis"], dc["n_moved"]), ("cost_usd", "kept", "significant", 10))
         self.assertLess(dc["test"]["delta"], 0.0)
+        self.assertEqual(dc["score_distribution"]["median"], 0.8)
+
+        # check-climbability --target cost_usd reads cost_usd metric_stats (not quality scores)
+        r_cc_cost = _run_helper(["check-climbability", "--target", "cost_usd", "--direction", "lower", "--val-stdout", bv, "--test-stdout", bt, "--min-shippable-delta", "0.01"])
+        self.assertEqual(r_cc_cost.returncode, 0, r_cc_cost.stderr)
+        ccc = json.loads(r_cc_cost.stdout)
+        self.assertEqual((ccc["target"], ccc["saturation_class"], ccc["preflight"]), ("cost_usd", "not_applicable", "GO"))
+        self.assertLess(ccc["noise_floor_test"], 0.01)
+
+        # Truncation guard flags increased truncated count even when means improve
+        ct_trunc_data = json.loads(Path(ct).read_text())
+        ct_trunc_data["truncated"] = 3
+        ct_trunc = self._wj("ct_trunc.json", ct_trunc_data)
+        r_tr = _run_helper(["decide", "--target", "cost_usd", "--direction", "lower", "--best-val", bv, "--cand-val", cv, "--best-test", bt, "--cand-test", ct_trunc, "--min-delta", "0.005"])
+        self.assertTrue(json.loads(r_tr.stdout)["truncation_warnings"])
 
         # Quality regression with UNCHANGED cost_usd must NOT be kept as a cost win!
         cv_badq = mk_std("v1", cost_hi, lat_hi, q_mean=0.2)

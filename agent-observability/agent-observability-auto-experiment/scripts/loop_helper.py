@@ -437,40 +437,47 @@ def cmd_verify_mean(args: argparse.Namespace) -> None:
 
 def cmd_check_climbability(args: argparse.Namespace) -> None:
     stats = _load_stats()
+    target = args.target
     test_obj = json.loads(Path(args.test_stdout).read_text())
-    pcm = test_obj["per_case_means"]
+    t_stats = _extract_target_stats(test_obj, target, "test_stdout")
+    pcm = t_stats["per_case_means"]
     vals = [float(v) for v in pcm.values()]
     if not vals:
-        raise SystemExit("empty per_case_means in --test-stdout")
-    test_mean = float(test_obj["mean"])
+        raise SystemExit(f"empty per_case_means for target {target!r} in --test-stdout")
+    test_mean = float(t_stats["mean"])
     nf_test = stats.noise_floor(pcm)
     higher = args.direction == "higher"
-    headroom = round((1.0 - test_mean) if higher else test_mean, 4)
     min_ship = float(args.min_shippable_delta)
 
-    v_min, v_max = min(vals), max(vals)
-    if v_max == 0.0:
-        sat = "always_zero"
-    elif v_min == 1.0:
-        sat = "perfect"
-    elif test_mean >= 0.99 and v_min < 1.0:
-        sat = "saturated"
-    elif test_mean < 0.70:
-        sat = "struggling"
+    if target == "score":
+        headroom = round((1.0 - test_mean) if higher else test_mean, 4)
+        v_min, v_max = min(vals), max(vals)
+        if v_max == 0.0:
+            sat = "always_zero"
+        elif v_min == 1.0:
+            sat = "perfect"
+        elif test_mean >= 0.99 and v_min < 1.0:
+            sat = "saturated"
+        elif test_mean < 0.70:
+            sat = "struggling"
+        else:
+            sat = "interesting"
     else:
-        sat = "interesting"
+        headroom = round(test_mean, 6) if not higher else None
+        sat = "not_applicable"
 
     pop_check = None
     if args.val_stdout and args.split_mode != "all_rows":
         val_obj = json.loads(Path(args.val_stdout).read_text())
-        val_mean = float(val_obj["mean"])
+        v_stats = _extract_target_stats(val_obj, target, "val_stdout")
+        val_mean = float(v_stats["mean"])
         gap = abs(val_mean - test_mean)
-        t_pop = stats.t_two_sample(test_mean, float(test_obj["stdev"]), val_mean, float(val_obj["stdev"]), int(test_obj["runs"]), int(val_obj["runs"]))
+        t_pop = stats.t_two_sample(test_mean, float(t_stats["stdev"]), val_mean, float(v_stats["stdev"]), int(t_stats["runs"]), int(v_stats["runs"]))
         if t_pop is not None:
-            threshold = round(2.0 * t_pop["se_diff"], 4)
+            threshold = round(2.0 * t_pop["se_diff"], 6)
         else:
-            nf_val = stats.noise_floor(val_obj["per_case_means"]) or 0.0
-            threshold = round(max(nf_val, nf_test or 0.0), 4)
+            nf_val = stats.noise_floor(v_stats["per_case_means"]) or 0.0
+            threshold = round(max(nf_val, nf_test or 0.0), 6)
         agree = gap <= threshold
         pop_check = {
             "agree": agree,
@@ -486,10 +493,10 @@ def cmd_check_climbability(args: argparse.Namespace) -> None:
         stops.append(f"saturation_class={sat}")
     if nf_test is not None and nf_test > min_ship:
         stops.append(f"noise_floor ({nf_test:.4f}) > min_shippable_delta ({min_ship:.4f})")
-    if nf_test is not None and nf_test > headroom:
+    if nf_test is not None and headroom is not None and nf_test > headroom:
         stops.append(f"noise_floor ({nf_test:.4f}) > headroom ({headroom:.4f})")
     if pop_check is not None and not pop_check["agree"]:
-        stops.append(f"val/test baselines disagree (gap={pop_check['gap']:.4f} > {pop_check['threshold']:.4f}) — eligible for 1 split redraw")
+        stops.append(f"val/test baselines disagree on {target} (gap={pop_check['gap']:.4f} > {pop_check['threshold']:.4f}) — eligible for 1 split redraw")
 
     if stops:
         preflight = "STOP: " + "; ".join(stops)
@@ -499,6 +506,7 @@ def cmd_check_climbability(args: argparse.Namespace) -> None:
         preflight = "GO"
 
     print(json.dumps({
+        "target": target,
         "noise_floor_test": nf_test,
         "headroom": headroom,
         "min_shippable_delta": min_ship,
@@ -659,9 +667,14 @@ def cmd_decide(args: argparse.Namespace) -> None:
         sig = abs(delta) >= min_delta and (t_res is None or t_res["t_stat"] >= 2.0)
 
         audit_failed_reasons = []
+        truncation_warnings = []
         void_error = False
         if best_a["excluded"] != cand_a["excluded"]:
             audit_failed_reasons.append(f"all excluded changed ({best_a['excluded']} -> {cand_a['excluded']})")
+        if cand_a.get("truncated", 0) > best_a.get("truncated", 0):
+            truncation_warnings.append(
+                f"all truncated increased ({best_a.get('truncated', 0)} -> {cand_a.get('truncated', 0)}) — check clipping"
+            )
         case_count = max(1, best_a["scored"] + best_a.get("errored_cases", 0))
         if cand_a["errored"] > best_a["errored"] + max(1, int(0.05 * case_count)):
             void_error = True
@@ -693,6 +706,7 @@ def cmd_decide(args: argparse.Namespace) -> None:
         elif args.target_ceiling is not None and dir_sign(delta) > float(args.target_ceiling):
             suspicious_reason = f"in-sample {target} delta {delta:+.4f} exceeds targeted bucket ceiling ({float(args.target_ceiling):.4f})"
 
+        score_pcm = _extract_target_stats(cand_a, "score", "cand_all")["per_case_means"]
         print(json.dumps({
             "headline_split": "all",
             "split_mode": "all_rows",
@@ -719,12 +733,13 @@ def cmd_decide(args: argparse.Namespace) -> None:
             "overfit_gap": None,
             "guardrails": guardrails,
             "usage": cand_a.get("usage", {}),
-            "score_distribution": compute_distribution(ca_t["per_case_means"], "case_means_all"),
+            "score_distribution": compute_distribution(score_pcm, "case_means_all"),
             "decision": decision,
             "significant": bool(sig),
             "is_best": is_best,
             "basis": basis,
             "audit_failed_reasons": audit_failed_reasons,
+            "truncation_warnings": truncation_warnings,
             "suspicious": suspicious_reason,
             "suspicion_checked": False,
             "lever_layer": args.lever_layer,
@@ -757,8 +772,9 @@ def cmd_decide(args: argparse.Namespace) -> None:
 
     test_sig = abs(test_delta) >= min_delta and (t_test is None or t_test["t_stat"] >= 2.0)
 
-    # 3-valued mechanism audit
+    # 3-valued mechanism audit + truncation guard
     audit_failed_reasons = []
+    truncation_warnings = []
     void_error = False
     for name, b, c, bt_m, ct_m in (
         ("val", best_val, cand_val, bv_t, cv_t),
@@ -766,6 +782,10 @@ def cmd_decide(args: argparse.Namespace) -> None:
     ):
         if b["excluded"] != c["excluded"]:
             audit_failed_reasons.append(f"{name} excluded changed ({b['excluded']} -> {c['excluded']})")
+        if c.get("truncated", 0) > b.get("truncated", 0):
+            truncation_warnings.append(
+                f"{name} truncated increased ({b.get('truncated', 0)} -> {c.get('truncated', 0)}) — check clipping"
+            )
         case_count = max(1, b["scored"] + b.get("errored_cases", 0))
         if c["errored"] > b["errored"] + max(1, int(0.05 * case_count)):
             void_error = True
@@ -804,6 +824,7 @@ def cmd_decide(args: argparse.Namespace) -> None:
     elif args.target_ceiling is not None and dir_sign(test_delta) > float(args.target_ceiling):
         suspicious_reason = f"{headline_key} {target} delta {test_delta:+.4f} exceeds targeted bucket ceiling ({float(args.target_ceiling):.4f}) — hand-check val flips"
 
+    score_pcm = _extract_target_stats(cand_test, "score", f"cand_{headline_key}")["per_case_means"]
     out = {
         "headline_split": headline_key,
         "split_mode": split_mode,
@@ -842,12 +863,14 @@ def cmd_decide(args: argparse.Namespace) -> None:
         "overfit_gap": round(dir_sign(val_delta) - dir_sign(test_delta), 6),
         "guardrails": guardrails,
         "usage": cand_test.get("usage", {}),
-        "score_distribution": compute_distribution(ct_t["per_case_means"], f"case_means_{headline_key}"),
+        # Always compute score_distribution from case QUALITY scores (not cost/latency)
+        "score_distribution": compute_distribution(score_pcm, f"case_means_{headline_key}"),
         "decision": decision,
         "significant": bool(test_sig),
         "is_best": is_best,
         "basis": basis,
         "audit_failed_reasons": audit_failed_reasons,
+        "truncation_warnings": truncation_warnings,
         "suspicious": suspicious_reason,
         "suspicion_checked": False,
         "lever_layer": args.lever_layer,
@@ -1514,6 +1537,7 @@ def main() -> None:
     cc.add_argument("--test-stdout", required=True)
     cc.add_argument("--val-stdout")
     cc.add_argument("--min-shippable-delta", type=float, required=True)
+    cc.add_argument("--target", choices=("score", "cost_usd", "latency_s"), default="score")
     cc.add_argument("--direction", choices=("higher", "lower"), default="higher")
     cc.add_argument("--split-mode", choices=("val_test", "three_way", "all_rows"), default="val_test")
     cc.set_defaults(func=cmd_check_climbability)
