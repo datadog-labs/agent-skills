@@ -301,6 +301,18 @@ class TestLoopHelper(unittest.TestCase):
         cfg.write_text(json.dumps(cfg_data))
         self.assertEqual(_run_helper(["verify-final", "--config", str(cfg)]).returncode, 0)
 
+        # verify-final in all_rows mode rejects missing final_result.all and accepts a complete block
+        cfg_all = self.tdir / "cfg_all.json"
+        cfg_all.write_text(json.dumps({
+            "split_mode": "all_rows", "case_count": 15, "val_case_count": 15,
+            "final_result": {"merge_recommendation": "merge", "selection_rounds": 2, "noise_calibration": {"runs_final": 3}, "reasoning": "in-sample"},
+        }))
+        self.assertNotEqual(_run_helper(["verify-final", "--config", str(cfg_all)]).returncode, 0)
+        cfg_all_d = json.loads(cfg_all.read_text())
+        cfg_all_d["final_result"]["all"] = {"case_count": 15, "baseline_score": 0.5, "best_score": 0.7, "delta": 0.2, "n_moved": 3}
+        cfg_all.write_text(json.dumps(cfg_all_d))
+        self.assertEqual(_run_helper(["verify-final", "--config", str(cfg_all)]).returncode, 0)
+
     def test_cost_and_latency_targets_in_decide_and_pool_confirm(self) -> None:
         # Quality stays flat at 0.8, but cost_usd drops from 0.05 to 0.02 across 10 cases
         q_pcm = {f"c{i}": 0.8 for i in range(10)}

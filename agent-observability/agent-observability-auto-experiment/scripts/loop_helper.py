@@ -1492,7 +1492,18 @@ def cmd_verify_final(args: argparse.Namespace) -> None:
         if fr.get(key) in (None, "", {}):
             errors.append(f"final_result.{key} is missing")
 
-    if cfg.get("split_mode") != "all_rows":
+    if cfg.get("split_mode") == "all_rows":
+        all_blk = fr.get("all") or {}
+        if not all_blk:
+            errors.append("final_result.all is missing for split_mode=all_rows")
+        else:
+            expected_n = cfg.get("val_case_count") or cfg.get("case_count")
+            if isinstance(expected_n, int) and all_blk.get("case_count") != expected_n:
+                errors.append(f"final_result.all.case_count ({all_blk.get('case_count')}) != expected ({expected_n})")
+            for sub in ("baseline_score", "best_score", "delta", "n_moved"):
+                if all_blk.get(sub) is None:
+                    errors.append(f"final_result.all.{sub} is missing")
+    else:
         test = fr.get("test") or {}
         val = fr.get("val") or {}
         if not val:

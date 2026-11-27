@@ -277,20 +277,25 @@ corpus in priority order:
 - `≥ 50` → `val_test` (~70/30 stratified, seeded by `split_seed = 0`, `split` stamped on every
   record). At `≥ 100`, **offer** an optional 3-way split (`val` / `select` / untouched `test`).
 
-Upload `auto-exp-<slug>-val-<TS>` and `auto-exp-<slug>-test-<TS>` (or write `data.{val,test}.jsonl`
-in `local_file` mode), record `val_dataset_id`, `test_dataset_id`, `val_case_count`,
-`test_case_count`, `split_mode`, `split_seed`, `split_strata`, and assert
-`val_case_count + test_case_count == corpus_count`.
+Upload `auto-exp-<slug>-val-<TS>` and `auto-exp-<slug>-test-<TS>` (plus
+`auto-exp-<slug>-select-<TS>` in `split_mode: three_way`; or write `data.{val,test}.jsonl` /
+`data.{val,select,test}.jsonl` in `local_file` mode), record `val_dataset_id`, `select_dataset_id`
+(if 3-way), `test_dataset_id`, `val_case_count`, `select_case_count` (if 3-way), `test_case_count`,
+`split_mode`, `split_seed`, `split_strata`, and assert the split counts sum to `corpus_count`.
 
 ### Step 1.5 — Hydrate local caches
 
-- Hydrate **both** splits before Step 2:
-  - `.auto_experiment/cache/<val_dataset_id>.jsonl`
-  - `.auto_experiment/holdout/cache/<test_dataset_id>.jsonl`
+- Hydrate the active loop splits before Step 2:
+  - `val_test` mode: `.auto_experiment/cache/<val_dataset_id>.jsonl` and
+    `.auto_experiment/holdout/cache/<test_dataset_id>.jsonl`.
+  - `three_way` mode: `.auto_experiment/cache/<val_dataset_id>.jsonl` and
+    `.auto_experiment/holdout/cache/<select_dataset_id>.jsonl` — **do NOT hydrate `test` until
+    Final Report Step 2** so the final holdout stays genuinely untouched during selection.
 - Normalize rows to `{id, split, input, expected_output?}` lifting `id` and `split` from `metadata`.
 - Before every harness run, verify the target split's cache exists and its line count equals
   `<split>_case_count` (re-hydrate from the same dataset id if missing; never re-split).
-- In `local_file` mode, verify `data.val.jsonl` / `data.test.jsonl` line counts instead.
+- In `local_file` mode, verify `data.val.jsonl` / `data.test.jsonl` (and `data.select.jsonl` in
+  `three_way` mode) line counts instead.
 
 ### Step 2 — Map the code, build the harness with execution signals, run Gate 1, and run pilot baseline
 
@@ -315,11 +320,14 @@ in `local_file` mode), record `val_dataset_id`, `test_dataset_id`, `val_case_cou
    (oracle, ground-truth isolation, mechanism wired, resolved scope, `loop_helper.py verify-mean` to
    `1e-9`, `loop_helper.py audit-corpus` incl. `val ∩ test == ∅`) plus conditional LLM checks
    (`judge_flip_rate`, null-baseline, `models_seen`). Hard **STOP** on failure.
-5. Run pilot (`AUTO_EXP_RUNS=3`, `AUTO_EXP_ITERATION=0`) on **both splits** (explicit
+5. Run pilot (`AUTO_EXP_RUNS=3`, `AUTO_EXP_ITERATION=0`) on the active loop splits (explicit
    `AUTO_EXP_SPLIT`, never passing both `AUTO_EXP_DATA` and `AUTO_EXP_DATASET_ID`):
    ```bash
+   # val_test mode:
    AUTO_EXP_SPLIT=val  AUTO_EXP_DATASET_ID=<val_id>  AUTO_EXP_RUNS=3 AUTO_EXP_ITERATION=0 python .auto_experiment/eval_harness.py
    AUTO_EXP_SPLIT=test AUTO_EXP_DATASET_ID=<test_id> AUTO_EXP_RUNS=3 AUTO_EXP_ITERATION=0 python .auto_experiment/eval_harness.py
+   # three_way mode: score `val` and `select` (NEVER open `test` during the loop):
+   # AUTO_EXP_SPLIT=select AUTO_EXP_DATASET_ID=<select_id> ...
    ```
    Price baseline rows from `config.json.prices`, record baseline cost & p50/p95 latency, and run
    `python .auto_experiment/loop_helper.py summarize-signals --results-jsonl .auto_experiment/eval_results.val.jsonl`
@@ -392,11 +400,14 @@ which layer changed. Commit on the scratch branch, then run before spending a fu
 ### Step 4 — Score BOTH splits, decide, record, and report
 
 1. Confirm `git diff --quiet -- <harness_path>` (modified harness = STOP).
-2. Run harness on **both splits** (`AUTO_EXP_SPLIT=val` and `AUTO_EXP_SPLIT=test`, same `runs`,
-   `AUTO_EXP_ITERATION=<n>`), verify raw-row mean recomputation to `1e-9`, price rows, evaluate
-   `goal.hold[]` guardrails.
+2. Run harness on the active loop splits (`AUTO_EXP_SPLIT=val` and `AUTO_EXP_SPLIT=test` in
+   `val_test` mode; **`AUTO_EXP_SPLIT=val` and `AUTO_EXP_SPLIT=select`** in `three_way` mode —
+   leaving `test` untouched until Final Report Step 2; `AUTO_EXP_SPLIT=all` in `all_rows` mode),
+   same `runs`, `AUTO_EXP_ITERATION=<n>`, verify raw-row mean recomputation to `1e-9`, price rows,
+   and evaluate `goal.hold[]` guardrails.
 3. Run `python .auto_experiment/loop_helper.py audit --best … --candidate …` (id-keyed flip diff on
-   `val`) and `python .auto_experiment/loop_helper.py decide …` to apply the 3-valued mechanism
+   `val`) and `python .auto_experiment/loop_helper.py decide --split-mode <val_test|three_way|all_rows> …`
+   (passing `--best-select`/`--cand-select` in `three_way` mode) to apply the 3-valued mechanism
    audit, keep/discard matrix (`test` decides, `val` vetoes `overfit`, `guardrail_regression`,
    `memorized`, `audit_failed`, `void_error_profile`), `stats.py` confidence labels (`t_two_sample`,
    `paired_bootstrap_delta`, `paired_case_test`, `n_moved`), suspicion trigger, and `score_distribution`.
@@ -418,8 +429,9 @@ which layer changed. Commit on the scratch branch, then run before spending a fu
    - kept commit exists → `git checkout <best_sha> -- <files_to_optimize>`
    - nothing kept yet → `git checkout <start_sha> -- <files_to_optimize>`
    - remove any untracked files a discarded iteration created inside `files_to_optimize`.
-2. Reuse recorded `val_dataset_id` / `test_dataset_id` and committed harness (never re-split or
-   recompute baseline; re-hydrate missing caches per Step 1.5).
+2. Reuse recorded split dataset ids (`val_dataset_id` + `test_dataset_id`, or `val_dataset_id` +
+   `select_dataset_id` in `three_way` mode) and committed harness (never re-split or recompute
+   baseline; re-hydrate missing caches per Step 1.5; never touch `test` in `three_way` mode).
 3. Repeat **Step 3** (fresh sub-agent with 4 verbatim rules, new hypothesis, feasibility probe +
    ceiling check, 5-gram memorization check) and **Step 4** (both splits, `loop_helper.py decide`,
    commit, `narrative.md`, LLM-Obs reporting).
@@ -464,8 +476,10 @@ every iteration to evaluate the exact state machine (`continue` | `stall_triage`
      `python .auto_experiment/loop_helper.py pool-confirm --baseline-results … --best-results … --target <goal.target> --min-delta <d> --direction <dir> [--hold-score-min-delta <floor>] --dataset-id <test_id>`,
      which computes `paired_bootstrap_delta`, `paired_case_test`, `t_two_sample`, `wilson` (if
      binary score), `n_moved`, held-score guardrail check, and `merge_recommendation` deterministically.
-   - *(3-way split: run baseline vs best on the untouched `test` split instead. `all_rows`: skip
-     holdout claims and label results in-sample.)*
+   - *(3-way split: hydrate `test_dataset_id` now for the first and only time, run baseline vs best
+     on untouched `AUTO_EXP_SPLIT=test` at `max_runs`, and pass those two files to `pool-confirm` as
+     an unbiased holdout. `all_rows`: run baseline vs best on `AUTO_EXP_SPLIT=all` and record under
+     `final_result.all`, labeling results in-sample.)*
 3. **Determine `merge_recommendation`:**
    - No `test` improvement in direction → `"do_not_merge_regression"`, restore original code via
      `git checkout <start_sha> -- <files_to_optimize>`, set `best_sha = ""`.
