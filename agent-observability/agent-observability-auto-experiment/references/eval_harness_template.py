@@ -72,18 +72,17 @@ HERE = Path(__file__).parent
 
 # Which split this invocation scores. Drives the cache path, the output paths, config cross-checks,
 # and the `split` stamped on every row. Required — no silent default, so a missing env var can never
-# silently score `val` when the caller intended `test`.
+# silently score `val` when the caller intended `select` or `test`.
 SPLIT = (os.environ.get("AUTO_EXP_SPLIT") or "").strip().lower()
-if SPLIT not in ("val", "test", "all"):
+if SPLIT not in ("val", "select", "test", "all"):
     raise SystemExit(
-        f"AUTO_EXP_SPLIT is required and must be one of val|test|all, got {SPLIT!r}"
+        f"AUTO_EXP_SPLIT is required and must be one of val|select|test|all, got {SPLIT!r}"
     )
 
-# The holdout's artifacts live in their own directory. The wall between the loop and the held-out
-# split is this path: the orchestrator reads it, no sub-agent ever opens it (rubrics.md
-# "Anti-memorization & data isolation").
+# The holdout's artifacts live in their own directory. Both `select` (3-way mode) and `test` live
+# under `holdout/`, which is gitignored and never opened by any sub-agent.
 HOLDOUT_DIR = HERE / "holdout"
-OUT_DIR = HOLDOUT_DIR if SPLIT == "test" else HERE
+OUT_DIR = HOLDOUT_DIR if SPLIT in ("select", "test") else HERE
 
 # Data path resolution: exactly ONE of AUTO_EXP_DATASET_ID (hydrated cache) or AUTO_EXP_DATA
 # (explicit path, local_file mode). Passing both is a hard error so a stale exported AUTO_EXP_DATA
@@ -592,15 +591,18 @@ def _usage_summary(rows: list) -> dict:
 
 def _verify_split_alignment(config: dict, lines: list) -> None:
     """Hard-stop if dataset id, row `split` tags, or case count disagree with `AUTO_EXP_SPLIT`."""
-    if SPLIT in ("val", "test"):
+    named_splits = ("val", "select", "test")
+    if SPLIT in named_splits:
         expected_id = config.get(f"{SPLIT}_dataset_id")
-        other_split = "test" if SPLIT == "val" else "val"
-        other_id = config.get(f"{other_split}_dataset_id")
-        if DATASET_ID and other_id and DATASET_ID == other_id:
-            raise SystemExit(
-                f"split mismatch: AUTO_EXP_SPLIT={SPLIT} but AUTO_EXP_DATASET_ID={DATASET_ID} is "
-                f"config.json's `{other_split}_dataset_id`"
-            )
+        for other_split in named_splits:
+            if other_split == SPLIT:
+                continue
+            other_id = config.get(f"{other_split}_dataset_id")
+            if DATASET_ID and other_id and DATASET_ID == other_id:
+                raise SystemExit(
+                    f"split mismatch: AUTO_EXP_SPLIT={SPLIT} but AUTO_EXP_DATASET_ID={DATASET_ID} "
+                    f"is config.json's `{other_split}_dataset_id`"
+                )
         if DATASET_ID and expected_id and DATASET_ID != expected_id:
             raise SystemExit(
                 f"split mismatch: AUTO_EXP_SPLIT={SPLIT} expects `{SPLIT}_dataset_id`={expected_id} "

@@ -44,19 +44,18 @@ import { fileURLToPath } from "node:url";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 // Which split this invocation scores. Required — no silent default, so a missing env var can never
-// silently score `val` when the caller intended `test`.
+// silently score `val` when the caller intended `select` or `test`.
 const SPLIT = (process.env.AUTO_EXP_SPLIT || "").trim().toLowerCase();
-if (!["val", "test", "all"].includes(SPLIT)) {
+if (!["val", "select", "test", "all"].includes(SPLIT)) {
   console.error(
-    `AUTO_EXP_SPLIT is required and must be one of val|test|all, got ${JSON.stringify(SPLIT)}`,
+    `AUTO_EXP_SPLIT is required and must be one of val|select|test|all, got ${JSON.stringify(SPLIT)}`,
   );
   process.exit(1);
 }
 
-// The holdout's artifacts live in their own directory. The orchestrator reads it; no sub-agent
-// ever opens it (rubrics.md "Anti-memorization & data isolation").
+// Both `select` (3-way mode) and `test` live under gitignored `holdout/`.
 const HOLDOUT_DIR = path.join(HERE, "holdout");
-const OUT_DIR = SPLIT === "test" ? HOLDOUT_DIR : HERE;
+const OUT_DIR = ["select", "test"].includes(SPLIT) ? HOLDOUT_DIR : HERE;
 
 // Data path resolution: exactly ONE of AUTO_EXP_DATASET_ID (hydrated cache) or AUTO_EXP_DATA
 // (explicit path, local_file mode). Passing both is a hard error so a stale exported AUTO_EXP_DATA
@@ -482,16 +481,19 @@ function usageSummary(rows) {
 }
 
 function verifySplitAlignment(config, lines) {
-  if (SPLIT === "val" || SPLIT === "test") {
+  const namedSplits = ["val", "select", "test"];
+  if (namedSplits.includes(SPLIT)) {
     const expectedId = config[`${SPLIT}_dataset_id`];
-    const otherSplit = SPLIT === "val" ? "test" : "val";
-    const otherId = config[`${otherSplit}_dataset_id`];
-    if (DATASET_ID && otherId && DATASET_ID === otherId) {
-      console.error(
-        `split mismatch: AUTO_EXP_SPLIT=${SPLIT} but AUTO_EXP_DATASET_ID=${DATASET_ID} is ` +
-          `config.json's \`${otherSplit}_dataset_id\``,
-      );
-      process.exit(1);
+    for (const otherSplit of namedSplits) {
+      if (otherSplit === SPLIT) continue;
+      const otherId = config[`${otherSplit}_dataset_id`];
+      if (DATASET_ID && otherId && DATASET_ID === otherId) {
+        console.error(
+          `split mismatch: AUTO_EXP_SPLIT=${SPLIT} but AUTO_EXP_DATASET_ID=${DATASET_ID} is ` +
+            `config.json's \`${otherSplit}_dataset_id\``,
+        );
+        process.exit(1);
+      }
     }
     if (DATASET_ID && expectedId && DATASET_ID !== expectedId) {
       console.error(

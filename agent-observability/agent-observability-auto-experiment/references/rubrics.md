@@ -509,8 +509,9 @@ or Node/ESM (`.auto_experiment/eval_harness.mjs`, from `references/eval_harness_
 keys, env vars, and failure classes. A change to either is a change to both.
 
 **Env vars:**
-- `AUTO_EXP_SPLIT` (**required**: `val` | `test` | `all` — no silent default, so a caller can never
-  accidentally score `val` when intending `test`)
+- `AUTO_EXP_SPLIT` (**required**: `val` | `select` | `test` | `all` — no silent default, so a caller
+  can never accidentally score `val` when intending `select` or `test`; both `select` and `test`
+  write under gitignored `holdout/`)
 - `AUTO_EXP_DATASET_ID` or `AUTO_EXP_DATA` (exactly ONE; setting both is a **hard error** so a
   stale `AUTO_EXP_DATA` can never silently shadow `AUTO_EXP_DATASET_ID`)
 - `AUTO_EXP_RESULTS` (optional explicit output file path, e.g. for confirm runs)

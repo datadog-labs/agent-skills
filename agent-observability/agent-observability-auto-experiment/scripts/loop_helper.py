@@ -129,8 +129,68 @@ def cmd_split(args: argparse.Namespace) -> None:
         grouped.setdefault(label, []).append(row)
 
     val_rows: list[dict] = []
+    select_rows: list[dict] = []
     test_rows: list[dict] = []
     strata_counts: dict[str, dict[str, int]] = {}
+
+    if args.three_way:
+        if not args.select_out:
+            raise SystemExit("--three-way requires --select-out")
+        val_ratio = args.ratio if args.ratio != 0.7 else 0.5
+        sel_ratio = float(args.select_ratio)
+        if val_ratio <= 0 or sel_ratio <= 0 or (val_ratio + sel_ratio) >= 1.0:
+            raise SystemExit("invalid three-way ratios: val_ratio and select_ratio must be > 0 and sum < 1")
+        for label in sorted(grouped):
+            ranked = sorted(
+                grouped[label],
+                key=lambda r: hashlib.sha256(f"{args.seed}:{r.get('id')}".encode()).hexdigest(),
+            )
+            m = len(ranked)
+            if m >= 3:
+                n_sel = max(1, round(m * sel_ratio))
+                n_test = max(1, round(m * (1.0 - val_ratio - sel_ratio)))
+                n_val = max(1, m - n_sel - n_test)
+                # Adjust if rounding overflowed m
+                while n_val + n_sel + n_test > m:
+                    if n_sel > 1:
+                        n_sel -= 1
+                    else:
+                        n_test -= 1
+            elif m == 2:
+                n_val, n_sel, n_test = 1, 1, 0
+            else:
+                n_val, n_sel, n_test = m, 0, 0
+            g_val = [{**r, "split": "val"} for r in ranked[:n_val]]
+            g_sel = [{**r, "split": "select"} for r in ranked[n_val : n_val + n_sel]]
+            g_test = [{**r, "split": "test"} for r in ranked[n_val + n_sel :]]
+            val_rows.extend(g_val)
+            select_rows.extend(g_sel)
+            test_rows.extend(g_test)
+            strata_counts[label] = {"val": len(g_val), "select": len(g_sel), "test": len(g_test)}
+
+        v_ids = {r.get("id") for r in val_rows}
+        s_ids = {r.get("id") for r in select_rows}
+        t_ids = {r.get("id") for r in test_rows}
+        if (v_ids & s_ids) or (v_ids & t_ids) or (s_ids & t_ids):
+            raise SystemExit("split integrity error: overlapping ids across three-way splits")
+        if len(val_rows) + len(select_rows) + len(test_rows) != n:
+            raise SystemExit("split sum mismatch in three-way split")
+
+        _write_jsonl(Path(args.val_out), val_rows)
+        _write_jsonl(Path(args.select_out), select_rows)
+        _write_jsonl(Path(args.test_out), test_rows)
+        print(json.dumps({
+            "split_mode": "three_way",
+            "corpus_count": n,
+            "val_case_count": len(val_rows),
+            "select_case_count": len(select_rows),
+            "test_case_count": len(test_rows),
+            "stratify_key": strat_key,
+            "split_strata": strata_counts,
+            "split_seed": args.seed,
+            "small_corpus_warning": n < 100,
+        }))
+        return
 
     for label in sorted(grouped):
         group = grouped[label]
@@ -816,11 +876,14 @@ def main() -> None:
     sp = sub.add_parser("split")
     sp.add_argument("--input", required=True)
     sp.add_argument("--val-out", required=True)
+    sp.add_argument("--select-out")
     sp.add_argument("--test-out", required=True)
     sp.add_argument("--all-out")
     sp.add_argument("--seed", type=int, default=0)
     sp.add_argument("--stratify-by")
     sp.add_argument("--ratio", type=float, default=0.7)
+    sp.add_argument("--select-ratio", type=float, default=0.25)
+    sp.add_argument("--three-way", action="store_true")
     sp.add_argument("--force-split", action="store_true")
     sp.set_defaults(func=cmd_split)
 
