@@ -775,16 +775,15 @@ credential value**; you are checking that auth works, not reading what it is.
 
    ```
    cache/
-   holdout/cache/
+   holdout/
    data*.jsonl
    ```
 
-   The eval rows live in Datadog Datasets (Step 1); the local copies are a disposable cache with a
-   Datadog source of truth, and committing a user's dataset content into their repo is not this
-   skill's job. `eval_results.val.jsonl`, `holdout/eval_results.test.jsonl`, the `errors.*.jsonl`
-   sidecars, `result.json`, `census.json`, `narrative.md` and `config.json` **stay committed** —
-   they are this run's measurements, not corpus data. Note the asymmetry inside `holdout/`: the
-   cache is ignored, the results are not.
+   The eval rows live in Datadog Datasets (Step 1); local caches and raw holdout rows are
+   gitignored so no improvement sub-agent can stumble across raw `test` inputs/outputs via
+   `git log`, `git show`, or `rg`. `eval_results.val.jsonl`, `errors.val.jsonl`, `result.json`
+   (which carries the aggregate `test` metrics), `census.json`, `narrative.md`, and `config.json`
+   **stay committed** as this run's reproducible audit trail.
 4. This run reports one score per iteration (plus per-case events) to the LLM-Obs experiment
    identified by the `$experiment-id` argument (or auto-created at intake; persisted to `config.json`
    as `dd_auto_experiment_id`). See `references/reporting.md`.
@@ -837,7 +836,7 @@ ran because you intended it to.
 | 5 | run context on experiment | confirm the `update_llmobs_experiment` call (or `pup llm-obs experiments update`) **actually returned a success response in hand** (not merely that you intended to call it). For the us5 MCP that response is `updated_fields` containing `"metadata"` — accept that, or any non-error response acknowledging the metadata write if the tool's shape differs. The check is "the call was made and acknowledged", so do not hard-block on one exact field name; if it errored or was never called, re-run it. |
 | 6 | backend reachable | with `datadog_backend: pup`, `pup auth status` (or `$PUP_BIN auth status`) returned `authenticated: true` for the expected site — run the check, don't assume the binary works. A missing or unauthenticated pup is a **STOP**, not a fallback (see **Datadog backend**). With `datadog_backend: mcp`, step 5's acknowledged response is itself the proof the backend is reachable. Record `backend_used` in `config.json` either way. **Under pup, `experiments update` must exit 0, then read the experiment back** (`pup llm-obs experiments list --filter-project-id …`) and confirm the metadata you wrote. |
 | 7 | dataset writes possible | in `dataset_mode: datadog`, `project_id` in `config.json` is a real project you resolved (`get_llmobs_project` / `pup llm-obs projects list` returned it) — not a guessed UUID. In `dataset_mode: local_file`, no project is needed; confirm the mode came from an explicit user answer, not a default. |
-| 8 | corpus data not committed | `.auto_experiment/.gitignore` exists with `cache/`, `holdout/cache/` and `data*.jsonl`, and `git check-ignore -v .auto_experiment/holdout/cache/x.jsonl` confirms it applies. The **results** files (`eval_results.val.jsonl`, `holdout/eval_results.test.jsonl`, error sidecars) stay committed |
+| 8 | corpus & holdout rows not committed | `.auto_experiment/.gitignore` exists with `cache/`, `holdout/` and `data*.jsonl`, and `git check-ignore -v .auto_experiment/holdout/eval_results.test.jsonl` confirms the entire `holdout/` directory is gitignored (preventing sub-agents from reading raw `test` rows via `git log`/`rg`). `eval_results.val.jsonl`, `errors.val.jsonl`, `result.json`, `narrative.md`, and `config.json` stay committed |
 | 9 | goal resolved to an object | `config.json` `goal` has `text` (verbatim), `target`, `direction` and `hold[]` — all four from explicit user answers, never inferred from the text |
 | 10 | shipping threshold known | `min_shippable_delta` is a number the user explicitly approved. Without it the Step 2.6 climbability gate can report a noise floor but cannot judge it |
 
@@ -1076,8 +1075,9 @@ hydrate caches through the selected backend, and the harness reads them:
   `get_llmobs_dataset_records` / direct REST on mcp) — the ~19-record preview cap applies here too.
 - **Normalize each cache row to `{id, split, input, expected_output?}`** — lifting the eval-set `id`
   and `split` back out of `metadata` where Step 1 put them.
-- Both cache directories are **gitignored** (Setup step 3); `eval_results.val.jsonl`,
-  `holdout/eval_results.test.jsonl`, and error sidecars stay committed.
+- Both `cache/` and `holdout/` are **gitignored** (Setup step 3) so neither raw corpus data nor
+  raw `test` rows enter git history where a sub-agent could inspect them. `eval_results.val.jsonl`,
+  `result.json` (aggregate `val` + `test` stats), `narrative.md`, and `config.json` stay committed.
 - **`dataset_mode: local_file` skips Datadog hydration** — verify `.auto_experiment/data.val.jsonl`
   and `.auto_experiment/data.test.jsonl` exist and match `val_case_count`/`test_case_count`, and
   pass them via `AUTO_EXP_SPLIT=val AUTO_EXP_DATA=...` and `AUTO_EXP_SPLIT=test AUTO_EXP_DATA=...`.
@@ -1154,9 +1154,9 @@ Record `val.before`/`val.stdev` and `test.before`/`test.stdev`, plus baseline pe
 `usage` × `config.json.prices` or direct `cost_usd`) and p50/p95 latency as the baseline values every
 later guardrail ratio compares against.
 
-Commit the harness, `stats.py`, `config.json`, both results files (`eval_results.val.jsonl` and
-`holdout/eval_results.test.jsonl`), and any error sidecars. **Never commit corpus data**
-(`cache/`, `holdout/cache/`, `data*.jsonl`).
+Commit the harness, `stats.py`, `loop_helper.py`, `config.json`, `eval_results.val.jsonl`, and
+`errors.val.jsonl` (if any). **Never commit corpus data or raw holdout rows** (`cache/`, `holdout/`,
+`data*.jsonl` are gitignored; aggregate `test` metrics are recorded in `config.json`/`result.json`).
 
 **Do NOT report the baseline to LLM-Obs yet.** Steps 2.3 (zero triage) and 2.4 (derived `runs`) may
 clean the denominator or re-run the baselines, replacing the pilot numbers. The iteration-0 report
@@ -1232,8 +1232,8 @@ Write `runs`, `min_delta`, `guardrail_floors`, both splits' raw `stdev` + `run_m
 
 **First commit the final baseline state, THEN report it to LLM-Obs as iteration 0** (per
 `references/reporting.md`). If Step 2.3 or 2.4 re-ran the baselines, commit the updated
-`eval_results.val.jsonl`, `holdout/eval_results.test.jsonl`, `errors.*.jsonl`, `narrative.md`, and
-`config.json` now so one commit holds the final baseline artifacts. Only then submit:
+`eval_results.val.jsonl`, `errors.val.jsonl`, `narrative.md`, and `config.json` now so one commit
+holds the final baseline artifacts (keeping `holdout/` gitignored). Only then submit:
 1. Exactly one `auto_experiment_score` metric with `score_value` = the **final `test` baseline**
    (or `all` in `all_rows` mode), `iteration:0`, `git.commit.sha:<full-40-char-sha>`,
    `decision:baseline`, `basis:baseline`, `split:<test|all>`, `split_mode`, `val_score`/`test_score`,
@@ -1279,8 +1279,11 @@ Before spending iteration 1, run `references/eval_audit.md` **Gate 3** in full:
    **one** sanctioned re-draw (`split_seed` 0 → 1, new dataset names, old ids recorded in
    `superseded_split_dataset_ids`, `split_redraws = 1`, re-run both baselines). A second failure is
    a finding — ask (`AskUserQuestion`: proceed with caveat / enlarge corpus / abort).
-4. **Disclose selection bias:** state that `test` picks the winner every iteration and will be
-   mitigated by the end-of-run pooled confirm run (or untouched 3rd split if chosen).
+4. **Disclose selection bias:** state that `test` picks the winner every iteration, so it acts as a
+   selection set. Be precise about what each mitigation does: the end-of-run pooled confirm run on
+   the same `test` cases shrinks **rerun noise** (model/judge stochasticity), **not**
+   **case-selection bias** (winner's curse over those cases); only a 3-way split (`val` / `select` /
+   untouched `test`) eliminates case-selection bias.
 
 Write `config.json.preflight` (`GO`, `GO with caveat: <text>`, or `STOP: <reason>`) and present it
 with evidence. **A `STOP` means ask, never narrate-and-continue.**
@@ -1320,8 +1323,8 @@ AUTO_EXP_SPLIT=test AUTO_EXP_DATASET_ID=<test_dataset_id> AUTO_EXP_RUNS=<runs> A
 Recompute each split's mean from raw rows to verify it matches stdout to `1e-9`. Price each split's
 rows from `config.json.prices` (or direct `cost_usd`) and evaluate `goal.hold[]` guardrails. Write
 the split-qualified `.auto_experiment/result.json` (schema in `references/rubrics.md`) and commit it
-in the same commit as the change along with both results files (`eval_results.val.jsonl`,
-`holdout/eval_results.test.jsonl`) and any error sidecars.
+in the same commit as the change along with `eval_results.val.jsonl` and `errors.val.jsonl` (if any);
+keep `.auto_experiment/holdout/` gitignored so raw `test` rows stay unreachable via git history.
 
 **Decide, per the keep/discard matrix in `references/rubrics.md` Noise & keep/discard policy:**
 
@@ -1456,9 +1459,10 @@ Full presentation contract is in `references/reporting.md`.
    iteration's LLM-Obs metric with `decision:kept` + `basis:promoted` +
    `promoted:higher_power_confirmation` (superseding the earlier `within_noise` tag).
 2. **The pooled `test` confirm run (the real headline).** Every iteration already scored `test`, so
-   `test` acted as a selection set across `selection_rounds` iterations. Mitigate selection bias by
-   re-running the harness on the **baseline code** and the **best code** against **`test`** at
-   `max_runs`, writing to separate output files so neither overwrites committed iteration results:
+   `test` acted as a selection set across `selection_rounds` iterations. Re-run the harness on the
+   **baseline code** and the **best code** against **`test`** at `max_runs` to shrink **rerun
+   variance** (note: pooling on the same `test` cases tightens rerun noise, **not** case-selection
+   bias — state both clearly), writing to separate output files under gitignored `holdout/`:
    - Restore baseline code without deleting the harness:
      `git checkout <start_sha> -- <files_to_optimize>`
      Run:
@@ -1535,6 +1539,7 @@ Full presentation contract is in `references/reporting.md`.
 
 - Every score is computed by running code. If you ever find yourself about to type a score
   number, stop — run the harness instead.
-- Keep `.auto_experiment/` committed **except `cache/`, `holdout/cache/`, and `data*.jsonl`**
-  (gitignored corpus data); the committed measurements plus the dataset ids in `config.json` are
-  the reproducible record of the run.
+- Keep `.auto_experiment/` committed **except `cache/`, `holdout/`, and `data*.jsonl`**
+  (gitignored corpus data and raw holdout rows); the committed measurements (`result.json`,
+  `config.json`, `narrative.md`, `eval_results.val.jsonl`) plus the dataset ids in `config.json`
+  are the reproducible record of the run.

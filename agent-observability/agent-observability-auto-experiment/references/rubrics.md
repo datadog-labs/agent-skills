@@ -260,11 +260,13 @@ instead — still running the Corpus size gate, stratification, `split` stamping
 - **`val` up, `test` flat means the change overfit to the cases the improver read** — revert it
   immediately (`basis:overfit`). Scoring `test` only once at the end tells you about overfit only
   after the entire iteration budget is spent.
-- **The wall is a directory, not a habit.** The `test` cache lives at
-  `.auto_experiment/holdout/cache/<test_dataset_id>.jsonl` and its results at
-  `.auto_experiment/holdout/eval_results.test.jsonl`. The orchestrator reads them; **no sub-agent
-  ever opens `.auto_experiment/holdout/`**, and that sentence goes verbatim into every sub-agent
-  briefing.
+- **The wall is a gitignored directory, not a habit.** The entire `.auto_experiment/holdout/`
+  directory (its cache `holdout/cache/<test_dataset_id>.jsonl`, raw rows
+  `holdout/eval_results.test.jsonl`, and `holdout/errors.test.jsonl`) is **gitignored** so no
+  sub-agent can inspect raw `test` inputs/outputs via `git log`, `git show`, or `rg`. Only
+  aggregate `test` stats (`result.json`, `config.json`, `narrative.md`) are committed. The
+  orchestrator reads `holdout/`; **no sub-agent ever opens `.auto_experiment/holdout/`**, and that
+  sentence goes verbatim into every sub-agent briefing.
 - **Why not keep it unscored until the end:** because the loop is decided by machine every round
   with no human reviewing rows, so the only channel through which a `val`-overfit becomes visible
   mid-run is a `test` measurement. (For large corpora `≥ 100` scoreable rows, offer a 3-way split
@@ -307,13 +309,14 @@ If they do not, the two splits are not the same population:
 
 **The `test` split is a selection set, and the report must say so.** Once `test` picks the winner
 every round, it is being selected on, and its delta overstates the true gain by an amount that grows
-with the round count. Three mitigations, all required:
+with the round count (winner's curse). Three rules, all required:
 
 - the final report always states how many rounds the selection ran over (`selection_rounds`);
 - the end-of-run **pooled confirm run** re-runs baseline and winner on `test` at `max_runs` and
-  pools with the existing runs (SKILL.md **Final report**);
+  pools with the existing runs (SKILL.md **Final report**) — be explicit that pooling on the same
+  `test` cases reduces **rerun variance**, **not** **case-selection bias**;
 - when the scoreable corpus is ≥ 100, **offer** a three-way split at intake (`val` / `select` /
-  `test`, where `test` is genuinely opened once).
+  `test`, where `test` is genuinely opened once) — the only design that removes case-selection bias.
 
 **Stamp & assert.** Write `split` (`"val"` / `"test"` / `"all"`) onto every record when created, and
 assert `val_case_count + test_case_count == corpus_count` immediately after creating the split.
@@ -663,8 +666,9 @@ drafts minimal coverage for all of them at once. State this explicitly in `reaso
 
 1. **Propose the grader fix to the user and get an explicit yes** (`evaluators` is user-approved
    verbatim).
-2. Snapshot every iteration's `eval_results.val.jsonl` and `holdout/eval_results.test.jsonl` into
-   `.auto_experiment/pre_regrade/`, commit, and bump `config.json.grader_version`.
+2. Snapshot `eval_results.val.jsonl` into `.auto_experiment/pre_regrade/` (committed) and
+   `holdout/eval_results.test.jsonl` into `.auto_experiment/holdout/pre_regrade/` (kept gitignored
+   inside `holdout/`), commit, and bump `config.json.grader_version`.
 3. Re-score **from stored outputs only** via `AUTO_EXP_REGRADE=1` on both splits (no model re-run).
 4. Re-score **every** iteration with stored rows, including baseline.
 5. Compare old vs new: how many cases moved, and **did the ranking flip?**

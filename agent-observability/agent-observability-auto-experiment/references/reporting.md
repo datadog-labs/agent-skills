@@ -285,9 +285,9 @@ is supporting detail.
 
 - **Run the pooled confirm BEFORE writing `final_result`.** Re-run baseline and winner on `test` at
   `max_runs` and **pool** with the runs already recorded, then recompute the paired bootstrap CI,
-  paired case-level `t_case`, `n_moved`, and run-level two-sample t-test. This mitigates `test`
-  having been used to select the winner every iteration; report the confirm number as the headline
-  and the per-iteration `test` scores as the selection path.
+  paired case-level `t_case`, `n_moved`, and run-level two-sample t-test. Be explicit that pooling
+  on the same `test` cases shrinks **rerun variance**, **not** **case-selection bias**; report the
+  confirm number as the headline and the per-iteration `test` scores as the selection path.
 - **State `n_moved` in the same sentence as the headline.** "+0.048 on 60 held-out cases, bootstrap
   CI [0.016, 0.083], carried by 3 cases that flipped" is honest; "+0.048, |t| = 9.4" alone is not.
   If `t_case < 2` or `n_moved ≤ 2`, state plainly that the gain rests on a handful of cases and may
@@ -298,10 +298,11 @@ is supporting detail.
   `do_not_merge_regression`. `best_sha` still points at the winner (or `""` if nothing beat baseline
   on `test`); the recommendation is a separate judgement about whether the winner is worth shipping.
 - **State the selection bias and the round count**, always: *"`test` picked the winner across N
-  iterations, so expect shrinkage relative to a never-selected holdout."* When a three-way split
-  (`val` / `select` / `test`) was used, evaluate and report the untouched `test` split's delta
-  instead and state that it was opened once. When `split_mode: all_rows`, state plainly that every
-  number is in-sample and optimistic.
+  iterations, so expect shrinkage relative to a never-selected holdout (the pooled confirm shrinks
+  rerun variance, not case-selection bias)."* When a three-way split (`val` / `select` / `test`)
+  was used, evaluate and report the untouched `test` split's delta instead and state that it was
+  opened once. When `split_mode: all_rows`, state plainly that every number is in-sample and
+  optimistic.
 - **Per-iteration table** — the `narrative.md` table, final state.
 - **Tag each kept iteration `[REQUIRED]` or `[TUNE]`.** `[REQUIRED]` fixes something broken (a
   crash, an error, a contract violation); `[TUNE]` is a judgement call that improved the score and

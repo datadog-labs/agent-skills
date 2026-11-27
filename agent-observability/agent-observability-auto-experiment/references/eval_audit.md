@@ -233,9 +233,10 @@ abort.
 
 State it once, here, and again in the final report: because `test` picks the winner every iteration,
 it is a selection set, and its delta overstates the true gain by an amount that grows with the
-number of iterations. The end-of-run pooled confirm and the round count in the report are the
-mitigations; a three-way split (`val` / `select` / `test`) is the stronger one when the corpus can
-afford it (`≥ 100` scoreable cases).
+number of iterations (winner's curse). The end-of-run pooled confirm run on the same `test` cases
+tightens **rerun variance** — it does **not** remove **case-selection bias**. Only a three-way split
+(`val` / `select` / untouched `test`) eliminates case-selection bias when the corpus can afford it
+(`≥ 100` scoreable cases).
 
 ### Gate verdict
 
