@@ -747,16 +747,25 @@ def main() -> None:
     else:
         # Re-run the whole eval RUNS times; each pass re-invokes the (stochastic) code under
         # test + grader, so the spread across passes is the run-to-run noise floor.
+        excluded_per_rep: list[int] = []
         for rep in range(RUNS):
-            results, errors, excluded = _one_pass(lines, rep)
+            results, errors, rep_excluded = _one_pass(lines, rep)
             if not results:
                 raise SystemExit(
                     f"no scoreable lines on rep {rep} — cannot compute a mean (do NOT fabricate "
-                    f"one); {len(errors)} attempts errored, {excluded} lines excluded"
+                    f"one); {len(errors)} attempts errored, {rep_excluded} lines excluded"
                 )
+            excluded_per_rep.append(rep_excluded)
             run_means.append(sum(r["score"] for r in results) / len(results))
             all_results.extend(results)
             all_errors.extend(errors)
+        if len(set(excluded_per_rep)) > 1:
+            raise SystemExit(
+                f"inconsistent excluded counts across reps ({excluded_per_rep}): `excluded` is "
+                "non-target filtering and must be deterministic across passes (raise HarnessError "
+                "for transient failures instead of returning None)"
+            )
+        excluded = excluded_per_rep[0]
 
     if not run_means:
         raise SystemExit("no usable passes — cannot compute a mean (do NOT fabricate one)")

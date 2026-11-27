@@ -409,6 +409,18 @@ class TestLoopHelper(unittest.TestCase):
         r_pc_reg = _run_helper(["pool-confirm", "--target", "cost_usd", "--direction", "lower", "--baseline-results", str(b_rows), "--best-results", str(badq_rows), "--min-delta", "0.005", "--hold-score-min-delta", "0.02"])
         self.assertEqual(json.loads(r_pc_reg.stdout)["merge_recommendation"], "do_not_merge_regression")
 
+        # pool-confirm token pricing includes cache_read_tokens & cache_write_tokens
+        cache_b = self.tdir / "cache_base.jsonl"
+        cache_g = self.tdir / "cache_good.jsonl"
+        cache_b.write_text("".join(json.dumps({"id": f"c{i}", "rep": r, "score": 0.8, "model": "m1", "usage": {"input_tokens": 100, "output_tokens": 50, "cache_write_tokens": 1000, "cache_read_tokens": 0}}) + "\n" for r in range(3) for i in range(10)))
+        cache_g.write_text("".join(json.dumps({"id": f"c{i}", "rep": r, "score": 0.8, "model": "m1", "usage": {"input_tokens": 100, "output_tokens": 50, "cache_write_tokens": 0, "cache_read_tokens": 1000}}) + "\n" for r in range(3) for i in range(10)))
+        prices_j = json.dumps({"m1": {"input_per_token": 0.0001, "output_per_token": 0.0002, "cache_write_per_token": 0.0005, "cache_read_per_token": 0.00001}})
+        r_cache = _run_helper(["pool-confirm", "--target", "cost_usd", "--direction", "lower", "--baseline-results", str(cache_b), "--best-results", str(cache_g), "--min-delta", "0.05", "--prices-json", prices_j])
+        self.assertEqual(r_cache.returncode, 0, r_cache.stderr)
+        pc_c = json.loads(r_cache.stdout)
+        self.assertEqual(pc_c["merge_recommendation"], "merge")
+        self.assertLess(pc_c["delta"], -0.4)
+
         # Denominator artifact in pool-confirm: candidate drops hard 0.0 cases so unpaired delta jumps
         # while paired delta on shared cases is tiny (+0.005 < min_delta=0.05) -> MUST NOT merge!
         b_den = self.tdir / "den_base.jsonl"

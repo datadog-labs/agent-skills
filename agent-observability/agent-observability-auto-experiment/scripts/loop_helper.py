@@ -903,10 +903,15 @@ def _row_metric_value(row: dict, target: str, prices: dict | None = None) -> flo
             in_tok = usage.get("input_tokens")
             out_tok = usage.get("output_tokens")
             if isinstance(in_tok, (int, float)) and isinstance(out_tok, (int, float)):
-                return (
+                total = (
                     float(in_tok) * float(rate.get("input_per_token", 0.0))
                     + float(out_tok) * float(rate.get("output_per_token", 0.0))
                 )
+                if isinstance(usage.get("cache_read_tokens"), (int, float)):
+                    total += float(usage["cache_read_tokens"]) * float(rate.get("cache_read_per_token", 0.0))
+                if isinstance(usage.get("cache_write_tokens"), (int, float)):
+                    total += float(usage["cache_write_tokens"]) * float(rate.get("cache_write_per_token", 0.0))
+                return total
         return None
     raise SystemExit(f"unsupported target metric: {target!r}")
 

@@ -642,9 +642,9 @@ async function main() {
     }
     runMeans = [...byRep.values()].filter((v) => v.length).map(mean);
   } else {
+    const excludedPerRep = [];
     for (let rep = 0; rep < RUNS; rep += 1) {
       const [results, errors, exc] = await onePass(lines, rep);
-      excluded = exc;
       if (results.length === 0) {
         console.error(
           `no scoreable lines on rep ${rep} — cannot compute a mean (do NOT fabricate one); ` +
@@ -652,10 +652,20 @@ async function main() {
         );
         process.exit(1);
       }
+      excludedPerRep.push(exc);
       runMeans.push(mean(results.map((r) => r.score)));
       allResults = allResults.concat(results);
       allErrors = allErrors.concat(errors);
     }
+    if (new Set(excludedPerRep).size > 1) {
+      console.error(
+        `inconsistent excluded counts across reps (${JSON.stringify(excludedPerRep)}): \`excluded\` ` +
+          "is non-target filtering and must be deterministic across passes (throw HarnessError for " +
+          "transient failures instead of returning null)",
+      );
+      process.exit(1);
+    }
+    excluded = excludedPerRep[0];
   }
 
   if (runMeans.length === 0) {
