@@ -67,9 +67,9 @@ run starts** (see the Mandatory intake gate below).
 | Field | Meaning | Source |
 |---|---|---|
 | `files_to_optimize` | the **edit scope**: one or more files, a **folder**, or globs. **Any code inside the scope is fair game to modify** — tool/retrieval code, the pipeline, config, data-shaping, or prompts — not just prompt wording. Everything outside the scope is off-limits. | **must ask** |
-| `goal` | what "better" means. An object `{text, target, direction, hold[]}`: `text` is the user's words verbatim, `target` is `score` \| `cost_usd` \| `latency_s`, `direction` is `higher` \| `lower`, and `hold[]` names the metrics that must not regress outside noise. A bare string is accepted and becomes `{text: <string>, target: "score", hold: []}`. See `references/rubrics.md` **Goal, target and guardrails**. | **must ask** (both the text and the target/hold question) |
+| `goal` | what "better" means. An object `{text, target, direction, hold[]}`: `text` is the user's words verbatim, `target` is `score` \| `cost_usd` \| `latency_s`, `direction` is `higher` \| `lower`, and `hold[]` names the metrics that must not regress outside noise. Defaults to `{target: "score", direction: <from text>, hold: []}` when `text` is unambiguously about quality (confirmed in the step-3 recap); ask explicitly when cost/latency is mentioned or ambiguous. See `references/rubrics.md` **Goal, target and guardrails**. | **must ask** (`text`; `target`/`hold` proposed in recap unless ambiguous) |
 | `evaluators` | explicit evaluator/rubric text — how each datapoint is scored (ground-truth check vs LLM-judge, pass criteria, direction). | **must ask** (do NOT silently fall back to `goal`) |
-| `min_shippable_delta` | the smallest improvement the user would actually ship on. The Step 2.6 climbability gate compares it against the measured noise floor and headroom; without it the gate can only report numbers rather than judge them. | **must ask** (offer `0.05` on a 0–1 metric as the recommended default, but ask) |
+| `min_shippable_delta` | the smallest improvement the user would actually ship on (used by Step 2.6 climbability gate). | _default_ **`0.05`** (on a 0–1 metric; shown in recap for explicit confirmation/override) |
 | `stratify_by` | a field name to stratify the val/test split on, when the user knows which dimension matters. Absent, the split picks a key by the priority order in `references/rubrics.md` **Held-out split**. | _default_ **auto** |
 | data source | where the eval data comes from — a `dataset_id`, **or** an **`annotation_queue_id`** (an LLM-Obs annotation queue, whose human-reviewed interactions are the corpus), **or** an `ml_app` to pull traces from (optionally narrowed by explicit `trace_ids`), **or** (by exception) a **`local_dataset_path`** (a local `.jsonl`/`.csv` file on disk). Whatever the source, the corpus is materialized into **Datadog LLM-Obs Datasets** (Step 1) — a local file is the only source that may stay on disk, and only if the user asks for that. | **must ask** — mandatory; the run cannot start without one of `dataset_id` / `annotation_queue_id` / `ml_app` / `local_dataset_path` (priority below) |
 | `annotation_label_map` | **`annotation_queue_id` sources only**: which of the queue's labels means what — `expected_output` (the label whose value is the datapoint's ground truth, or `null` if the queue carries no such label) and an optional `filter` (`{label, equals}`) restricting which annotated interactions enter the corpus. A queue's schema is user-defined and arbitrary, so this cannot be inferred. | **must ask** when the source is a queue; read the candidate labels from the queue's `annotation_schema` first and offer them |
@@ -120,104 +120,50 @@ Before writing any config or touching git:
    fi
    ```
 
-1. Collect every **must-ask** field from an explicit user answer. If any is missing, ask for it — do
-   **not** default, infer, or guess:
-   - **`files_to_optimize`** — the user names the concrete file(s)/folder/globs. Never assume the
-     scope from context. Resolve a folder/glob to the concrete editable file list.
-   - **`goal`** — two asks, not one. First the user's own words (`goal.text`), verbatim. Then a
-     separate `AskUserQuestion` for what the loop is actually optimizing: *raise `score`* / *cut
-     `cost_usd`, holding `score`* / *cut `latency_s`, holding `score`* / *cut both, holding `score`*.
-     Record `target`, `direction`, and `hold[]`. **Never infer them from the text** — a goal that
-     mentions cost in passing is not the user choosing a cost target. See `references/rubrics.md`
-     **Goal, target and guardrails**.
-   - **`min_shippable_delta`** — "how big an improvement would actually make you ship this?" Offer
-     `0.05` on a 0–1 metric as a recommended default, but ask: the climbability gate (Step 2.6) puts
-     this next to the measured noise floor and headroom so you learn *before* iteration 1 whether
-     the eval can even resolve a shippable win.
+1. **Collect missing must-ask fields in ONE batched `AskUserQuestion` turn** (do not interrogate the
+   user across 4–5 separate sequential rounds; group all missing must-ask items + `domain_notes`
+   into a single `AskUserQuestion` call, followed by the step-3 recap confirmation). Never default,
+   infer, or guess these core fields:
+   - **`files_to_optimize`** — concrete file(s)/folder/globs. Never assume from context. Resolve
+     folders/globs to the concrete editable file list.
+   - **`goal`** — `goal.text` verbatim from the user. If `goal.text` mentions cost or latency (or
+     is ambiguous about target/guardrails), include the target/hold choice (`raise score` / `cut
+     cost_usd holding score` / `cut latency_s holding score` / `cut both holding score`) in the
+     same batched `AskUserQuestion`; otherwise default to `{target: "score", direction: <from
+     text>, hold: []}` and display all four fields in the step-3 recap for explicit confirmation.
    - **`evaluators`** — how a datapoint is scored (pass/fail, metric, direction). Do not reuse
      `goal` as the evaluator. **Use the user's evaluator text verbatim. NEVER invent, extend,
      narrow, or change the metric or direction of an evaluator** — do not turn "recall" into "F1",
      do not add a precision term the user didn't ask for, do not flip the direction. If `goal` and
-     the user's `evaluators` appear to disagree (e.g. `goal` says "balanced precision and recall"
-     but the stated evaluator is recall-only), **STOP and ask the user which one governs** — do
-     **not** silently reconcile them by rewriting the rubric. The metric the harness optimizes must
-     be the one the user approved, or every keep/discard decision optimizes the wrong objective.
-   - **data source** — **mandatory**: the user must provide a `dataset_id`, **or** an
-     **`annotation_queue_id`**, **or** an `ml_app` to find traces from (optionally narrowed by
-     explicit `trace_ids`), **or** a **`local_dataset_path`**
-     (a local `.jsonl`/`.csv` file). Do not auto-pick, do not guess an `ml_app`, do not guess a
-     queue, do not invent a file path, and do not start the run with none — if all are missing, ask.
-     Resolve a queue *name* to its UUID with `list_llmobs_annotation_queues` /
-     `pup llm-obs annotation-queues list` — neither backend accepts a name.
-     **If the source is a `local_dataset_path`, also ask — with `AskUserQuestion` — whether to
-     upload it into a Datadog Dataset or keep it local** (`dataset_mode`: `datadog` vs
-     `local_file`). Never decide this for the user: uploading writes their data into their LLM-Obs
-     org, and keeping it local gives up the reproducibility every other source now has. The two
-     other sources have no such choice — they are already Datadog data and always end up in
-     Datasets.
-   - **`annotation_label_map`** — required when the source is an `annotation_queue_id`. Read the
-     queue's `annotation_schema.label_schemas` (it comes back with the queue in
-     `list_llmobs_annotation_queues` / `annotation-queues list`, or on its own from
-     `get_llmobs_annotation_label_schema`), show the user the labels, and **ask which one supplies
-     `expected_output`** and whether any label should filter the corpus. **Never pick a label
-     because its name looks right** — a label called `expected_output` still might be the reviewers'
-     free-text notes, and silently adopting it makes up the ground truth every score is measured
-     against, which is the same failure the `evaluators` rule above forbids. If the user says the
-     queue has no ground-truth label, set `expected_output: null` and score with the stated
-     `evaluators` as usual.
-   - **`project_id`** — the LLM-Obs project the run's val/test datasets are created in. Required
-     for every source except `dataset_mode: local_file` (which creates no dataset). Derive it
-     without asking **only** when it is unambiguous: the user gave a project id/name outright, or
-     the run is on `dataset_id` and you already resolved that dataset through exactly one project.
-     A queue's own `project_id` is **not** a safe derivation: real queues come back with
-     `project_id: ""` (verified on pup 1.8.0), so use it only when it is non-empty and resolves.
-     Otherwise **ask**, resolving a name via `get_llmobs_project` / `pup llm-obs projects list`. Do
-     **not** create a new project silently — if no project matches, ask before
-     `create_llmobs_project` / `pup llm-obs projects create`.
-   - **`datadog_backend`** — `mcp` or `pup`. **There is no default**: if the user did not name a
-     backend, **ask** (use `AskUserQuestion`, options `mcp` / `pup`) and wait. Never pick one
-     yourself, not even when only one looks available — the choice determines the run's recorded
-     provenance and how the corpus is loaded (on `mcp`, a dataset over ~19 records cannot be read by
-     any MCP tool and needs a direct REST call; `pup` has a first-class `records-all`). Two runs on
-     different backends are not strictly comparable, so guessing silently makes a comparison the user
-     never sanctioned. See **Datadog backend** for the trade-offs to state when asking.
+     the user's `evaluators` appear to disagree, **STOP and ask which one governs**.
+   - **data source** — mandatory: `dataset_id`, `annotation_queue_id`, `ml_app` (optionally
+     narrowed by `trace_ids`), or `local_dataset_path`. Resolve queue names to UUIDs first. If
+     `local_dataset_path`, include the `dataset_mode` choice (`datadog` vs `local_file`) in the
+     batched ask.
+   - **`annotation_label_map`** — required when the source is an `annotation_queue_id`. Read
+     `annotation_schema.label_schemas` first and ask which label supplies `expected_output` (or
+     `null`) and any corpus filter. Never auto-pick by label name.
+   - **`project_id`** — required except in `dataset_mode: local_file`. Derive only when unambiguous
+     (named by user, or resolved from `dataset_id` through one project; never from an empty queue
+     `project_id`); otherwise include in the batched ask.
+   - **`datadog_backend`** — `mcp` or `pup`. Recommend **`pup`** whenever the corpus exceeds ~19
+     records (MCP hits the ~19-record preview cap and needs a direct REST fallback). If both
+     backends are available, include this in the batched ask; if only one is installed and
+     authenticated, propose it prominently in the step-3 recap for explicit confirmation rather
+     than picking silently.
+   - **`domain_notes`** — include as an explicit question in the same batched `AskUserQuestion`
+     turn (*"Any product/domain context the code wouldn't tell an agent — intended behaviors, terms
+     of art, reference conventions?"*, with a "Nothing to add" option alongside free text) so it is
+     asked explicitly without adding an extra round-trip.
 
-   **A detailed, specific goal is NOT permission to infer any must-ask field.** A rich goal is the
-   single most common cause of wrongly auto-filling `files_to_optimize`, `evaluators`, and the data
-   source — the more the goal spells out (a filename, a metric, a dataset), the *harder* you must
-   resist reading those as answers. A goal that mentions `v12.md` is not the user choosing
-   `files_to_optimize`; a goal that says "balanced precision and recall" is not the user handing you
-   an evaluator; a goal that names a dataset is not the user selecting the data source. **Ask
-   anyway, for every must-ask field, every time — even when you are confident you could guess it.**
-   This gate is a hard STOP: if any must-ask field lacks an explicit user answer, do not write
-   `config.json`, do not create the scratch branch, do not run the harness — ask (use
-   `AskUserQuestion`) and wait.
-2. Fill the **default** fields (`max_iterations`, `max_runs`, `stratify_by`, `model`,
-   `base_branch`) with their defaults above. **These two defaults are a budget, and they are set where the loop can actually
-   work.** A 2-iteration run cannot hill-climb — it makes two attempts at the largest census
-   bucket and stops, and a real run's wins routinely come from the fifth or eighth attempt (and
-   from levers that only pay off once an earlier change is in place, plus a stall-categorization
-   iteration can consume a slot). A `max_runs` of 3 likewise
-   leaves most noisy metrics unable to resolve their own `min_delta` (Step 2.4), especially on the
-   smaller `test` split that picks the winner, so every gain stays permanently unconfirmable. Show
-   the cost estimate next to them (it scales linearly with
-   both) and let the user lower them deliberately rather than discovering a crippled run later.
-   On a **deterministic** metric (ground-truth checker, `stdev == 0` expected) `max_runs: 3` is
-   genuinely enough — say so and propose it, since extra runs there buy nothing but spend. `datadog_backend` is **not** among them — it is must-ask, per step 1. Do **not**
-   touch `runs`/`min_delta` here — they are derived in Step 2.4, not intake params (`max_runs` only
-   caps that derivation).
-
-   **`domain_notes` gets its own explicit question — never just a mention in the config review.**
-   An empty list is a fine answer, but the question must actually be asked: use `AskUserQuestion`
-   with something like *"Is there any product/domain context the code wouldn't tell an agent —
-   intended behaviours that look like bugs, terms of art, what a reference value represents? This
-   is optional, and empty is fine, but agents reliably misread domain vocabulary and that misread
-   propagates silently into every census description and judge call."*, with a "Nothing to add"
-   option alongside free text. Ask this **before** the all-params validation in step 3, not as part
-   of it — burying it in a list of already-filled-in defaults during that review reads as "here's
-   what's already decided," not as an invitation, and the field silently stays `[]` forever if the
-   user never notices it's a live prompt rather than a settled default. See **Domain notes** below
-   for how the answer is used and how it grows mid-run.
+   **A detailed, specific goal is NOT permission to infer `files_to_optimize`, `evaluators`, or the
+   data source.** Even when `goal` names a filename, metric, or dataset, still confirm those core
+   must-ask fields explicitly before writing `config.json` or touching git.
+2. Fill the **default** fields (`min_shippable_delta: 0.05`, `max_iterations: 8`, `max_runs: 5`,
+   `stratify_by: "auto"`, `model`, `base_branch`) and show every one of them in the step-3 recap
+   for confirmation/override. On a **deterministic** metric (`stdev == 0` expected), propose
+   `max_runs: 3` since extra repeats buy nothing. Do **not** touch `runs`/`min_delta` here — they
+   are derived in Step 2.4.
 3. **Show ALL parameters back to the user — must-ask and defaulted alike — and get explicit
    validation before starting the run.** Present the full resolved config (including the concrete
    expanded `files_to_optimize` list and each default value) and let the user confirm or override

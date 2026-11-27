@@ -33,7 +33,24 @@ you can just make, offer to make it rather than only flagging it.
 
 ## Gate 1 — harness trust (SKILL.md Step 2.2)
 
-Run every check. Each lists its procedure, its pass criterion, and what to do when it fails.
+Gate 1 splits into **Universal checks (always run)** and **Conditional checks (skip cleanly with a
+one-line note when N/A)** so deterministic ground-truth evals do not pay irrelevant LLM-judge
+ceremony.
+
+| check | applies to |
+|---|---|
+| Oracle probe | **Always** |
+| Ground-truth isolation | **Always** |
+| Mechanism wired | **Always** |
+| Resolved-scope print | **Always** |
+| Headline recomputes from raw rows | **Always** (and every iteration) |
+| Tier-1 corpus checks (incl. `val ∩ test == ∅`) | **Always** |
+| Null-baseline probe | **LLM-judge / custom heuristic scorers** (deterministic exact/F1 checkers fail empty/off-topic strings by construction) |
+| Judge determinism (`judge_flip_rate`) | **LLM-judge only** (deterministic checkers record `judge_flip_rate = 0.0` directly) |
+| Served model (`models_seen`) | **LLM-backed code under test only** (skip for pure non-LLM algorithms) |
+| Build variance | **Only when** code under test builds a stochastic intermediate artifact |
+
+Each check below lists its procedure, pass criterion, and disposition on failure.
 
 ### Oracle probe
 
