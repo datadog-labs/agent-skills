@@ -249,7 +249,7 @@ passing the Corpus size gate (SKILL.md Step 1), split it **once, deterministical
 Datadog LLM-Obs Datasets** — a `val` dataset and a `test` dataset, both named with the run's single
 UTC timestamp and their ids recorded in `config.json` (`val_dataset_id`, `test_dataset_id`,
 `split_created_at`). The split is created **once per run, at the start, and never again**: not on a
-later iteration, not after a `git reset --hard`, not when a local cache is missing (re-hydrate from
+later iteration, not after restoring `files_to_optimize`, not when a local cache is missing (re-hydrate from
 the same ids). The single sanctioned exception is the one baseline population re-draw at Step 2.6.
 In `dataset_mode: local_file`, the split writes gitignored `data.val.jsonl` / `data.test.jsonl`
 instead — still running the Corpus size gate, stratification, `split` stamping, and count assertion.

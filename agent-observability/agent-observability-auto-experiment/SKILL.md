@@ -902,8 +902,8 @@ explicitly chosen at the intake gate.
 
 **Create-once — read this before creating anything.** Re-read `.auto_experiment/config.json` first.
 If `val_dataset_id` and `test_dataset_id` are both non-null, the run's datasets **already exist**:
-reuse them, and do **not** re-create, re-split, re-stamp, or re-insert — not after a
-`git reset --hard`, not on a resumed run, not when the local cache is missing (a lost cache is
+reuse them, and do **not** re-create, re-split, re-stamp, or re-insert — not after restoring
+`files_to_optimize`, not on a resumed run, not when the local cache is missing (a lost cache is
 re-hydrated from the same ids, per Step 1.5). The split is minted once per run, in this step, and
 every later iteration measures the same rows. Re-splitting mid-run silently changes the corpus and
 makes every earlier score incomparable.
@@ -1350,11 +1350,16 @@ events) to LLM-Obs per `references/reporting.md`.
 
 Mirrors `build_followup_prompt`. Baseline is already known — **do not recompute it**.
 
-1. **Restore to the best-so-far**, so a discarded attempt cannot contaminate this one:
-   - if a commit was kept → `git reset --hard <best_sha>` (stays on the scratch branch; the
-     committed harness and `stats.py` live in that commit).
-   - if nothing has been kept yet → `git checkout <base_branch> -- <files_to_optimize>` (restore
-     only the target files so the harness is preserved).
+1. **Restore ONLY `files_to_optimize` to the best-so-far**, so a discarded attempt cannot
+   contaminate this one **without wiping `.auto_experiment/`'s audit trail**:
+   - if a commit was kept → `git checkout <best_sha> -- <files_to_optimize>` (never `git reset
+     --hard <best_sha>`, which rolls back `config.json`, erases discarded rows from
+     `iteration_results`, wipes `narrative.md`, and resets `plateau_discard_streak`!).
+   - if nothing has been kept yet → `git checkout <start_sha> -- <files_to_optimize>` (restores
+     only the target files while preserving the harness, `stats.py`, and every discarded iteration's
+     record in `config.json` and `narrative.md`).
+   - Also check `git status -- <files_to_optimize>` for any untracked files a discarded iteration
+     created inside the edit scope and remove them so the scope matches `<best_sha>` cleanly.
 2. **`before` for each split** = the current best's `val` and `test` means (from `iteration_results`;
    the iteration-0 baseline if nothing has been kept yet). Do NOT re-run the baseline.
 3. Reuse **both dataset ids** already recorded in `config.json` (`val_dataset_id`,
