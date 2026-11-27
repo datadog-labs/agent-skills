@@ -28,7 +28,7 @@ eval harness, and Datadog MCP or `pup`).
 | `references/eval_audit.md` | Three hard-STOP pre-climb gates: Gate 1 (harness trust), Gate 2 (zero triage), Gate 3 (climbability) |
 | `references/reporting.md` | LLM-Obs `auto_experiment_score` + per-case `auto_experiment_case_score` contracts, tag normalization, `narrative.md`, final report |
 | `references/eval_harness_template.{py,mjs}` | Language-parity harness skeletons (`generate` on redacted row, `grade` on full row, `AUTO_EXP_SPLIT`, `AUTO_EXP_WORKERS`, `AUTO_EXP_REGRADE`) |
-| `references/stats.py` & `references/loop_helper.py` | Copied to `.auto_experiment/`; deterministic CLI for `split`, `calibrate`, `check-memorization`, `distribution`, `decide`, `build-tags`, `render-narrative`, `verify-final` |
+| `scripts/stats.py` & `scripts/loop_helper.py` | Copied to `.auto_experiment/`; deterministic CLI for `split`, `calibrate`, `check-memorization`, `distribution`, `decide`, `build-tags`, `render-narrative`, `verify-final` |
 
 **Split vocabulary:** This skill names the two splits **`val`** (the 70% search/analysis split —
 equivalent to **`train`** in standard ML / Anthropic's `eval-hillclimb.md`, read by census,
@@ -292,7 +292,7 @@ in `local_file` mode), record `val_dataset_id`, `test_dataset_id`, `val_case_cou
 
 1. Detect runtime (`node` for `.js/.ts/.mjs/.cjs` or `package.json`; `python` otherwise or default)
    and copy `references/eval_harness_template.{py,mjs}` to `.auto_experiment/eval_harness.{py,mjs}`.
-   Copy **`references/stats.py`** and **`references/loop_helper.py`** to `.auto_experiment/`.
+   Copy **`scripts/stats.py`** and **`scripts/loop_helper.py`** to `.auto_experiment/`.
 2. Wire `generate(line)` (real code under test; receives **redacted** row) and `grade(line,
    generation)` (prefer deterministic ground-truth check; LLM-judge fallback using
    `build_judge_prompt`). Set `AUTO_EXP_WORKERS=4..8` for I/O-bound LLM calls if helpful.

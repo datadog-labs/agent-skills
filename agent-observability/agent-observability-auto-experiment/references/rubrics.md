@@ -196,7 +196,7 @@ reran the eval?* It does **not** answer the question a reader usually hears in t
 "significant": *would this gain hold on other cases?* Those are different uncertainties with
 different denominators, and conflating them is the most common way an honest loop overclaims.
 
-| question | varies | denominator | instrument (`references/stats.py`) |
+| question | varies | denominator | instrument (`scripts/stats.py`) |
 |---|---|---|---|
 | does the gain reproduce? | rerun noise (sampling temperature, judge wobble) | `runs` | `t_two_sample` (`\|t\| = \|Δ\| / SE_diff`) |
 | does the gain generalize? | which cases are in the set | **number of cases** | `paired_bootstrap_delta` + `paired_case_test` + **`n_moved`** |
@@ -206,7 +206,7 @@ flip the same way every time". That is a real finding — it is just not evidenc
 9,940 cases you did not score.
 
 **So compute both, and report both** using `.auto_experiment/stats.py` (copied from
-`references/stats.py`, seed `BOOTSTRAP_SEED = 20260917`, 2000 resamples) over `per_case_means`
+`scripts/stats.py`, seed `BOOTSTRAP_SEED = 20260917`, 2000 resamples) over `per_case_means`
 paired **by eval-set `id`**:
 
 - **`paired_bootstrap_delta(best, candidate)`** — primary evidence for the `test` headline:
@@ -495,7 +495,7 @@ it instead of an LLM judge**:
 
 ## Eval-harness spec (`_eval_harness_skill`)
 
-**Companions.** `references/stats.py` and `references/loop_helper.py` are copied to
+**Companions.** `scripts/stats.py` and `scripts/loop_helper.py` are copied to
 `.auto_experiment/` alongside the harness (always Python, orchestrator-side — the harness matches
 the code under test's runtime, the orchestrator does not). Use `loop_helper.py` (`split`,
 `calibrate`, `check-memorization`, `decide`, `build-tags`, `render-narrative`, `verify-final`) so
