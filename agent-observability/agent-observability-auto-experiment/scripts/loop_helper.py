@@ -1214,16 +1214,24 @@ def cmd_record(args: argparse.Namespace) -> None:
     default_split = "all" if sm == "all_rows" else ("select" if sm == "three_way" else "test")
     split = row.get("headline_split") or default_split
     score_block = row.get(split) or row.get("select") or row.get("test") or row.get("all") or {}
-    headline_score = score_block.get("after") if isinstance(score_block, dict) else row.get("after_score")
+    objective_val = score_block.get("after") if isinstance(score_block, dict) else row.get("after_score")
+    cfg_goal_target = cfg["goal"].get("target") if isinstance(cfg.get("goal"), dict) else None
+    target = str(row.get("target") or cfg_goal_target or "score").lower()
+    q_scores = row.get("quality_scores") if isinstance(row.get("quality_scores"), dict) else {}
+    # Keep `best_score` as the quality score (for `no_change --best-score` carry-forward in
+    # `auto_experiment_score`) and store `best_objective` for non-score targets.
+    quality_val = q_scores.get(split, objective_val) if target != "score" else objective_val
 
     if row.get("decision") == "baseline" and it == 0:
         cfg["best_iteration"] = 0
         cfg["best_sha"] = row.get("sha")
-        cfg["best_score"] = headline_score
+        cfg["best_score"] = quality_val
+        cfg["best_objective"] = objective_val
     elif row.get("decision") == "kept":
         cfg["best_iteration"] = it
         cfg["best_sha"] = row.get("sha")
-        cfg["best_score"] = headline_score
+        cfg["best_score"] = quality_val
+        cfg["best_objective"] = objective_val
 
     # Compute estimated_duration_time (seconds remaining) from real elapsed wall-clock timestamps
     durations = []
@@ -1243,6 +1251,7 @@ def cmd_record(args: argparse.Namespace) -> None:
         "best_iteration": cfg.get("best_iteration"),
         "best_sha": cfg.get("best_sha"),
         "best_score": cfg.get("best_score"),
+        "best_objective": cfg.get("best_objective"),
         "iterations_recorded": len(rows),
         "improvement_iterations_done": imp_done,
         "iterations_left": iters_left,

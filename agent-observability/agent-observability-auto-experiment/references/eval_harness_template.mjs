@@ -664,8 +664,8 @@ async function main() {
   // place (which would permanently delete the failed rows' stored outputs); write partial regraded
   // rows to a sidecar so fixing the grader and retrying regrade still recovers every stored output.
   const writeTarget =
-    REGRADE && allErrors.length && !RESULTS_OVERRIDE
-      ? path.join(OUT_DIR, `eval_results.${SPLIT}.regrade_partial.jsonl`)
+    REGRADE && allErrors.length
+      ? path.join(path.dirname(RESULTS), `${path.basename(RESULTS, path.extname(RESULTS))}.regrade_partial.jsonl`)
       : RESULTS;
   fs.writeFileSync(writeTarget, allResults.map((r) => JSON.stringify(r)).join("\n") + "\n");
   if (allErrors.length) {

@@ -361,6 +361,13 @@ class TestLoopHelper(unittest.TestCase):
         self.assertTrue(any(t.startswith("objective_cost_usd:") for t in sp_cost["tags"]), sp_cost["tags"])
         self.assertIn("test_score:0.8000", sp_cost["tags"])
 
+        # record() on cost_usd target stores quality (0.8) in best_score and cost in best_objective
+        cfg_cost = self.tdir / "cfg_cost.json"
+        cfg_cost.write_text(json.dumps({"max_iterations": 4, "split_mode": "val_test", "goal": {"target": "cost_usd", "direction": "lower"}, "iteration_results": []}))
+        rec_c = json.loads(_run_helper(["record", "--config", str(cfg_cost), "--row", json.dumps({**dc, "iteration": 1, "sha": "a" * 40})]).stdout)
+        self.assertEqual(rec_c["best_score"], 0.8)
+        self.assertAlmostEqual(rec_c["best_objective"], dc["test"]["after"], places=6)
+
         # check-climbability --target cost_usd reads cost_usd metric_stats (not quality scores)
         r_cc_cost = _run_helper(["check-climbability", "--target", "cost_usd", "--direction", "lower", "--val-stdout", bv, "--test-stdout", bt, "--min-shippable-delta", "0.01"])
         self.assertEqual(r_cc_cost.returncode, 0, r_cc_cost.stderr)
@@ -547,6 +554,14 @@ class TestHarnessTemplateParity(unittest.TestCase):
                 orig_rows = [json.loads(l) for l in (tdir / "holdout" / "eval_results.test.jsonl").read_text().splitlines() if l.strip()]
                 self.assertEqual(len(orig_rows), 9, f"{label}: partial regrade overwrote stored outputs!")
                 self.assertTrue((tdir / "holdout" / "eval_results.test.regrade_partial.jsonl").exists())
+
+                # Same protection when AUTO_EXP_RESULTS points at a custom path!
+                custom_rg = tdir / "holdout" / f"custom_{label}.jsonl"
+                shutil.copy(tdir / "holdout" / "eval_results.test.jsonl", custom_rg)
+                rg_cust = run(cmd, {"AUTO_EXP_SPLIT": "test", "AUTO_EXP_DATASET_ID": "ds-test", "AUTO_EXP_REGRADE": "1", "AUTO_EXP_RESULTS": str(custom_rg)})
+                self.assertEqual(rg_cust.returncode, 0, rg_cust.stderr)
+                self.assertEqual(len([l for l in custom_rg.read_text().splitlines() if l.strip()]), 9)
+                self.assertTrue((tdir / "holdout" / f"custom_{label}.regrade_partial.jsonl").exists())
 
             # Verify out-of-range / NaN / non-numeric score from grade() is recorded as judge_error (not NaN mean or crash)
             py_badscore = py_wired.replace(

@@ -764,8 +764,8 @@ def main() -> None:
     # permanently delete the failed rows' stored outputs); write partial regraded rows to a sidecar
     # file so fixing the grader and retrying regrade can still recover every stored output.
     write_target = (
-        OUT_DIR / f"eval_results.{SPLIT}.regrade_partial.jsonl"
-        if (REGRADE and all_errors and not _RESULTS_OVERRIDE)
+        RESULTS.with_name(f"{RESULTS.stem}.regrade_partial.jsonl")
+        if (REGRADE and all_errors)
         else RESULTS
     )
     with write_target.open("w") as out:
