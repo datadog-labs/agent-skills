@@ -164,7 +164,8 @@ below as a substitution rule for the selected backend:
 | Read queue interactions | `get_llmobs_annotated_interactions --only_annotated` | `annotation-queues interactions list <QUEUE_ID>` | ⧉ |
 | Queue label schema | `get_llmobs_annotation_label_schema` | in `annotation-queues list` → `annotation_schema.label_schemas` | ⧉ |
 | Preview / full records | `get_llmobs_dataset_records` / `get_llmobs_full_dataset_records` | `datasets records` / `datasets records-full` | ⚠️ ~19 cap / max 3 |
-| Traces & spans | `search_llmobs_spans`, `get_llmobs_trace`, `get_llmobs_span_details`, `get_llmobs_span_content`, `expand_llmobs_spans` | `spans search`, `spans get-trace`, `spans get-details`, `spans get-content`, `spans expand` | ⏱ |
+| Traces & spans (LLM-Obs) | `search_llmobs_spans`, `get_llmobs_trace`, `get_llmobs_span_details`, `get_llmobs_span_content`, `expand_llmobs_spans` | `spans search`, `spans get-trace`, `spans get-details`, `spans get-content`, `spans expand` | ⏱ |
+| Traces & spans (APM, when instrumented) | `search_datadog_spans`, `get_datadog_trace` | `pup apm ...` / `pup spans ...` | use during baseline & census to diagnose code/DB/HTTP/tool bottlenecks |
 | Create experiment | `create_llmobs_experiment` | `experiments create --file body.json` | only when `$experiment-id` absent |
 | Update experiment | `update_llmobs_experiment` | `experiments update --file body.json <EXPERIMENT_ID>` | |
 | Submit experiment events | `submit_llmobs_experiment_events` | `experiments events submit --metrics '[{…}]' <EXPERIMENT_ID>` | |
@@ -238,8 +239,11 @@ Backend traps to respect:
   2. `"Describe the behavior, not the content."` (No datapoint phrases/entities/constants in edited
      files; verified mechanically by 5-gram diff check.)
   3. `"When you propose removing something, name which cases you expect to regress."`
-  4. `"Proposing a different lever is a legitimate answer."` (Tool, retrieval, pipeline, config, or
-     prompt — whichever in-scope file holds the lever.)
+  4. `"Dig into the code and execution traces BEFORE touching a prompt."` Read the full call graph
+     in `files_to_optimize` and the failing `val` cases' `signals` / LLM-Obs child spans / APM spans.
+     Fix the layer where the failure originates (retrieval, tool I/O, preprocessing, control flow,
+     parsing, retries, or model parameters); only edit a prompt when traces/signals prove the code
+     already delivered the right inputs and tools.
 
 ---
 
@@ -288,25 +292,38 @@ in `local_file` mode), record `val_dataset_id`, `test_dataset_id`, `val_case_cou
   `<split>_case_count` (re-hydrate from the same dataset id if missing; never re-split).
 - In `local_file` mode, verify `data.val.jsonl` / `data.test.jsonl` line counts instead.
 
-### Step 2 — Build harness, run Gate 1, and run pilot baseline
+### Step 2 — Map the code, build the harness with execution signals, run Gate 1, and run pilot baseline
 
-1. Detect runtime (`node` for `.js/.ts/.mjs/.cjs` or `package.json`; `python` otherwise or default)
+1. **Map how the code actually works first (before editing anything).** Read ALL files in
+   `files_to_optimize` and trace the real execution path (entrypoint → preprocessing → retrieval /
+   tool calls → filtering / ranking → LLM calls → post-processing / parsing / retries). Record this
+   call-graph summary so Step 2.5 writes it into `census.json.code_map`. If historical production
+   traces exist for the `val` cases, inspect their **LLM-Obs child spans** (`tool`, `retrieval`,
+   `workflow`, `task` via `get_llmobs_trace` / `expand_llmobs_spans` / `get_llmobs_span_details`)
+   and **APM traces** (when APM-instrumented) to see where time, errors, empty retrievals, or bad
+   tool calls actually occur in code.
+2. Detect runtime (`node` for `.js/.ts/.mjs/.cjs` or `package.json`; `python` otherwise or default)
    and copy `references/eval_harness_template.{py,mjs}` to `.auto_experiment/eval_harness.{py,mjs}`.
    Copy **`scripts/stats.py`** and **`scripts/loop_helper.py`** to `.auto_experiment/`.
-2. Wire `generate(line)` (real code under test; receives **redacted** row) and `grade(line,
+3. Wire `generate(line)` (real code under test; receives **redacted** row) and `grade(line,
    generation)` (prefer deterministic ground-truth check; LLM-judge fallback using
-   `build_judge_prompt`). Set `AUTO_EXP_WORKERS=4..8` for I/O-bound LLM calls if helpful.
-3. **Step 2.2 — Gate 1 (Harness trust, `references/eval_audit.md`):** Run all universal checks
+   `build_judge_prompt`). **Capture all available execution signals in `generate()`**: return a rich
+   `signals` dict (`tools_called`, `retrieved_count`, `filtered_count`, `branch_taken`, `retries`,
+   `parse_fallbacks`, `step_latencies_ms`, `apm_trace_id`) and preserve LLM-Obs / APM span links via
+   `_export_span_link()`. Set `AUTO_EXP_WORKERS=4..8` for I/O-bound LLM calls if helpful.
+4. **Step 2.2 — Gate 1 (Harness trust, `references/eval_audit.md`):** Run all universal checks
    (oracle, ground-truth isolation, mechanism wired, resolved scope, `loop_helper.py verify-mean` to
    `1e-9`, `loop_helper.py audit-corpus` incl. `val ∩ test == ∅`) plus conditional LLM checks
    (`judge_flip_rate`, null-baseline, `models_seen`). Hard **STOP** on failure.
-4. Run pilot (`AUTO_EXP_RUNS=3`, `AUTO_EXP_ITERATION=0`) on **both splits** (explicit
+5. Run pilot (`AUTO_EXP_RUNS=3`, `AUTO_EXP_ITERATION=0`) on **both splits** (explicit
    `AUTO_EXP_SPLIT`, never passing both `AUTO_EXP_DATA` and `AUTO_EXP_DATASET_ID`):
    ```bash
    AUTO_EXP_SPLIT=val  AUTO_EXP_DATASET_ID=<val_id>  AUTO_EXP_RUNS=3 AUTO_EXP_ITERATION=0 python .auto_experiment/eval_harness.py
    AUTO_EXP_SPLIT=test AUTO_EXP_DATASET_ID=<test_id> AUTO_EXP_RUNS=3 AUTO_EXP_ITERATION=0 python .auto_experiment/eval_harness.py
    ```
-   Price baseline rows from `config.json.prices` and record baseline cost & p50/p95 latency.
+   Price baseline rows from `config.json.prices`, record baseline cost & p50/p95 latency, and
+   **inspect the baseline execution signals + linked LLM-Obs/APM traces on failing `val` cases** so
+   you know what the code actually did during baseline execution (not just what text came out).
    Commit harness, `stats.py`, `loop_helper.py`, `config.json`, and `eval_results.val.jsonl`
    (keeping `holdout/` gitignored). **Defer iteration-0 LLM-Obs reporting until Step 2.4.**
 
@@ -331,13 +348,16 @@ Write `runs`, `min_delta`, `guardrail_floors`, and `resolution_note` into `confi
 `narrative.md`, commit the final baseline state, and **report iteration 0 to LLM-Obs** (`score_value`
 = final `test` baseline, `build-tags`, plus split-tagged per-case events — see `references/reporting.md`).
 
-### Step 2.5 — Baseline failure census (`val` only)
+### Step 2.5 — Baseline failure census (`val` only, grounded in code & trace signals)
 
 Run Phase A (parallel describer sub-agents over **every** failing `val` case, capped at a random
-200 with `"sampling": "random-200"` — **no category list, no `expected_output`, never `holdout/`**)
-and Phase B (orchestrator synthesizes emergent buckets + computes each bucket's reachable ceiling
-`bucket_count / scored × (1 − mean_bucket_score)` + records bare `holdout_failing_total`). Write
-and commit `.auto_experiment/census.json`.
+200 with `"sampling": "random-200"` — handing each describer the case's **execution `signals` and
+linked LLM-Obs child spans / APM trace details** alongside input/output/justification, while keeping
+**no category list, no `expected_output`, and never `holdout/`**) and Phase B (orchestrator
+synthesizes emergent buckets against `code_map`, tagging each bucket with **`likely_layer`**,
+**`code_locations`**, **`trace_evidence`**, and reachable ceiling
+`bucket_count / scored × (1 − mean_bucket_score)` + bare `holdout_failing_total`). Write and commit
+`.auto_experiment/census.json`.
 
 ### Step 2.6 — Gate 3 (Climbability, `references/eval_audit.md`)
 
@@ -350,9 +370,14 @@ winners every round; pooled confirm shrinks rerun noise, not case-selection bias
 
 ### Step 3 — Improve & pre-eval checks
 
-Spawn a fresh sub-agent (with the 4 verbatim briefing rules) to make **ONE focused change** targeting
-the largest reachable `census.json` bucket in whichever in-scope file holds the lever. Commit on the
-scratch branch, then run before spending a full two-split eval:
+Spawn a fresh sub-agent (with the 4 verbatim briefing rules, `census.json`'s `code_map`, and
+bucket `likely_layer`/`code_locations`/`trace_evidence`) to make **ONE focused change** targeting
+the largest reachable `census.json` bucket **at the code layer where the failure originates**.
+Enforce the **code-before-prompt rule** (`rubrics.md`): do not tweak a prompt to work around broken
+retrieval, tool I/O, preprocessing, routing, parsing, or parameters; if 2 consecutive prompt-only
+iterations were discarded while non-prompt code is in scope, require the next attempt to target a
+code/tool/retrieval/parameter lever. Record `lever_layer` on `result.json`. Commit on the scratch
+branch, then run before spending a full two-split eval:
 
 1. **Feasibility probe + ceiling sizing** (`rubrics.md`): if probe reaches 0 failing `val` cases or
    targeted bucket ceiling `< min_delta` → record `no_change`, skip full eval.

@@ -258,10 +258,12 @@ class TestHarnessTemplateParity(unittest.TestCase):
         return {{"output": "half", "model": "m1", "usage": {{"input_tokens": 10, "output_tokens": 5, "cost_usd": 0.001}}, "latency_s": 0.25, "stop_reason": "max_tokens", "refusal": False}}
     if line["id"] == "refuse":
         return {{"output": "no", "model": "m1", "usage": {{"input_tokens": 10, "output_tokens": 5, "cost_usd": 0.001}}, "latency_s": 0.2, "stop_reason": "end_turn", "refusal": True}}
-    return {{"output": ("x" * 700) + "{tail_token}", "model": "m1", "usage": {{"input_tokens": 10, "output_tokens": 5, "cost_usd": 0.001}}, "latency_s": 0.1, "stop_reason": "end_turn", "refusal": False}}''',
+    return {{"output": ("x" * 700) + "{tail_token}", "model": "m1", "usage": {{"input_tokens": 10, "output_tokens": 5, "cost_usd": 0.001}}, "latency_s": 0.1, "stop_reason": "end_turn", "refusal": False, "signals": {{"tools_called": ["search"], "retrieved_count": 3}}}}''',
         ).replace(
             'raise NotImplementedError("wire grade to a real ground-truth check or LLM-as-judge call")',
             f'''assert "expected_output" in line
+    if line["id"] == "ok1":
+        assert generation.get("signals", {{}}).get("retrieved_count") == 3
     return (1.0 if "{tail_token}" in generation["output"] else 0.0, "checked")''',
         )
 
@@ -272,10 +274,11 @@ class TestHarnessTemplateParity(unittest.TestCase):
   if (line.id === "err") throw new HarnessError("timeout", "sim timeout");
   if (line.id === "trunc") return {{ output: "half", model: "m1", usage: {{ input_tokens: 10, output_tokens: 5, cost_usd: 0.001 }}, latency_s: 0.25, stop_reason: "max_tokens", refusal: false }};
   if (line.id === "refuse") return {{ output: "no", model: "m1", usage: {{ input_tokens: 10, output_tokens: 5, cost_usd: 0.001 }}, latency_s: 0.2, stop_reason: "end_turn", refusal: true }};
-  return {{ output: "x".repeat(700) + "{tail_token}", model: "m1", usage: {{ input_tokens: 10, output_tokens: 5, cost_usd: 0.001 }}, latency_s: 0.1, stop_reason: "end_turn", refusal: false }};''',
+  return {{ output: "x".repeat(700) + "{tail_token}", model: "m1", usage: {{ input_tokens: 10, output_tokens: 5, cost_usd: 0.001 }}, latency_s: 0.1, stop_reason: "end_turn", refusal: false, signals: {{ tools_called: ["search"], retrieved_count: 3 }} }};''',
         ).replace(
             'throw new Error("wire grade to a real ground-truth check or LLM-as-judge call");',
             f'''if (!("expected_output" in line)) throw new Error("missing ref");
+  if (line.id === "ok1" && (!generation.signals || generation.signals.retrieved_count !== 3)) throw new Error("missing signals");
   return [generation.output.includes("{tail_token}") ? 1.0 : 0.0, "checked"];''',
         )
 

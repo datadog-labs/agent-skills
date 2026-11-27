@@ -315,12 +315,19 @@ def generate(line: dict) -> "dict | str | None":
                    "cost_usd": float},  # omit unmeasured keys; never fill unknown with 0
          "latency_s": float,          # the model call only, not retries or local queueing
          "stop_reason": str,          # so a response clipped at max_tokens can be flagged
-         "refusal": bool}             # a graded outcome, NOT an error
+         "refusal": bool,             # a graded outcome, NOT an error
+         "signals": dict}             # OPTIONAL BUT STRONGLY PREFERRED: intermediate code/execution
+                                      # signals (e.g. tools_called, retrieved_count, filtered_count,
+                                      # branch_taken, retries, parse_fallbacks, step_latencies_ms,
+                                      # apm_trace_id) so the census can localize CODE bugs instead
+                                      # of guessing prompt tweaks from final output text alone
 
     `model` and `usage` are captured unconditionally, even when the goal is pure quality: the
     orchestrator derives `cost_usd` from `model` x `usage` when not reported directly, the report
     shows the quality-vs-cost trade-off in absolute numbers, and a silent server-side model
-    substitution invalidates every comparison.
+    substitution invalidates every comparison. Capture as much code-execution `signals` as the app
+    exposes (alongside LLM-Obs / APM span links via `_export_span_link`) so failures in retrieval,
+    tool I/O, preprocessing, routing, or post-processing are directly visible in `eval_results`.
 
     Raise `HarnessError(<class>, <message>)` for an attempt that produced nothing gradeable.
     """
@@ -472,6 +479,10 @@ def evaluate_line(line: dict, rep: int) -> "tuple[dict | None, dict | None]":
         # chose to stop" — that reads as a wrong answer when it is a truncated one.
         "status": "truncated" if stop_reason in ("max_tokens", "length") else "ok",
         "refusal": bool(generation.get("refusal")),
+        # Intermediate code-execution signals (tools called, retrieval counts, code branches,
+        # retries, parser fallbacks, APM/step timings) so the census localizes code-layer failures
+        # instead of defaulting to prompt edits.
+        "signals": generation.get("signals") if isinstance(generation.get("signals"), dict) else {},
     }, None
 
 
@@ -504,6 +515,7 @@ def _regrade_one(row: dict, by_id: dict) -> "tuple[dict | None, dict | None]":
         "latency_s": row.get("latency_s"),
         "stop_reason": row.get("stop_reason"),
         "refusal": bool(row.get("refusal")),
+        "signals": row.get("signals") if isinstance(row.get("signals"), dict) else {},
     }
     try:
         score, justification = grade(line, generation)

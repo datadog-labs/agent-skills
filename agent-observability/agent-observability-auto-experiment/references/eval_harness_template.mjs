@@ -216,7 +216,12 @@ class HarnessError extends Error {
  * Return null to EXCLUDE this line from the eval set (non-target / infra line).
  * Return either a bare string or an object:
  *   {output, model, usage: {input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_usd},
- *    latency_s, stop_reason, refusal}
+ *    latency_s, stop_reason, refusal, signals}
+ *
+ * `signals` (optional object, strongly preferred): capture intermediate code-execution signals
+ * (tools_called, retrieved_count, filtered_count, branch_taken, retries, parse_fallbacks,
+ * step_latencies_ms, apm_trace_id) alongside LLM-Obs/APM span links so the census can localize
+ * failures in retrieval, tool I/O, routing, or post-processing instead of defaulting to prompt edits.
  *
  * Throw `new HarnessError(<class>, <message>)` for an attempt that produced nothing gradeable.
  *
@@ -339,6 +344,10 @@ async function evaluateLine(line, rep) {
       stop_reason: stopReason,
       status: ["max_tokens", "length"].includes(stopReason) ? "truncated" : "ok",
       refusal: Boolean(generation.refusal),
+      signals:
+        generation.signals && typeof generation.signals === "object" && !Array.isArray(generation.signals)
+          ? generation.signals
+          : {},
     },
     null,
   ];
@@ -401,6 +410,10 @@ async function regrade(file) {
       latency_s: row.latency_s ?? null,
       stop_reason: row.stop_reason ?? null,
       refusal: Boolean(row.refusal),
+      signals:
+        row.signals && typeof row.signals === "object" && !Array.isArray(row.signals)
+          ? row.signals
+          : {},
     };
     try {
       const [score, justification] = await grade(line, generation);

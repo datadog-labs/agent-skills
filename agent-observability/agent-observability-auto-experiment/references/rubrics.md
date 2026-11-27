@@ -383,24 +383,38 @@ Record the triage counts in `census.json` alongside the buckets.
 
 **Fan out parallel describer sub-agents** over **every** failing / low-scoring `val` datapoint in
 the baseline `eval_results.val.jsonl` (batch several per agent; hard cap at a **random** 200 if
-there are more). Each describer gets the datapoint's input, generated output, and judge
-justification — and returns **one or two factual sentences about what it observes**:
+there are more). Each describer gets:
+- the datapoint's input, generated output, and judge justification, **AND**
+- **all available execution signals** for that `val` case: the row's `signals` dict (tool calls,
+  retrieved/filtered counts, branches taken, retries, parser fallbacks, step latencies), plus — when
+  instrumented — the **LLM-Obs child spans** (`tool`, `retrieval`, `workflow`, `task` spans via
+  `get_llmobs_trace`/`expand_llmobs_spans`/`get_llmobs_span_details`) and **APM trace spans**
+  (`search_datadog_spans`/`get_datadog_trace` or `pup apm`) linked via `trace_id`/`span_id`.
+
+Giving describers only final `(input, output)` text forces them to guess prompt tweaks; giving them
+execution signals and trace spans exposes where the *code* actually broke (empty retrieval, wrong
+tool arguments, truncated context, bad filtering/ranking, broken parser, slow/failing downstream
+call). Each describer returns **one or two factual sentences about what it observes** across both
+execution and output:
 
 - **`val` only, and no `expected_output`.** Never `.auto_experiment/holdout/`. Where a deterministic
   check needs context, pass a derived difference rather than the raw gold string.
 - **Hand the describers NO category vocabulary.** No bucket list, no candidate tags. Ask *what
-  happened*, never *which kind is this*.
-- **Describe facts, not judgments.** Facts are far less subjective and safe to parallelize.
+  happened in the code and output*, never *which kind is this*.
+- **Describe facts, not judgments.** "Retrieval returned 0 docs because `build_query` quoted the raw
+  sentence; LLM answered from memory" is a fact. "Prompt was too vague" is an unsupported guess.
 - **Pass `domain_notes` to every describer** (SKILL.md **Domain notes**).
 - Give each describer whatever rendering makes the datapoint legible (for structured/numeric data,
   a rendered view plus raw values as a sidecar).
 
-### Phase B — synthesize the descriptions into emergent archetypes
+### Phase B — synthesize the descriptions into emergent archetypes (localized to code layers)
 
-You (the orchestrator) read the descriptions **and only then** name the buckets. Group descriptions
-that say the same thing, name each group after what they actually say, write a one-line definition,
-and compute each bucket's **reachable ceiling**:
-`bucket_count / scored × (1 − mean_bucket_score)`.
+You (the orchestrator) read the descriptions **alongside the code map** you built across
+`files_to_optimize` in Step 2, and **only then** name the buckets. Group descriptions that say the
+same thing, name each group after what they actually say, write a one-line definition, localize each
+bucket to its **`likely_layer`** (`retrieval` | `tool_io` | `preprocessing` | `control_flow` |
+`postprocessing` | `model_params` | `prompt`) and **`code_locations`** (`file:symbol`), and compute
+its **reachable ceiling**: `bucket_count / scored × (1 − mean_bucket_score)`.
 
 If synthesis genuinely yields nothing coherent, these generic buckets are prior art as a last resort
 at synthesis time only: `wrong_retrieval`, `wrong_reasoning`, `format/parse`, `refusal/empty`,
@@ -416,12 +430,21 @@ Write `.auto_experiment/census.json` and commit it:
   "described": 47,
   "holdout_failing_total": 20,
   "triage": {"harness_errors_dropped": 1, "grader_errors_found": 0},
+  "code_map": [
+    {"stage": "retrieval", "location": "backend/search.py:build_query", "role": "builds index query from user input"},
+    {"stage": "llm_call", "location": "backend/agent.py:run_turn", "role": "calls model with retrieved docs and tools"},
+    {"stage": "postprocessing", "location": "backend/parser.py:extract_sql", "role": "extracts SQL from response"}
+  ],
+  "trace_signals_used": ["harness.signals", "llmobs_child_spans", "apm_spans"],
   "descriptions": [
-    {"id": "BL11", "score": 0.0, "description": "kept both joins but dropped the status='open' predicate"}
+    {"id": "BL11", "score": 0.0, "description": "build_query stripped WHERE clauses before retrieval; retrieved_count=0; output dropped status='open'"}
   ],
   "buckets": [
-    {"tag": "predicate_dropped", "count": 12, "reachable_ceiling": 0.255, "examples": ["BL11", "BL34"],
-     "definition": "output preserves the joins but silently drops a filter predicate"}
+    {"tag": "predicate_dropped_in_query_builder", "count": 12, "reachable_ceiling": 0.255,
+     "likely_layer": "retrieval", "code_locations": ["backend/search.py:build_query"],
+     "trace_evidence": "11/12 cases had signals.retrieved_count == 0 on LLM-Obs retrieval span",
+     "examples": ["BL11", "BL34"],
+     "definition": "query builder strips filter predicates before retrieval, starving the model of matching rows"}
   ]
 }
 ```
@@ -440,6 +463,14 @@ Write `.auto_experiment/census.json` and commit it:
 - **Every iteration must name the census bucket it targets** (using its emergent tag) and be a
   change plausibly able to move THAT bucket. If the dominant bucket is outside `files_to_optimize`,
   say so as a finding.
+- **Code-before-prompt root-cause rule.** Never edit a prompt to compensate for a bug or missing
+  signal in retrieval, tool schemas/implementations, preprocessing, routing/control flow, parsing,
+  retries, or model parameters. Inspect the code path and execution traces/signals first, and fix
+  the layer where the failure originates. Edit a prompt **only** when the baseline/iteration traces
+  and `signals` confirm the code already delivered the right inputs, tools, and parameters, and the
+  model still misbehaved. If two consecutive prompt-only iterations are discarded while non-prompt
+  code lives in `files_to_optimize`, the next iteration MUST investigate a code/tool/retrieval/param
+  lever instead of another rewording.
 
 ## Feasibility probe — prove reachability before you pay for a full eval (`_feasibility_probe`)
 
@@ -536,16 +567,19 @@ Write `.auto_experiment/eval_harness.py` (or `.mjs`) with:
 
 - `generate(line)` — runs the **real code under test** on a **REDACTED row** (`expected_output` /
   `reference` / `gold` / `label` stripped). Must not re-open the cache. Returns `None` to exclude,
-  a bare string, or `{output, model, usage, latency_s, stop_reason, refusal}`. `model` is read from
-  the response, never from config.
+  a bare string, or `{output, model, usage, latency_s, stop_reason, refusal, signals}`. `model` is
+  read from the response, never from config. Capture rich intermediate execution `signals` (tools
+  called, retrieval counts/scores, branches, retries, parser fallbacks, step latencies, APM trace
+  id) so the census inspects how the code actually ran, not only final output text.
 - `grade(line, generation) -> (score, justification)` — receives the **full** row and scores against
   `evaluators` verbatim (never `goal`). No score literals anywhere. Use `build_judge_prompt(...)`
   for LLM-judge calls (prompt-injection delimiters + separate trusted `domain_notes` block). Raise
   `HarnessError("judge_error", ...)` if unreachable.
 - **Every rep's rows are kept** in `eval_results.<split>.jsonl` (under `holdout/` for `test`), row
   shape: `{id, split, rep, iteration, input, output, score, justification, trace_id, span_id, model,
-  usage, latency_s, stop_reason, status, refusal}`. `status` is `truncated` when `stop_reason` is
-  `max_tokens`/`length`; `refusal` is a graded outcome, not an error.
+  usage, latency_s, stop_reason, status, refusal, signals}`. `output` is stored in full (never
+  truncated) so `AUTO_EXP_REGRADE=1` faithfully re-grades stored responses. `status` is `truncated`
+  when `stop_reason` is `max_tokens`/`length`; `refusal` is a graded outcome, not an error.
 - **Errors sidecar** `errors.<split>.jsonl`, one row per failed attempt:
   `{id, split, rep, iteration, failure_class, message, latency_s, timestamp}` with `failure_class`
   in `harness_error | serving_error | rate_limited | timeout | judge_error | parse_error`. A clean
@@ -606,6 +640,7 @@ every score is explicitly scoped to its split:
   "suspicious": <string|null — one-line concern when the jump triggered the suspicion rule>,
   "suspicion_checked": <bool>,
   "memorization_check": {"checked": <bool>, "hits": [<added line>, ...], "verdict": "clean|explained|memorized"},
+  "lever_layer": "retrieval|tool_io|preprocessing|control_flow|postprocessing|model_params|prompt",
   "change_class": "REQUIRED|TUNE",
 
   "reasoning": "<REQUIRED — lead with decision + basis + test delta + bootstrap CI + n_moved; then
