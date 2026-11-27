@@ -625,7 +625,33 @@ def _metric_stats(rows: list, extractor) -> "dict | None":
     }
 
 
-def _usage_summary(rows: list) -> dict:
+def _row_cost_usd(row: dict, prices: dict) -> "float | None":
+    """Return measured `usage.cost_usd`, or derive it from `config.json.prices` x token usage."""
+    usage = row.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    if isinstance(usage.get("cost_usd"), (int, float)) and not isinstance(usage.get("cost_usd"), bool):
+        return float(usage["cost_usd"])
+    model = row.get("model")
+    rate = prices.get(model) if isinstance(prices, dict) and model else None
+    if not isinstance(rate, dict):
+        return None
+    in_tok = usage.get("input_tokens")
+    out_tok = usage.get("output_tokens")
+    if not (isinstance(in_tok, (int, float)) and isinstance(out_tok, (int, float))):
+        return None
+    total = (
+        float(in_tok) * float(rate.get("input_per_token", 0.0))
+        + float(out_tok) * float(rate.get("output_per_token", 0.0))
+    )
+    if isinstance(usage.get("cache_read_tokens"), (int, float)):
+        total += float(usage["cache_read_tokens"]) * float(rate.get("cache_read_per_token", 0.0))
+    if isinstance(usage.get("cache_write_tokens"), (int, float)):
+        total += float(usage["cache_write_tokens"]) * float(rate.get("cache_write_per_token", 0.0))
+    return total
+
+
+def _usage_summary(rows: list, prices: "dict | None" = None) -> dict:
     """Aggregate per-row cost/latency across all scored rows. Unknown stays None, never 0."""
     def _mean_usage(field: str) -> "float | None":
         vals = [
@@ -635,13 +661,14 @@ def _usage_summary(rows: list) -> dict:
         ]
         return round(statistics.mean(vals), 6) if vals else None
 
+    costs = [c for c in (_row_cost_usd(r, prices or {}) for r in rows) if c is not None]
     lat_ms = [r["latency_s"] * 1000.0 for r in rows if isinstance(r.get("latency_s"), (int, float))]
     return {
         "latency_ms_mean": round(statistics.mean(lat_ms), 1) if lat_ms else None,
         "latency_ms_p95": round(_percentile(lat_ms, 0.95), 1) if lat_ms else None,
         "input_tokens_mean": _mean_usage("input_tokens"),
         "output_tokens_mean": _mean_usage("output_tokens"),
-        "cost_usd_mean": _mean_usage("cost_usd"),
+        "cost_usd_mean": round(statistics.mean(costs), 6) if costs else None,
         "cases_reporting_tokens": len({
             r["id"]
             for r in rows
@@ -763,13 +790,11 @@ def main() -> None:
     mean = statistics.mean(run_means)
     stdev = statistics.pstdev(run_means) if len(run_means) > 1 else 0.0
 
+    prices = config.get("prices") if isinstance(config.get("prices"), dict) else {}
     metric_stats = {
         "score": _metric_stats(all_results, lambda r: r.get("score")),
         "latency_s": _metric_stats(all_results, lambda r: r.get("latency_s")),
-        "cost_usd": _metric_stats(
-            all_results,
-            lambda r: r["usage"].get("cost_usd") if isinstance(r.get("usage"), dict) else None,
-        ),
+        "cost_usd": _metric_stats(all_results, lambda r: _row_cost_usd(r, prices)),
     }
 
     # `mean` is the before/after score the loop reads for THIS split; `stdev` feeds SE_diff for the
@@ -796,7 +821,7 @@ def main() -> None:
         "metric_stats": metric_stats,
         "latency_p50": _percentile(latencies, 0.50),
         "latency_p95": _percentile(latencies, 0.95),
-        "usage": _usage_summary(all_results),
+        "usage": _usage_summary(all_results, prices),
         "models_seen": sorted({r["model"] for r in all_results if r.get("model")}),
         "grader_version": config.get("grader_version", 1),
     }))

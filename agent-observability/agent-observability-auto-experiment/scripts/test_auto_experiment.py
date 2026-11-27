@@ -337,6 +337,17 @@ class TestLoopHelper(unittest.TestCase):
         self.assertEqual((dc["target"], dc["decision"], dc["basis"], dc["n_moved"]), ("cost_usd", "kept", "significant", 10))
         self.assertLess(dc["test"]["delta"], 0.0)
         self.assertEqual(dc["score_distribution"]["median"], 0.8)
+        self.assertEqual(dc["quality_scores"]["test"], 0.8)
+
+        # submit-payload for cost_usd target MUST publish quality score (0.8) as score_value,
+        # NOT dollars (0.02), and tag objective_cost_usd separately!
+        dc_path = self._wj("dc_cost.json", dc)
+        r_sp_cost = _run_helper(["submit-payload", "--experiment-id", "exp-1", "--result", dc_path, "--iteration", "1", "--sha", "a" * 40, "--decision", "kept", "--goal-target", "cost_usd", "--goal-direction", "lower", "--reasoning", "cut cost", "--time-start-ms", "1000", "--time-end-ms", "2000"])
+        self.assertEqual(r_sp_cost.returncode, 0, r_sp_cost.stderr)
+        sp_cost = json.loads(r_sp_cost.stdout)["metrics"][0]
+        self.assertEqual(sp_cost["score_value"], 0.8)
+        self.assertTrue(any(t.startswith("objective_cost_usd:") for t in sp_cost["tags"]), sp_cost["tags"])
+        self.assertIn("test_score:0.8000", sp_cost["tags"])
 
         # check-climbability --target cost_usd reads cost_usd metric_stats (not quality scores)
         r_cc_cost = _run_helper(["check-climbability", "--target", "cost_usd", "--direction", "lower", "--val-stdout", bv, "--test-stdout", bt, "--min-shippable-delta", "0.01"])
@@ -449,6 +460,7 @@ class TestHarnessTemplateParity(unittest.TestCase):
             (tdir / "config.json").write_text(json.dumps({
                 "val_dataset_id": "ds-val", "select_dataset_id": "ds-sel", "test_dataset_id": "ds-test",
                 "val_case_count": 5, "select_case_count": 5, "test_case_count": 5, "grader_version": 2,
+                "prices": {"m1": {"input_per_token": 0.0001, "output_per_token": 0.0002}},
             }))
 
             def mk_rows(split: str) -> str:
@@ -545,6 +557,23 @@ class TestHarnessTemplateParity(unittest.TestCase):
                 self.assertEqual(bs_j["scored"], 1)  # only ok1 valid; trunc/refuse classified as judge_error
                 self.assertEqual(bs_j["mean"], 1.0)
                 self.assertEqual(bs_j["errored_cases"], 3)  # err + trunc + refuse
+
+            # Verify token-only usage (no explicit usage.cost_usd) is priced from config.json.prices on BOTH runtimes
+            py_tokonly = py_wired.replace(', "cost_usd": 0.001', "")
+            mjs_tokonly = mjs_wired.replace(", cost_usd: 0.001", "")
+            (tdir / "eval_harness_tokonly.py").write_text(py_tokonly)
+            (tdir / "eval_harness_tokonly.mjs").write_text(mjs_tokonly)
+            tok_cmds = [("py", [sys.executable, "eval_harness_tokonly.py"])]
+            if node_bin:
+                tok_cmds.append(("mjs", [node_bin, "eval_harness_tokonly.mjs"]))
+            for label, cmd in tok_cmds:
+                r_tok = run(cmd, {"AUTO_EXP_SPLIT": "test", "AUTO_EXP_DATASET_ID": "ds-test", "AUTO_EXP_RUNS": "3"})
+                self.assertEqual(r_tok.returncode, 0, f"{label} tokonly: {r_tok.stderr}")
+                tok_j = json.loads(r_tok.stdout)
+                # 10 * 0.0001 + 5 * 0.0002 = 0.002
+                self.assertIsNotNone(tok_j["metric_stats"]["cost_usd"], f"{label}: cost_usd should be priced from config.prices")
+                self.assertAlmostEqual(tok_j["metric_stats"]["cost_usd"]["mean"], 0.002, places=6)
+                self.assertAlmostEqual(tok_j["usage"]["cost_usd_mean"], 0.002, places=6)
 
             if node_bin:
                 for sp in ("test", "select"):

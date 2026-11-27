@@ -508,13 +508,37 @@ function metricStats(rows, extractor) {
   };
 }
 
-function usageSummary(rows) {
+function rowCostUsd(row, prices) {
+  const usage = row.usage && typeof row.usage === "object" ? row.usage : null;
+  if (!usage) return null;
+  if (typeof usage.cost_usd === "number" && !Number.isNaN(usage.cost_usd)) {
+    return usage.cost_usd;
+  }
+  const rate = prices && typeof prices === "object" && row.model ? prices[row.model] : null;
+  if (!rate || typeof rate !== "object") return null;
+  if (typeof usage.input_tokens !== "number" || typeof usage.output_tokens !== "number") {
+    return null;
+  }
+  let total =
+    usage.input_tokens * Number(rate.input_per_token || 0) +
+    usage.output_tokens * Number(rate.output_per_token || 0);
+  if (typeof usage.cache_read_tokens === "number") {
+    total += usage.cache_read_tokens * Number(rate.cache_read_per_token || 0);
+  }
+  if (typeof usage.cache_write_tokens === "number") {
+    total += usage.cache_write_tokens * Number(rate.cache_write_per_token || 0);
+  }
+  return total;
+}
+
+function usageSummary(rows, prices = {}) {
   const meanUsage = (field) => {
     const vals = rows
       .map((r) => (r.usage && typeof r.usage === "object" ? r.usage[field] : null))
       .filter((v) => typeof v === "number");
     return vals.length ? Number(mean(vals).toFixed(6)) : null;
   };
+  const costs = rows.map((r) => rowCostUsd(r, prices)).filter((v) => typeof v === "number");
   const latMs = rows
     .map((r) => (typeof r.latency_s === "number" ? r.latency_s * 1000 : null))
     .filter((v) => typeof v === "number");
@@ -524,7 +548,7 @@ function usageSummary(rows) {
     latency_ms_p95: p95 !== null ? Number(p95.toFixed(1)) : null,
     input_tokens_mean: meanUsage("input_tokens"),
     output_tokens_mean: meanUsage("output_tokens"),
-    cost_usd_mean: meanUsage("cost_usd"),
+    cost_usd_mean: costs.length ? Number(mean(costs).toFixed(6)) : null,
     cases_reporting_tokens: new Set(
       rows
         .filter((r) => r.usage && typeof r.usage.input_tokens === "number")
@@ -660,13 +684,11 @@ async function main() {
 
   const latencies = allResults.map((r) => r.latency_s).filter((v) => typeof v === "number");
 
+  const prices = config.prices && typeof config.prices === "object" ? config.prices : {};
   const allMetricStats = {
     score: metricStats(allResults, (r) => r.score),
     latency_s: metricStats(allResults, (r) => r.latency_s),
-    cost_usd: metricStats(
-      allResults,
-      (r) => (r.usage && typeof r.usage === "object" ? r.usage.cost_usd : null),
-    ),
+    cost_usd: metricStats(allResults, (r) => rowCostUsd(r, prices)),
   };
 
   console.log(
@@ -688,7 +710,7 @@ async function main() {
       metric_stats: allMetricStats,
       latency_p50: percentile(latencies, 0.5),
       latency_p95: percentile(latencies, 0.95),
-      usage: usageSummary(allResults),
+      usage: usageSummary(allResults, prices),
       models_seen: [...new Set(allResults.map((r) => r.model).filter(Boolean))].sort(),
       grader_version: config.grader_version ?? 1,
     }),

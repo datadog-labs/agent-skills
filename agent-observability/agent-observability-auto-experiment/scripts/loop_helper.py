@@ -706,7 +706,7 @@ def cmd_decide(args: argparse.Namespace) -> None:
         elif args.target_ceiling is not None and dir_sign(delta) > float(args.target_ceiling):
             suspicious_reason = f"in-sample {target} delta {delta:+.4f} exceeds targeted bucket ceiling ({float(args.target_ceiling):.4f})"
 
-        score_pcm = _extract_target_stats(cand_a, "score", "cand_all")["per_case_means"]
+        score_stats = _extract_target_stats(cand_a, "score", "cand_all")
         print(json.dumps({
             "headline_split": "all",
             "split_mode": "all_rows",
@@ -715,6 +715,7 @@ def cmd_decide(args: argparse.Namespace) -> None:
             "grader_version": cand_a.get("grader_version", 1),
             "runs": ca_t["runs"],
             "min_delta": min_delta,
+            "quality_scores": {"all": score_stats["mean"]},
             "all": {
                 "dataset_id": cand_a.get("dataset_id"),
                 "before": ba_t["mean"],
@@ -733,7 +734,7 @@ def cmd_decide(args: argparse.Namespace) -> None:
             "overfit_gap": None,
             "guardrails": guardrails,
             "usage": cand_a.get("usage", {}),
-            "score_distribution": compute_distribution(score_pcm, "case_means_all"),
+            "score_distribution": compute_distribution(score_stats["per_case_means"], "case_means_all"),
             "decision": decision,
             "significant": bool(sig),
             "is_best": is_best,
@@ -824,7 +825,8 @@ def cmd_decide(args: argparse.Namespace) -> None:
     elif args.target_ceiling is not None and dir_sign(test_delta) > float(args.target_ceiling):
         suspicious_reason = f"{headline_key} {target} delta {test_delta:+.4f} exceeds targeted bucket ceiling ({float(args.target_ceiling):.4f}) — hand-check val flips"
 
-    score_pcm = _extract_target_stats(cand_test, "score", f"cand_{headline_key}")["per_case_means"]
+    val_score_stats = _extract_target_stats(cand_val, "score", "cand_val")
+    headline_score_stats = _extract_target_stats(cand_test, "score", f"cand_{headline_key}")
     out = {
         "headline_split": headline_key,
         "split_mode": split_mode,
@@ -832,6 +834,7 @@ def cmd_decide(args: argparse.Namespace) -> None:
         "grader_version": cand_test.get("grader_version", 1),
         "runs": ct_t["runs"],
         "min_delta": min_delta,
+        "quality_scores": {"val": val_score_stats["mean"], headline_key: headline_score_stats["mean"]},
         "val": {
             "dataset_id": cand_val.get("dataset_id"),
             "before": bv_t["mean"],
@@ -864,7 +867,7 @@ def cmd_decide(args: argparse.Namespace) -> None:
         "guardrails": guardrails,
         "usage": cand_test.get("usage", {}),
         # Always compute score_distribution from case QUALITY scores (not cost/latency)
-        "score_distribution": compute_distribution(score_pcm, f"case_means_{headline_key}"),
+        "score_distribution": compute_distribution(headline_score_stats["per_case_means"], f"case_means_{headline_key}"),
         "decision": decision,
         "significant": bool(test_sig),
         "is_best": is_best,
@@ -1066,13 +1069,23 @@ def _build_tags_list(
 
     split = res.get("headline_split", "test")
     sm = res.get("split_mode", split_mode)
+    target = str(res.get("target") or goal_target or "score").lower()
+    q_scores = res.get("quality_scores") if isinstance(res.get("quality_scores"), dict) else {}
     tags.extend([f"split:{split}", f"split_mode:{sm}"])
     if sm == "val_test" and "val" in res and "test" in res:
-        tags.append(f"val_score:{res['val']['after']:.4f}")
-        tags.append(f"test_score:{res['test']['after']:.4f}")
+        val_q = q_scores.get("val", res["val"]["after"])
+        test_q = q_scores.get("test", res["test"]["after"])
+        tags.append(f"val_score:{float(val_q):.4f}")
+        tags.append(f"test_score:{float(test_q):.4f}")
     elif sm == "three_way" and "val" in res and "select" in res:
-        tags.append(f"val_score:{res['val']['after']:.4f}")
-        tags.append(f"select_score:{res['select']['after']:.4f}")
+        val_q = q_scores.get("val", res["val"]["after"])
+        sel_q = q_scores.get("select", res["select"]["after"])
+        tags.append(f"val_score:{float(val_q):.4f}")
+        tags.append(f"select_score:{float(sel_q):.4f}")
+    if target != "score":
+        tblock_obj = res[split] if split in res else res.get("test") or res.get("all") or {}
+        if isinstance(tblock_obj.get("after"), (int, float)):
+            tags.append(f"objective_{target}:{float(tblock_obj['after']):.6f}")
 
     if iteration > 0:
         tblock = res[split] if split in res else res.get("test") or res.get("all") or {}
@@ -1319,8 +1332,18 @@ def cmd_submit_payload(args: argparse.Namespace) -> None:
         score_value = float(args.best_score)
     else:
         split = res.get("headline_split", "test")
-        tblock = res[split] if split in res else res.get("test") or res.get("all") or {}
-        score_value = float(tblock["after"])
+        target = str(res.get("target") or args.goal_target or "score").lower()
+        q_scores = res.get("quality_scores") if isinstance(res.get("quality_scores"), dict) else {}
+        if target != "score":
+            if split not in q_scores:
+                raise SystemExit(
+                    f"non-score target {target!r} requires result.quality_scores[{split!r}] so "
+                    "auto_experiment_score reports quality rather than dollars/seconds"
+                )
+            score_value = float(q_scores[split])
+        else:
+            tblock = res[split] if split in res else res.get("test") or res.get("all") or {}
+            score_value = float(tblock["after"])
 
     extra = [t for t in (args.extra_tag or []) if t]
     if args.promoted:
