@@ -28,7 +28,7 @@ eval harness, and Datadog MCP or `pup`).
 | `references/eval_audit.md` | Three hard-STOP pre-climb gates: Gate 1 (harness trust), Gate 2 (zero triage), Gate 3 (climbability) |
 | `references/reporting.md` | LLM-Obs `auto_experiment_score` + per-case `auto_experiment_case_score` contracts, tag normalization, `narrative.md`, final report |
 | `references/eval_harness_template.{py,mjs}` | Language-parity harness skeletons (`generate` on redacted row, `grade` on full row, `AUTO_EXP_SPLIT`, `AUTO_EXP_WORKERS`, `AUTO_EXP_REGRADE`) |
-| `scripts/stats.py` & `scripts/loop_helper.py` | Copied to `.auto_experiment/`; deterministic CLI for `split`, `calibrate`, `check-memorization`, `distribution`, `decide`, `build-tags`, `render-narrative`, `verify-final` |
+| `scripts/stats.py` & `scripts/loop_helper.py` | Copied to `.auto_experiment/`; deterministic CLI for `split`, `calibrate`, `check-memorization`, `distribution`, `audit`, `decide`, `record`, `stop-check`, `build-tags`, `submit-payload`, `case-payloads`, `render-narrative`, `verify-final` |
 
 **Split vocabulary:** This skill names the two splits **`val`** (the 70% search/analysis split —
 equivalent to **`train`** in standard ML / Anthropic's `eval-hillclimb.md`, read by census,
@@ -365,17 +365,19 @@ scratch branch, then run before spending a full two-split eval:
 2. Run harness on **both splits** (`AUTO_EXP_SPLIT=val` and `AUTO_EXP_SPLIT=test`, same `runs`,
    `AUTO_EXP_ITERATION=<n>`), verify raw-row mean recomputation to `1e-9`, price rows, evaluate
    `goal.hold[]` guardrails.
-3. Run `python .auto_experiment/loop_helper.py decide …` to apply the 3-valued mechanism audit,
-   keep/discard matrix (`test` decides, `val` vetoes `overfit`, `guardrail_regression`, `memorized`,
-   `audit_failed`, `void_error_profile`), `stats.py` confidence labels (`t_two_sample`,
+3. Run `python .auto_experiment/loop_helper.py audit --best … --candidate …` (id-keyed flip diff on
+   `val`) and `python .auto_experiment/loop_helper.py decide …` to apply the 3-valued mechanism
+   audit, keep/discard matrix (`test` decides, `val` vetoes `overfit`, `guardrail_regression`,
+   `memorized`, `audit_failed`, `void_error_profile`), `stats.py` confidence labels (`t_two_sample`,
    `paired_bootstrap_delta`, `paired_case_test`, `n_moved`), suspicion trigger, and `score_distribution`.
    If `suspicious` fires, hand-check 3–5 flipped **`val`** rows before accepting.
-4. Write `result.json`, update `best_sha`/`best_score` if `is_best`, append row (with `time_start`,
-   `time_end`, `change_class: REQUIRED|TUNE`) to `config.json.iteration_results`, render
-   `narrative.md` (`loop_helper.py render-narrative`), and commit (keeping `holdout/` gitignored).
-5. Build tags with `loop_helper.py build-tags`, submit iteration-level `auto_experiment_score` +
-   split-tagged `auto_experiment_case_score` events, and refresh `estimated_duration_time` per
-   `references/reporting.md`.
+4. Write `result.json`, atomically update `config.json` + advance `best_sha`/`best_score` + compute
+   ETA via `python .auto_experiment/loop_helper.py record --config .auto_experiment/config.json --row-file …`,
+   render `narrative.md` (`loop_helper.py render-narrative`), and commit (keeping `holdout/` gitignored).
+5. Build the exact LLM-Obs payloads via `loop_helper.py submit-payload` and
+   `loop_helper.py case-payloads`, submit them, refresh `estimated_duration_time`, and run
+   `loop_helper.py stop-check --config .auto_experiment/config.json` to decide `continue` /
+   `stall_triage` / `stop` (see `references/reporting.md`).
 
 ---
 
@@ -395,6 +397,9 @@ scratch branch, then run before spending a full two-split eval:
 ---
 
 ## Stop conditions & guards
+
+Run `python .auto_experiment/loop_helper.py stop-check --config .auto_experiment/config.json` after
+every iteration to evaluate the exact state machine (`continue` | `stall_triage` | `stop`):
 
 - **Budget:** stop when `iteration == max_iterations`.
 - **Plateau (`plateau_discard_streak == 3`):** increment on every `decision:discarded` scored

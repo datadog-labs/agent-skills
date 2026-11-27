@@ -50,10 +50,11 @@ Shape of the single iteration-level metric:
     `git rev-parse HEAD` (**never** an abbreviated 7/8-char hash), and `<decision>` is `kept`,
     `discarded`, `baseline`, or `no_change`.
   - ⚠️ **Datadog NORMALIZES tag values — encode accordingly.** Use
-    `python .auto_experiment/loop_helper.py build-tags …` to generate the exact tag array so these
-    rules are enforced mechanically. Tag values are lowercased and some
-    characters are rewritten, so a tag is **not** a byte-faithful channel. Two rules follow, both
-    learned from inspecting really-ingested events rather than from review:
+    `python .auto_experiment/loop_helper.py submit-payload …` (and `case-payloads …` for per-case
+    events) to generate the complete, normalization-safe MCP / `pup` payloads mechanically. Tag
+    values are lowercased and some characters are rewritten, so a tag is **not** a byte-faithful
+    channel. Two rules follow, both learned from inspecting really-ingested events rather than from
+    review:
     - **Never put a leading `+` in a tag value.** It is rewritten to `_`: a tag sent as
       `delta_vs_best:+0.0447` lands as `delta_vs_best:_0.0447`. Worse, `-` *survives*, so negatives
       would land as `-0.1180` while positives land as `_0.1180`. Split magnitude and sign into

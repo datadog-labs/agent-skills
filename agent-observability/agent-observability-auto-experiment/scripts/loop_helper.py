@@ -11,8 +11,13 @@ Subcommands:
   calibrate           Resolvable min_delta, runs, and per-guardrail floors
   check-memorization  5-gram overlap scan over git diff added lines vs val rows
   distribution        Nearest-rank five-number summary + zero/perfect counts
+  audit               ID-keyed per-case flip diff + denominator guard on eval_results
   decide              3-valued mechanism audit + keep/discard matrix + stats.py labels
+  record              Atomically append iteration row to config.json, advance best, compute ETA
+  stop-check          Deterministic budget / plateau / stall-triage / no_change state machine
   build-tags          Datadog normalization-safe tag array for auto_experiment_score
+  submit-payload      Complete ready-to-send MCP / pup payload for auto_experiment_score
+  case-payloads       Batched ready-to-send payloads for auto_experiment_case_score
   render-narrative    Deterministic status table for .auto_experiment/narrative.md
   verify-final        Final verification gate before marking experiment completed
 """
@@ -20,12 +25,14 @@ Subcommands:
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import hashlib
 import importlib.util
 import json
 import math
 import re
 import sys
+import time
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -374,34 +381,47 @@ def cmd_decide(args: argparse.Namespace) -> None:
     print(json.dumps(out, indent=2))
 
 
-def cmd_build_tags(args: argparse.Namespace) -> None:
-    res = json.loads(Path(args.result).read_text())
-    it = int(args.iteration)
+def _build_tags_list(
+    res: dict,
+    iteration: int,
+    sha: str,
+    decision: str,
+    time_start_ms: int,
+    time_end_ms: int,
+    goal_target: str = "score",
+    goal_direction: str = "higher",
+    split_mode: str = "val_test",
+    extra_tags: list[str] | None = None,
+) -> list[str]:
     tags = [
-        f"iteration:{it}",
-        f"git.commit.sha:{args.sha.lower()}",
-        f"decision:{args.decision.lower()}",
-        f"basis:{res['basis'].lower()}",
-        f"goal_target:{args.goal_target.lower()}",
-        f"goal_direction:{args.goal_direction.lower()}",
+        f"iteration:{iteration}",
+        f"git.commit.sha:{sha.lower()}",
+        f"decision:{decision.lower()}",
+        f"basis:{str(res.get('basis') or decision).lower()}",
+        f"goal_target:{goal_target.lower()}",
+        f"goal_direction:{goal_direction.lower()}",
         f"grader_version:{int(res.get('grader_version', 1))}",
-        f"time_start_ms:{int(args.time_start_ms)}",
-        f"time_end_ms:{int(args.time_end_ms)}",
+        f"time_start_ms:{int(time_start_ms)}",
+        f"time_end_ms:{int(time_end_ms)}",
     ]
-    if args.decision == "no_change":
-        print(json.dumps(tags))
-        return
+    if extra_tags:
+        tags.extend(t.lower() for t in extra_tags)
+    if decision == "no_change":
+        return tags
 
     split = res.get("headline_split", "test")
-    split_mode = res.get("split_mode", args.split_mode)
-    tags.extend([f"split:{split}", f"split_mode:{split_mode}"])
-    if split_mode == "val_test":
+    sm = res.get("split_mode", split_mode)
+    tags.extend([f"split:{split}", f"split_mode:{sm}"])
+    if sm == "val_test" and "val" in res and "test" in res:
         tags.append(f"val_score:{res['val']['after']:.4f}")
         tags.append(f"test_score:{res['test']['after']:.4f}")
+    elif sm == "three_way" and "val" in res and "select" in res:
+        tags.append(f"val_score:{res['val']['after']:.4f}")
+        tags.append(f"select_score:{res['select']['after']:.4f}")
 
-    if it > 0:
-        tblock = res[split] if split in res else res["test"]
-        delta = float(tblock["delta"])
+    if iteration > 0:
+        tblock = res[split] if split in res else res.get("test") or res.get("all") or {}
+        delta = float(tblock.get("delta", 0.0))
         sign = "pos" if delta > 0 else ("neg" if delta < 0 else "zero")
         t_stat = "null" if tblock.get("t_stat") is None else f"{tblock['t_stat']:.4f}"
         tags.extend([
@@ -411,7 +431,7 @@ def cmd_build_tags(args: argparse.Namespace) -> None:
             f"significant:{str(bool(res.get('significant'))).lower()}",
             f"n_moved:{int(res.get('n_moved', 0))}",
         ])
-        if split_mode == "val_test":
+        if sm in ("val_test", "three_way"):
             gap = float(res.get("overfit_gap", 0.0))
             gsign = "pos" if gap > 0 else ("neg" if gap < 0 else "zero")
             tags.extend([f"overfit_gap:{abs(gap):.4f}", f"overfit_gap_sign:{gsign}"])
@@ -446,8 +466,259 @@ def cmd_build_tags(args: argparse.Namespace) -> None:
         tags.append(f"tokens_per_case:{int(round(usage['input_tokens_mean'] + usage['output_tokens_mean']))}")
     if isinstance(usage.get("cost_usd_mean"), (int, float)):
         tags.append(f"cost_usd_per_case:{usage['cost_usd_mean']:.6f}")
+    return tags
 
+
+def cmd_build_tags(args: argparse.Namespace) -> None:
+    res = json.loads(Path(args.result).read_text())
+    tags = _build_tags_list(
+        res, int(args.iteration), args.sha, args.decision,
+        int(args.time_start_ms), int(args.time_end_ms),
+        args.goal_target, args.goal_direction, args.split_mode,
+    )
     print(json.dumps(tags))
+
+
+def _load_per_case_means(path: Path) -> dict[str, float]:
+    raw = path.read_text().strip()
+    if not raw:
+        return {}
+    if raw.startswith("{") and "\n" not in raw:
+        obj = json.loads(raw)
+        if "per_case_means" in obj:
+            return {str(k): float(v) for k, v in obj["per_case_means"].items()}
+    rows = [json.loads(line) for line in raw.splitlines() if line.strip()]
+    grouped: dict[str, list[float]] = {}
+    for row in rows:
+        grouped.setdefault(str(row["id"]), []).append(float(row["score"]))
+    return {k: round(sum(v) / len(v), 6) for k, v in grouped.items()}
+
+
+def cmd_audit(args: argparse.Namespace) -> None:
+    best = _load_per_case_means(Path(args.best))
+    cand = _load_per_case_means(Path(args.candidate))
+    shared = sorted(set(best) & set(cand))
+    missing_in_cand = sorted(set(best) - set(cand))
+    missing_in_best = sorted(set(cand) - set(best))
+    flipped_up, flipped_down = [], []
+    unchanged = 0
+    for cid in shared:
+        d = round(cand[cid] - best[cid], 6)
+        if d > 0:
+            flipped_up.append({"id": cid, "before": best[cid], "after": cand[cid], "delta": d})
+        elif d < 0:
+            flipped_down.append({"id": cid, "before": best[cid], "after": cand[cid], "delta": d})
+        else:
+            unchanged += 1
+    excluded_match = None
+    if args.best_excluded is not None and args.cand_excluded is not None:
+        excluded_match = int(args.best_excluded) == int(args.cand_excluded)
+    denominator_ok = (not missing_in_cand) and (not missing_in_best) and (excluded_match is not False)
+    print(json.dumps({
+        "best_scored": len(best),
+        "cand_scored": len(cand),
+        "shared": len(shared),
+        "excluded_match": excluded_match,
+        "denominator_ok": denominator_ok,
+        "flipped_up": flipped_up,
+        "flipped_down": flipped_down,
+        "unchanged": unchanged,
+        "missing_in_cand": missing_in_cand,
+        "missing_in_best": missing_in_best,
+    }, indent=2))
+
+
+def _iso_to_seconds(ts: str) -> float:
+    return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+
+
+def cmd_record(args: argparse.Namespace) -> None:
+    cfg_path = Path(args.config)
+    cfg = json.loads(cfg_path.read_text())
+    row = json.loads(Path(args.row_file).read_text()) if args.row_file else json.loads(args.row)
+    rows = cfg.setdefault("iteration_results", [])
+    rows.append(row)
+
+    it = int(row.get("iteration", 0))
+    split = row.get("headline_split") or ("all" if cfg.get("split_mode") == "all_rows" else "test")
+    score_block = row.get(split) or row.get("test") or row.get("all") or {}
+    headline_score = score_block.get("after") if isinstance(score_block, dict) else row.get("after_score")
+
+    if row.get("decision") == "baseline" and it == 0:
+        cfg["best_iteration"] = 0
+        cfg["best_sha"] = row.get("sha")
+        cfg["best_score"] = headline_score
+    elif row.get("decision") == "kept":
+        cfg["best_iteration"] = it
+        cfg["best_sha"] = row.get("sha")
+        cfg["best_score"] = headline_score
+
+    # Compute estimated_duration_time (seconds remaining) from real elapsed wall-clock timestamps
+    durations = []
+    for r in rows:
+        if r.get("time_start") and r.get("time_end"):
+            try:
+                durations.append(max(0.0, _iso_to_seconds(r["time_end"]) - _iso_to_seconds(r["time_start"])))
+            except ValueError:
+                pass
+    max_iters = int(cfg.get("max_iterations", 8))
+    imp_done = sum(1 for r in rows if int(r.get("iteration", 0)) > 0 and r.get("basis") != "stall_triage")
+    iters_left = max(0, max_iters - imp_done)
+    eta_s = round((sum(durations) / len(durations)) * iters_left) if durations else None
+
+    cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
+    print(json.dumps({
+        "best_iteration": cfg.get("best_iteration"),
+        "best_sha": cfg.get("best_sha"),
+        "best_score": cfg.get("best_score"),
+        "iterations_recorded": len(rows),
+        "improvement_iterations_done": imp_done,
+        "iterations_left": iters_left,
+        "estimated_duration_time": eta_s,
+    }))
+
+
+def cmd_stop_check(args: argparse.Namespace) -> None:
+    cfg = json.loads(Path(args.config).read_text())
+    rows = cfg.get("iteration_results") or []
+    max_iters = int(cfg.get("max_iterations", 8))
+
+    imp_rows = [r for r in rows if int(r.get("iteration", 0)) > 0]
+    imp_done = sum(1 for r in imp_rows if r.get("basis") != "stall_triage")
+    iters_left = max(0, max_iters - imp_done)
+    stall_triage_ran = any(r.get("basis") == "stall_triage" for r in imp_rows)
+
+    discard_streak = 0
+    no_change_streak = 0
+    for r in imp_rows:
+        dec = r.get("decision")
+        basis = r.get("basis")
+        if basis == "stall_triage":
+            # Reset streak when stall triage dispatched artifact_gap to keep searching
+            if r.get("stall_dispatch") == "artifact_gap":
+                discard_streak = 0
+            continue
+        if dec == "kept":
+            discard_streak = 0
+            no_change_streak = 0
+        elif dec == "discarded":
+            discard_streak += 1
+            no_change_streak = 0
+        elif dec == "no_change":
+            no_change_streak += 1
+
+    if imp_done >= max_iters:
+        out = {"action": "stop", "stop_reason": "reached max_iterations"}
+    elif no_change_streak >= 5:
+        out = {"action": "stop", "stop_reason": "no_change streak (5 consecutive)"}
+    elif discard_streak >= 3:
+        if (not stall_triage_ran) and iters_left >= 2:
+            out = {"action": "stall_triage", "stop_reason": None}
+        else:
+            out = {"action": "stop", "stop_reason": "plateau (3 consecutive discards)"}
+    else:
+        out = {"action": "continue", "stop_reason": None}
+
+    out.update({
+        "improvement_iterations_done": imp_done,
+        "iterations_left": iters_left,
+        "plateau_discard_streak": discard_streak,
+        "no_change_streak": no_change_streak,
+        "stall_triage_ran": stall_triage_ran,
+    })
+    print(json.dumps(out))
+
+
+def cmd_submit_payload(args: argparse.Namespace) -> None:
+    if not args.experiment_id:
+        raise SystemExit("experiment_id is required")
+    res = json.loads(Path(args.result).read_text()) if args.result else {"basis": args.basis or args.decision}
+    it = int(args.iteration)
+    now_ms = int(args.timestamp_ms) if args.timestamp_ms is not None else int(time.time() * 1000)
+
+    if args.decision == "no_change":
+        if args.best_score is None:
+            raise SystemExit("no_change requires --best-score (carried-forward marker, never 0)")
+        score_value = float(args.best_score)
+    else:
+        split = res.get("headline_split", "test")
+        tblock = res[split] if split in res else res.get("test") or res.get("all") or {}
+        score_value = float(tblock["after"])
+
+    extra = [t for t in (args.extra_tag or []) if t]
+    if args.promoted:
+        res = {**res, "basis": "promoted"}
+        extra.append("promoted:higher_power_confirmation")
+    if args.regraded:
+        res = {**res, "basis": "regraded"}
+
+    tags = _build_tags_list(
+        res, it, args.sha, args.decision,
+        int(args.time_start_ms), int(args.time_end_ms),
+        args.goal_target, args.goal_direction, args.split_mode,
+        extra_tags=extra,
+    )
+    reasoning = args.reasoning or res.get("reasoning") or ""
+    if not reasoning:
+        raise SystemExit("reasoning is required for LLM-Obs metric submission")
+
+    metric = {
+        "label": "auto_experiment_score",
+        "metric_type": "score",
+        "score_value": score_value,
+        "reasoning": reasoning,
+        "timestamp_ms": now_ms,
+        "tags": tags,
+    }
+    print(json.dumps({"experiment_id": args.experiment_id, "metrics": [metric]}, indent=2))
+
+
+def cmd_case_payloads(args: argparse.Namespace) -> None:
+    rows = _read_jsonl(Path(args.results_jsonl))
+    if not rows:
+        raise SystemExit(f"no scored rows in {args.results_jsonl}")
+    grouped: dict[str, list[dict]] = {}
+    for r in rows:
+        grouped.setdefault(str(r["id"]), []).append(r)
+
+    now_ms = int(args.timestamp_ms) if args.timestamp_ms is not None else int(time.time() * 1000)
+    metrics = []
+    for cid in sorted(grouped):
+        case_rows = grouped[cid]
+        score_mean = round(sum(float(r["score"]) for r in case_rows) / len(case_rows), 6)
+        last = case_rows[-1]
+        tags = [
+            f"iteration:{int(args.iteration)}",
+            f"split:{args.split.lower()}",
+            f"case_id:{cid.lower()}",
+            f"git.commit.sha:{args.sha.lower()}",
+            f"grader_version:{int(args.grader_version)}",
+        ]
+        if last.get("trace_id"):
+            tags.append(f"trace_id:{str(last['trace_id']).lower()}")
+        if last.get("span_id"):
+            tags.append(f"case_span_id:{str(last['span_id']).lower()}")
+        metrics.append({
+            "label": "auto_experiment_case_score",
+            "metric_type": "score",
+            "score_value": score_mean,
+            "reasoning": str(last.get("justification") or "")[:1000],
+            "timestamp_ms": now_ms,
+            "tags": tags,
+        })
+
+    batch_size = max(1, int(args.batch_size))
+    batches = [
+        {"experiment_id": args.experiment_id, "metrics": metrics[i : i + batch_size]}
+        for i in range(0, len(metrics), batch_size)
+    ]
+    over_cap = args.total_planned_events is not None and int(args.total_planned_events) > 2000
+    print(json.dumps({
+        "total_cases": len(metrics),
+        "batch_count": len(batches),
+        "over_2000_cap": over_cap,
+        "batches": batches,
+    }, indent=2))
 
 
 def cmd_render_narrative(args: argparse.Namespace) -> None:
@@ -583,6 +854,24 @@ def main() -> None:
     dec.add_argument("--memorization-verdict", choices=("clean", "explained", "memorized"), default="clean")
     dec.set_defaults(func=cmd_decide)
 
+    aud = sub.add_parser("audit")
+    aud.add_argument("--best", required=True)
+    aud.add_argument("--candidate", required=True)
+    aud.add_argument("--best-excluded", type=int)
+    aud.add_argument("--cand-excluded", type=int)
+    aud.set_defaults(func=cmd_audit)
+
+    rec = sub.add_parser("record")
+    rec.add_argument("--config", required=True)
+    rec_src = rec.add_mutually_exclusive_group(required=True)
+    rec_src.add_argument("--row")
+    rec_src.add_argument("--row-file")
+    rec.set_defaults(func=cmd_record)
+
+    sc = sub.add_parser("stop-check")
+    sc.add_argument("--config", required=True)
+    sc.set_defaults(func=cmd_stop_check)
+
     bt = sub.add_parser("build-tags")
     bt.add_argument("--result", required=True)
     bt.add_argument("--iteration", type=int, required=True)
@@ -594,6 +883,38 @@ def main() -> None:
     bt.add_argument("--goal-direction", default="higher")
     bt.add_argument("--split-mode", default="val_test")
     bt.set_defaults(func=cmd_build_tags)
+
+    spay = sub.add_parser("submit-payload")
+    spay.add_argument("--experiment-id", required=True)
+    spay.add_argument("--result")
+    spay.add_argument("--iteration", type=int, required=True)
+    spay.add_argument("--sha", required=True)
+    spay.add_argument("--decision", required=True)
+    spay.add_argument("--basis")
+    spay.add_argument("--best-score", type=float)
+    spay.add_argument("--reasoning")
+    spay.add_argument("--timestamp-ms", type=int)
+    spay.add_argument("--time-start-ms", type=int, required=True)
+    spay.add_argument("--time-end-ms", type=int, required=True)
+    spay.add_argument("--goal-target", default="score")
+    spay.add_argument("--goal-direction", default="higher")
+    spay.add_argument("--split-mode", default="val_test")
+    spay.add_argument("--promoted", action="store_true")
+    spay.add_argument("--regraded", action="store_true")
+    spay.add_argument("--extra-tag", action="append")
+    spay.set_defaults(func=cmd_submit_payload)
+
+    cpay = sub.add_parser("case-payloads")
+    cpay.add_argument("--experiment-id", required=True)
+    cpay.add_argument("--results-jsonl", required=True)
+    cpay.add_argument("--iteration", type=int, required=True)
+    cpay.add_argument("--split", required=True)
+    cpay.add_argument("--sha", required=True)
+    cpay.add_argument("--grader-version", type=int, default=1)
+    cpay.add_argument("--timestamp-ms", type=int)
+    cpay.add_argument("--batch-size", type=int, default=50)
+    cpay.add_argument("--total-planned-events", type=int)
+    cpay.set_defaults(func=cmd_case_payloads)
 
     rn = sub.add_parser("render-narrative")
     rn.add_argument("--config", required=True)
