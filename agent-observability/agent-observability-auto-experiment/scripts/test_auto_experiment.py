@@ -132,6 +132,16 @@ class TestLoopHelper(unittest.TestCase):
         self.assertEqual(sp["split_mode"], "three_way")
         self.assertEqual(sp["val_case_count"] + sp["select_case_count"] + sp["test_case_count"], 120)
 
+        # High-cardinality / unique span_name (singleton strata) must STILL produce non-empty holdout
+        uniq = self.tdir / "uniq_spans.jsonl"
+        uniq.write_text("".join(json.dumps({"id": f"u{i}", "input": f"q {i}", "span_name": f"unique_span_{i}"}) + "\n" for i in range(40)))
+        r_u = _run_helper(["split", "--input", str(uniq), "--val-out", str(self.tdir / "uv.jsonl"), "--test-out", str(self.tdir / "ut.jsonl"), "--stratify-by", "span_name"])
+        self.assertEqual(r_u.returncode, 0, r_u.stderr)
+        sp_u = json.loads(r_u.stdout)
+        self.assertGreater(sp_u["val_case_count"], 0)
+        self.assertGreater(sp_u["test_case_count"], 0)
+        self.assertEqual(sp_u["val_case_count"] + sp_u["test_case_count"], 40)
+
         # audit-corpus passes on disjoint splits and fails on overlap
         r_ac = _run_helper(["audit-corpus", "--splits", f"val={self.tdir/'val.jsonl'}", f"select={self.tdir/'sel.jsonl'}", f"test={self.tdir/'test.jsonl'}"])
         self.assertEqual(r_ac.returncode, 0, r_ac.stderr)
@@ -339,6 +349,24 @@ class TestLoopHelper(unittest.TestCase):
         r_pc_reg = _run_helper(["pool-confirm", "--target", "cost_usd", "--direction", "lower", "--baseline-results", str(b_rows), "--best-results", str(badq_rows), "--min-delta", "0.005", "--hold-score-min-delta", "0.02"])
         self.assertEqual(json.loads(r_pc_reg.stdout)["merge_recommendation"], "do_not_merge_regression")
 
+        # Denominator artifact in pool-confirm: candidate drops hard 0.0 cases so unpaired delta jumps
+        # while paired delta on shared cases is tiny (+0.005 < min_delta=0.05) -> MUST NOT merge!
+        b_den = self.tdir / "den_base.jsonl"
+        c_den = self.tdir / "den_cand.jsonl"
+        b_den.write_text("".join(
+            json.dumps({"id": f"c{i}", "rep": r, "score": 0.0 if i < 4 else 0.80}) + "\n"
+            for r in range(3) for i in range(10)
+        ))
+        c_den.write_text("".join(
+            json.dumps({"id": f"c{i}", "rep": r, "score": 0.805}) + "\n"
+            for r in range(3) for i in range(4, 10)
+        ))
+        r_den = _run_helper(["pool-confirm", "--baseline-results", str(b_den), "--best-results", str(c_den), "--min-delta", "0.05"])
+        self.assertEqual(r_den.returncode, 0, r_den.stderr)
+        den = json.loads(r_den.stdout)
+        self.assertTrue(den["denominator_artifact"])
+        self.assertNotEqual(den["merge_recommendation"], "merge")
+
 
 class TestHarnessTemplateParity(unittest.TestCase):
     def test_python_and_node_guards_regrade_workers_and_parity(self) -> None:
@@ -461,6 +489,10 @@ class TestHarnessTemplateParity(unittest.TestCase):
                 self.assertEqual(rg_j["errored"], 3)
                 errs = [json.loads(l) for l in (tdir / "holdout" / "errors.test.jsonl").read_text().splitlines() if l.strip()]
                 self.assertTrue(all(e["failure_class"] == "judge_error" and "trace" in e for e in errs), errs)
+                # Source eval_results.test.jsonl must remain intact (all 9 rows preserved for retry)
+                orig_rows = [json.loads(l) for l in (tdir / "holdout" / "eval_results.test.jsonl").read_text().splitlines() if l.strip()]
+                self.assertEqual(len(orig_rows), 9, f"{label}: partial regrade overwrote stored outputs!")
+                self.assertTrue((tdir / "holdout" / "eval_results.test.regrade_partial.jsonl").exists())
 
             if node_bin:
                 for sp in ("test", "select"):

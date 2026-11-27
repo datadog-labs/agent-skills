@@ -717,9 +717,16 @@ def main() -> None:
     if not run_means:
         raise SystemExit("no usable passes — cannot compute a mean (do NOT fabricate one)")
 
-    # EVERY rep's rows are kept, not just the last pass's. The mechanism audit aggregates per id,
-    # and the paired bootstrap / case-level test need the per-case sample — impossible from 1 pass.
-    with RESULTS.open("w") as out:
+    # EVERY rep's rows are kept, not just the last pass's. During AUTO_EXP_REGRADE=1, if any row
+    # failed grading transiently, do NOT overwrite the source RESULTS file in place (which would
+    # permanently delete the failed rows' stored outputs); write partial regraded rows to a sidecar
+    # file so fixing the grader and retrying regrade can still recover every stored output.
+    write_target = (
+        OUT_DIR / f"eval_results.{SPLIT}.regrade_partial.jsonl"
+        if (REGRADE and all_errors and not _RESULTS_OVERRIDE)
+        else RESULTS
+    )
+    with write_target.open("w") as out:
         for row in all_results:
             out.write(json.dumps(row) + "\n")
     if all_errors:

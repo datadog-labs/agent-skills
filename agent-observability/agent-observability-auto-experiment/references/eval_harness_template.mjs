@@ -622,7 +622,14 @@ async function main() {
     process.exit(1);
   }
 
-  fs.writeFileSync(RESULTS, allResults.map((r) => JSON.stringify(r)).join("\n") + "\n");
+  // During AUTO_EXP_REGRADE=1, if any row failed grading transiently, do NOT overwrite RESULTS in
+  // place (which would permanently delete the failed rows' stored outputs); write partial regraded
+  // rows to a sidecar so fixing the grader and retrying regrade still recovers every stored output.
+  const writeTarget =
+    REGRADE && allErrors.length && !RESULTS_OVERRIDE
+      ? path.join(OUT_DIR, `eval_results.${SPLIT}.regrade_partial.jsonl`)
+      : RESULTS;
+  fs.writeFileSync(writeTarget, allResults.map((r) => JSON.stringify(r)).join("\n") + "\n");
   if (allErrors.length) {
     fs.writeFileSync(ERRORS, allErrors.map((r) => JSON.stringify(r)).join("\n") + "\n");
   } else if (fs.existsSync(ERRORS)) {

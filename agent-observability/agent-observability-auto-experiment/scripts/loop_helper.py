@@ -91,7 +91,8 @@ def _pick_stratify_key(rows: list[dict], explicit: str | None) -> tuple[str, lis
     if explicit:
         return explicit, [str(r.get(explicit, r.get("metadata", {}).get(explicit, "_missing"))) for r in rows]
     span_names = [r.get("span_name") or r.get("metadata", {}).get("span_name") for r in rows]
-    if any(span_names):
+    non_empty_spans = [str(s) for s in span_names if s not in (None, "")]
+    if non_empty_spans and len(set(non_empty_spans)) <= max(2, min(20, len(rows) // 2)):
         return "span_name", [str(s or "_missing") for s in span_names]
     exp_vals = [r.get("expected_output") for r in rows]
     non_empty = [str(v) for v in exp_vals if v not in (None, "", [], {})]
@@ -103,6 +104,20 @@ def _pick_stratify_key(rows: list[dict], explicit: str | None) -> tuple[str, lis
     t2 = s_len[(2 * len(s_len)) // 3]
     buckets = ["short" if ln <= t1 else ("medium" if ln <= t2 else "long") for ln in lengths]
     return "input_length_tercile", buckets
+
+
+def _collapse_small_strata(grouped: dict[str, list[dict]], min_size: int) -> dict[str, list[dict]]:
+    """Pool singleton/tiny strata so high-cardinality keys never yield empty holdout splits."""
+    collapsed: dict[str, list[dict]] = {}
+    small: list[dict] = []
+    for label, group in grouped.items():
+        if len(group) < min_size:
+            small.extend(group)
+        else:
+            collapsed[label] = group
+    if small:
+        collapsed.setdefault("_other_small_strata", []).extend(small)
+    return collapsed
 
 
 def cmd_split(args: argparse.Namespace) -> None:
@@ -141,6 +156,7 @@ def cmd_split(args: argparse.Namespace) -> None:
     if args.three_way:
         if not args.select_out:
             raise SystemExit("--three-way requires --select-out")
+        grouped = _collapse_small_strata(grouped, min_size=3)
         val_ratio = args.ratio if args.ratio != 0.7 else 0.5
         sel_ratio = float(args.select_ratio)
         if val_ratio <= 0 or sel_ratio <= 0 or (val_ratio + sel_ratio) >= 1.0:
@@ -180,6 +196,8 @@ def cmd_split(args: argparse.Namespace) -> None:
             raise SystemExit("split integrity error: overlapping ids across three-way splits")
         if len(val_rows) + len(select_rows) + len(test_rows) != n:
             raise SystemExit("split sum mismatch in three-way split")
+        if not val_rows or not select_rows or not test_rows:
+            raise SystemExit("split integrity error: three-way split produced an empty partition")
 
         _write_jsonl(Path(args.val_out), val_rows)
         _write_jsonl(Path(args.select_out), select_rows)
@@ -197,6 +215,7 @@ def cmd_split(args: argparse.Namespace) -> None:
         }))
         return
 
+    grouped = _collapse_small_strata(grouped, min_size=2)
     for label in sorted(grouped):
         group = grouped[label]
         ranked = sorted(
@@ -218,6 +237,8 @@ def cmd_split(args: argparse.Namespace) -> None:
         raise SystemExit(f"split integrity error: overlapping ids {sorted(overlap)[:5]}")
     if len(val_rows) + len(test_rows) != n:
         raise SystemExit(f"split sum mismatch: {len(val_rows)} + {len(test_rows)} != {n}")
+    if not val_rows or not test_rows:
+        raise SystemExit("split integrity error: val/test split produced an empty partition")
 
     _write_jsonl(Path(args.val_out), val_rows)
     _write_jsonl(Path(args.test_out), test_rows)
@@ -925,14 +946,24 @@ def cmd_pool_confirm(args: argparse.Namespace) -> None:
             "regressed": held_score_regressed,
         }
 
+    paired_delta, full_case_delta, paired_vs_full_gap = _paired_full_disagreement(base_pcm, best_pcm)
+    denominator_artifact = paired_vs_full_gap > min_delta
+    dir_paired_delta = paired_delta if higher else -paired_delta
+
     ci_clears = False
     if boot is not None:
         lo, hi = boot["ci_95"]
         ci_clears = (lo > 0) if higher else (hi < 0)
     t_case = (paired or {}).get("t_case")
-    case_sig = ci_clears and (t_case is None or t_case >= 2.0) and n_moved > 2 and abs(delta) >= min_delta
+    case_sig = (
+        (not denominator_artifact)
+        and ci_clears
+        and (t_case is None or t_case >= 2.0)
+        and n_moved > 2
+        and abs(paired_delta) >= min_delta
+    )
 
-    if dir_delta <= 0 or held_score_regressed:
+    if dir_delta <= 0 or dir_paired_delta <= 0 or held_score_regressed or denominator_artifact:
         rec = "do_not_merge_regression"
     elif not case_sig:
         rec = "do_not_merge_within_noise"
@@ -943,9 +974,14 @@ def cmd_pool_confirm(args: argparse.Namespace) -> None:
         "target": target,
         "dataset_id": args.dataset_id,
         "case_count": len(set(base_pcm) & set(best_pcm)),
+        "baseline_case_count": len(base_pcm),
+        "best_case_count": len(best_pcm),
         "baseline_score": round(base_mean, 6),
         "best_score": round(best_mean, 6),
         "delta": round(delta, 6),
+        "paired_delta": paired_delta,
+        "paired_vs_full_gap": paired_vs_full_gap,
+        "denominator_artifact": denominator_artifact,
         "baseline_stdev": round(base_sd, 6),
         "best_stdev": round(best_sd, 6),
         "baseline_runs": len(base_runs),
