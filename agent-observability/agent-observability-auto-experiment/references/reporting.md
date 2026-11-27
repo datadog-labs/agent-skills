@@ -288,6 +288,28 @@ is supporting detail.
   paired case-level `t_case`, `n_moved`, and run-level two-sample t-test. Be explicit that pooling
   on the same `test` cases shrinks **rerun variance**, **not** **case-selection bias**; report the
   confirm number as the headline and the per-iteration `test` scores as the selection path.
+- **Canonical `final_result` schema written into `config.json` (verified by `loop_helper.py verify-final`):**
+  ```json
+  {
+    "split_mode": "val_test",
+    "best_iteration": 5,
+    "best_sha": "<full 40-char sha or empty string>",
+    "iterations_run": 8,
+    "selection_rounds": 8,
+    "plateau_discard_streak": 0,
+    "stop_reason": "budget reached",
+    "merge_recommendation": "merge|do_not_merge_within_noise|do_not_merge_regression",
+    "val":  {"dataset_id": "...", "case_count": 70, "baseline_score": 0.60, "best_score": 0.75, "delta": 0.15},
+    "test": {"dataset_id": "...", "case_count": 30, "baseline_score": 0.62, "best_score": 0.72,
+             "delta": 0.10, "t_stat": 3.1, "bootstrap": {...}, "paired_case": {...},
+             "n_moved": 5, "pooled_runs_per_side": 10},
+    "noise_calibration": {"runs_pilot": 3, "runs_final": 5, "baseline_stdev_val": 0.02,
+                          "baseline_stdev_test": 0.03, "run_means": {...}, "min_delta": 0.038,
+                          "judge_flip_rate": 0.0, "guardrail_floors": {},
+                          "resolution_note": "<plain-language statement of what this budget resolved>"},
+    "reasoning": "<what was tried, what worked/failed, why the winner won, selection-bias disclosure>"
+  }
+  ```
 - **State `n_moved` in the same sentence as the headline.** "+0.048 on 60 held-out cases, bootstrap
   CI [0.016, 0.083], carried by 3 cases that flipped" is honest; "+0.048, |t| = 9.4" alone is not.
   If `t_case < 2` or `n_moved ≤ 2`, state plainly that the gain rests on a handful of cases and may
