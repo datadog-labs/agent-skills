@@ -143,10 +143,10 @@ class TestLoopHelper(unittest.TestCase):
         self.assertEqual(sp["split_mode"], "three_way")
         self.assertEqual(sp["val_case_count"] + sp["select_case_count"] + sp["test_case_count"], 120)
 
-        # High-cardinality / unique span_name (singleton strata) must STILL produce non-empty holdout
+        # High-cardinality / unique span_name + nullable metadata must STILL split cleanly
         uniq = self.tdir / "uniq_spans.jsonl"
-        uniq.write_text("".join(json.dumps({"id": f"u{i}", "input": f"q {i}", "span_name": f"unique_span_{i}"}) + "\n" for i in range(40)))
-        r_u = _run_helper(["split", "--input", str(uniq), "--val-out", str(self.tdir / "uv.jsonl"), "--test-out", str(self.tdir / "ut.jsonl"), "--stratify-by", "span_name"])
+        uniq.write_text("".join(json.dumps({"id": f"u{i}", "input": f"q {i}", "span_name": f"unique_span_{i}", "metadata": None}) + "\n" for i in range(40)))
+        r_u = _run_helper(["split", "--input", str(uniq), "--val-out", str(self.tdir / "uv.jsonl"), "--test-out", str(self.tdir / "ut.jsonl"), "--stratify-by", "missing_key"])
         self.assertEqual(r_u.returncode, 0, r_u.stderr)
         sp_u = json.loads(r_u.stdout)
         self.assertGreater(sp_u["val_case_count"], 0)
@@ -563,14 +563,14 @@ class TestHarnessTemplateParity(unittest.TestCase):
                 self.assertEqual(len([l for l in custom_rg.read_text().splitlines() if l.strip()]), 9)
                 self.assertTrue((tdir / "holdout" / f"custom_{label}.regrade_partial.jsonl").exists())
 
-            # Verify out-of-range / NaN / non-numeric score from grade() is recorded as judge_error (not NaN mean or crash)
+            # Verify out-of-range / NaN / plain exception from grade() is recorded as judge_error (not harness_error or crash)
             py_badscore = py_wired.replace(
                 'return (1.0 if "FINAL_TAIL_TOKEN" in generation["output"] else 0.0, "checked")',
-                'if line["id"] == "trunc": return (float("nan"), "bad")\n    if line["id"] == "refuse": return (1.5, "too big")\n    return (1.0 if "FINAL_TAIL_TOKEN" in generation["output"] else 0.0, "checked")',
+                'if line["id"] == "trunc": return (float("nan"), "bad")\n    if line["id"] == "refuse": raise RuntimeError("judge timeout")\n    return (1.0 if "FINAL_TAIL_TOKEN" in generation["output"] else 0.0, "checked")',
             )
             mjs_badscore = mjs_wired.replace(
                 'return [generation.output.includes("FINAL_TAIL_TOKEN") ? 1.0 : 0.0, "checked"];',
-                'if (line.id === "trunc") return [Number.NaN, "bad"];\n  if (line.id === "refuse") return [1.5, "too big"];\n  return [generation.output.includes("FINAL_TAIL_TOKEN") ? 1.0 : 0.0, "checked"];',
+                'if (line.id === "trunc") return [Number.NaN, "bad"];\n  if (line.id === "refuse") throw new Error("judge timeout");\n  return [generation.output.includes("FINAL_TAIL_TOKEN") ? 1.0 : 0.0, "checked"];',
             )
             (tdir / "eval_harness_badscore.py").write_text(py_badscore)
             (tdir / "eval_harness_badscore.mjs").write_text(mjs_badscore)
@@ -584,6 +584,9 @@ class TestHarnessTemplateParity(unittest.TestCase):
                 self.assertEqual(bs_j["scored"], 1)  # only ok1 valid; trunc/refuse classified as judge_error
                 self.assertEqual(bs_j["mean"], 1.0)
                 self.assertEqual(bs_j["errored_cases"], 3)  # err + trunc + refuse
+                bs_errs = [json.loads(l) for l in (tdir / "holdout" / "errors.test.jsonl").read_text().splitlines() if l.strip()]
+                refuse_errs = [e for e in bs_errs if e["id"] == "refuse"]
+                self.assertTrue(refuse_errs and all(e["failure_class"] == "judge_error" for e in refuse_errs), refuse_errs)
 
             # Verify token-only usage (no explicit usage.cost_usd) is priced from config.json.prices on BOTH runtimes
             py_tokonly = py_wired.replace(', "cost_usd": 0.001', "")

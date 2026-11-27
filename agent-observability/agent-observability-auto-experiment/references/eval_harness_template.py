@@ -425,6 +425,7 @@ def evaluate_line(line: dict, rep: int) -> "tuple[dict | None, dict | None]":
       * scored   : the model produced output and the grader judged it. In the mean, 0.0 included.
     """
     started = time.monotonic()
+    stage = "generate"
     try:
         raw = generate(redact(line))
         gen_elapsed = time.monotonic() - started
@@ -434,6 +435,7 @@ def evaluate_line(line: dict, rep: int) -> "tuple[dict | None, dict | None]":
         if generation.get("output") is None:
             return None, None
         link = _export_span_link()
+        stage = "grade"
         raw_score, justification = grade(line, generation)
         score = _validate_score(raw_score)
     except HarnessError as exc:
@@ -453,7 +455,7 @@ def evaluate_line(line: dict, rep: int) -> "tuple[dict | None, dict | None]":
             "split": SPLIT,
             "rep": rep,
             "iteration": ITERATION,
-            "failure_class": "harness_error",
+            "failure_class": "judge_error" if stage == "grade" else "harness_error",
             "message": f"{type(exc).__name__}: {exc}"[:1000],
             "trace": traceback.format_exc()[-2000:],
             "latency_s": round(time.monotonic() - started, 4),

@@ -298,6 +298,7 @@ function validateScore(raw) {
 
 async function evaluateLine(line, rep) {
   const started = Date.now();
+  let stage = "generate";
   let generation;
   let genElapsedS;
   let link = null;
@@ -310,10 +311,12 @@ async function evaluateLine(line, rep) {
     generation = normalizeGeneration(raw);
     if (generation.output === null || generation.output === undefined) return [null, null];
     link = await exportSpanLink();
+    stage = "grade";
     const [rawScore, rawJustification] = await grade(line, generation);
     score = validateScore(rawScore);
     justification = rawJustification;
   } catch (err) {
+    const defaultClass = stage === "grade" ? "judge_error" : "harness_error";
     return [
       null,
       {
@@ -321,7 +324,7 @@ async function evaluateLine(line, rep) {
         split: SPLIT,
         rep,
         iteration: ITERATION,
-        failure_class: err instanceof HarnessError ? err.failureClass : "harness_error",
+        failure_class: err instanceof HarnessError ? err.failureClass : defaultClass,
         message: String(err && err.message ? err.message : err).slice(0, 1000),
         ...(err instanceof HarnessError ? {} : { trace: String(err && err.stack).slice(-2000) }),
         latency_s: Number(((Date.now() - started) / 1000).toFixed(4)),

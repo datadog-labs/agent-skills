@@ -87,10 +87,15 @@ def compute_distribution(per_case_means: dict, basis: str) -> dict:
     }
 
 
+def _row_meta(row: dict) -> dict:
+    meta = row.get("metadata")
+    return meta if isinstance(meta, dict) else {}
+
+
 def _pick_stratify_key(rows: list[dict], explicit: str | None) -> tuple[str, list[str]]:
     if explicit:
-        return explicit, [str(r.get(explicit, r.get("metadata", {}).get(explicit, "_missing"))) for r in rows]
-    span_names = [r.get("span_name") or r.get("metadata", {}).get("span_name") for r in rows]
+        return explicit, [str(r.get(explicit, _row_meta(r).get(explicit, "_missing"))) for r in rows]
+    span_names = [r.get("span_name") or _row_meta(r).get("span_name") for r in rows]
     non_empty_spans = [str(s) for s in span_names if s not in (None, "")]
     if non_empty_spans and len(set(non_empty_spans)) <= max(2, min(20, len(rows) // 2)):
         return "span_name", [str(s or "_missing") for s in span_names]
