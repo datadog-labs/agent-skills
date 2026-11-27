@@ -25,7 +25,9 @@ tools for the data.
 
 **Read `references/rubrics.md` in full before iteration 1 and keep it in mind every iteration.**
 It holds the non-negotiable rules (never invent a score; what to score; where the data lives; the
-harness spec; the metric schema). This file is the control loop; that file is the law.
+harness spec; the metric schema; data isolation; stall taxonomy). Read `references/eval_audit.md`
+for the three pre-climb audit gates (Steps 2.2, 2.3, 2.6) and `references/reporting.md` before the
+first LLM-Obs submission. This file is the control loop; those files are the law.
 
 ## Security & data handling (read before running)
 
@@ -65,8 +67,10 @@ run starts** (see the Mandatory intake gate below).
 | Field | Meaning | Source |
 |---|---|---|
 | `files_to_optimize` | the **edit scope**: one or more files, a **folder**, or globs. **Any code inside the scope is fair game to modify** — tool/retrieval code, the pipeline, config, data-shaping, or prompts — not just prompt wording. Everything outside the scope is off-limits. | **must ask** |
-| `goal` | what "better" means; the judge rubric + optimization direction | **must ask** |
+| `goal` | what "better" means. An object `{text, target, direction, hold[]}`: `text` is the user's words verbatim, `target` is `score` \| `cost_usd` \| `latency_s`, `direction` is `higher` \| `lower`, and `hold[]` names the metrics that must not regress outside noise. A bare string is accepted and becomes `{text: <string>, target: "score", hold: []}`. See `references/rubrics.md` **Goal, target and guardrails**. | **must ask** (both the text and the target/hold question) |
 | `evaluators` | explicit evaluator/rubric text — how each datapoint is scored (ground-truth check vs LLM-judge, pass criteria, direction). | **must ask** (do NOT silently fall back to `goal`) |
+| `min_shippable_delta` | the smallest improvement the user would actually ship on. The Step 2.6 climbability gate compares it against the measured noise floor and headroom; without it the gate can only report numbers rather than judge them. | **must ask** (offer `0.05` on a 0–1 metric as the recommended default, but ask) |
+| `stratify_by` | a field name to stratify the val/test split on, when the user knows which dimension matters. Absent, the split picks a key by the priority order in `references/rubrics.md` **Held-out split**. | _default_ **auto** |
 | data source | where the eval data comes from — a `dataset_id`, **or** an **`annotation_queue_id`** (an LLM-Obs annotation queue, whose human-reviewed interactions are the corpus), **or** an `ml_app` to pull traces from (optionally narrowed by explicit `trace_ids`), **or** (by exception) a **`local_dataset_path`** (a local `.jsonl`/`.csv` file on disk). Whatever the source, the corpus is materialized into **Datadog LLM-Obs Datasets** (Step 1) — a local file is the only source that may stay on disk, and only if the user asks for that. | **must ask** — mandatory; the run cannot start without one of `dataset_id` / `annotation_queue_id` / `ml_app` / `local_dataset_path` (priority below) |
 | `annotation_label_map` | **`annotation_queue_id` sources only**: which of the queue's labels means what — `expected_output` (the label whose value is the datapoint's ground truth, or `null` if the queue carries no such label) and an optional `filter` (`{label, equals}`) restricting which annotated interactions enter the corpus. A queue's schema is user-defined and arbitrary, so this cannot be inferred. | **must ask** when the source is a queue; read the candidate labels from the queue's `annotation_schema` first and offer them |
 | `project_id` | the LLM-Obs **project** the run's datasets are created in (UUID). Every dataset write needs it on both backends (`create_llmobs_dataset`, `pup llm-obs datasets create --project-id`). | **must ask** unless unambiguously derivable (see the intake gate); resolve a project *name* with `get_llmobs_project` / `pup llm-obs projects list` |
@@ -120,7 +124,16 @@ Before writing any config or touching git:
    **not** default, infer, or guess:
    - **`files_to_optimize`** — the user names the concrete file(s)/folder/globs. Never assume the
      scope from context. Resolve a folder/glob to the concrete editable file list.
-   - **`goal`** — the optimization target + direction.
+   - **`goal`** — two asks, not one. First the user's own words (`goal.text`), verbatim. Then a
+     separate `AskUserQuestion` for what the loop is actually optimizing: *raise `score`* / *cut
+     `cost_usd`, holding `score`* / *cut `latency_s`, holding `score`* / *cut both, holding `score`*.
+     Record `target`, `direction`, and `hold[]`. **Never infer them from the text** — a goal that
+     mentions cost in passing is not the user choosing a cost target. See `references/rubrics.md`
+     **Goal, target and guardrails**.
+   - **`min_shippable_delta`** — "how big an improvement would actually make you ship this?" Offer
+     `0.05` on a 0–1 metric as a recommended default, but ask: the climbability gate (Step 2.6) puts
+     this next to the measured noise floor and headroom so you learn *before* iteration 1 whether
+     the eval can even resolve a shippable win.
    - **`evaluators`** — how a datapoint is scored (pass/fail, metric, direction). Do not reuse
      `goal` as the evaluator. **Use the user's evaluator text verbatim. NEVER invent, extend,
      narrow, or change the metric or direction of an evaluator** — do not turn "recall" into "F1",
@@ -179,13 +192,15 @@ Before writing any config or touching git:
    This gate is a hard STOP: if any must-ask field lacks an explicit user answer, do not write
    `config.json`, do not create the scratch branch, do not run the harness — ask (use
    `AskUserQuestion`) and wait.
-2. Fill the **default** fields (`max_iterations`, `max_runs`, `model`, `base_branch`) with their
-   defaults above. **These two defaults are a budget, and they are set where the loop can actually
+2. Fill the **default** fields (`max_iterations`, `max_runs`, `stratify_by`, `model`,
+   `base_branch`) with their defaults above. **These two defaults are a budget, and they are set where the loop can actually
    work.** A 2-iteration run cannot hill-climb — it makes two attempts at the largest census
    bucket and stops, and a real run's wins routinely come from the fifth or eighth attempt (and
-   from levers that only pay off once an earlier change is in place). A `max_runs` of 3 likewise
-   leaves most noisy metrics unable to resolve their own `min_delta` (Step 2.4), so every gain
-   stays permanently unconfirmable. Show the cost estimate next to them (it scales linearly with
+   from levers that only pay off once an earlier change is in place, plus a stall-categorization
+   iteration can consume a slot). A `max_runs` of 3 likewise
+   leaves most noisy metrics unable to resolve their own `min_delta` (Step 2.4), especially on the
+   smaller `test` split that picks the winner, so every gain stays permanently unconfirmable. Show
+   the cost estimate next to them (it scales linearly with
    both) and let the user lower them deliberately rather than discovering a crippled run later.
    On a **deterministic** metric (ground-truth checker, `stdev == 0` expected) `max_runs: 3` is
    genuinely enough — say so and propose it, since extra runs there buy nothing but spend. `datadog_backend` is **not** among them — it is must-ask, per step 1. Do **not**
@@ -215,7 +230,13 @@ Before writing any config or touching git:
    `evaluators` text **exactly as the user gave it**; if you believe it needs any change, present
    the change as an explicit *proposal* ("you said recall-only; your goal mentions precision too —
    score recall-only, or switch to F1?") and record only what the user picks. Never persist an
-   evaluator the user did not approve verbatim. **This recap also carries the cost estimate** —
+   evaluator the user did not approve verbatim. Show `goal` as the resolved object (`text`,
+   `target`, `direction`, `hold`) rather than as the raw sentence so the user sees what the loop
+   will optimize vs hold. **State the two-split cost plainly in one line**: every iteration scores
+   the whole corpus (`val` AND `test`), not just the ~70% `val` slice, so per-iteration eval cost is
+   about **1.43×** a `val`-only pass — that is what buys the per-iteration overfit gate that reverts
+   a change which only helped the rows the improver read. **This recap also carries the cost
+   estimate** —
    attempt the derivation in **Cost estimate** below and show whatever it produces (a real number,
    or an explicit "unable to estimate — <reason>") as part of this same recap; never skip the line
    silently. Only after the user validates do you write `config.json` and proceed to Setup.
@@ -226,7 +247,8 @@ the run's state + audit trail):
 ```json
 {
   "repo_url": "...", "base_branch": "...", "files_to_optimize": [...],
-  "goal": "...", "evaluators": "...", "ml_app": "...",
+  "goal": {"text": "...", "target": "score", "direction": "higher", "hold": []},
+  "evaluators": "...", "min_shippable_delta": null, "ml_app": "...",
   "local_dataset_path": "...", "dataset_id": "...", "trace_ids": [...],
   "annotation_queue_id": null,
   "annotation_label_map": {"expected_output": null, "filter": null},
@@ -242,12 +264,19 @@ the run's state + audit trail):
   "split_dataset_names": {"corpus": null, "val": null, "test": null},
   "val_case_count": null,
   "test_case_count": null,
+  "split_mode": null,
+  "split_seed": 0,
+  "split_redraws": 0,
+  "stratify_by": null,
+  "split_strata": null,
+  "superseded_split_dataset_ids": [],
   "data_note": null,
   "case_count": null,
   "cost_per_case": null,
   "code_under_test_cost_per_case": null,
   "judge_cost_per_case": null,
   "cost_basis": null,
+  "prices": null,
   "estimated_pilot_cost": null,
   "estimated_run_cost_range": null,
   "datadog_backend": null,
@@ -261,6 +290,14 @@ the run's state + audit trail):
   "harness_path": null,
   "runs": null,
   "min_delta": null,
+  "guardrail_floors": null,
+  "grader_version": 1,
+  "judge_flip_rate": null,
+  "noise_floor_test": null,
+  "saturation_class": null,
+  "preflight": null,
+  "stall_buckets": null,
+  "merge_recommendation": null,
   "iteration_results": [],
   "final_result": {}
 }
@@ -270,8 +307,20 @@ The dataset fields (`project_id` aside) start `null` and are **written once, in 
 treated as read-only for the rest of the run — they are the create-once record that stops a later
 iteration from re-splitting the corpus. See **Step 1**.
 
-`runs` and `min_delta` start `null` — they are **computed and written in Step 2.4** from the
-measured baseline noise, never chosen at intake. `datadog_backend` is shown `null` above only
+The split-hygiene fields (`split_mode`, `split_seed`, `split_redraws`, `split_strata`,
+`superseded_split_dataset_ids`) are written in Step 1 with the split, and `split_redraws` is the
+only one a later step may touch — and only once, for the single sanctioned baseline population
+re-draw in Step 2.6.
+
+The gate fields (`judge_flip_rate`, `noise_floor_test`, `saturation_class`, `preflight`) are written
+by the pre-flight gates in Steps 2.2 and 2.6. `grader_version` starts at `1` and is bumped only by
+the grader-disagreement path in the stall taxonomy; every `iteration_results` row and every
+`result.json` carries the version it was measured under, because scores from two versions are not
+comparable. `prices` stores the per-token rate card looked up by the Cost estimate so the
+orchestrator can price each row's `usage` without hard-coding rates in the harness.
+
+`runs`, `min_delta`, and `guardrail_floors` start `null` — they are **computed and written in Step
+2.4** from the measured baseline noise, never chosen at intake. `datadog_backend` is shown `null` above only
 because it has no default: by the time `config.json` is written it must hold the user's explicit
 `"mcp"` or `"pup"`. A `null` there at Setup means the intake gate was skipped — STOP and ask.
 
@@ -290,6 +339,7 @@ five-number summary, so a client can render the spread (boxplot/violin/etc.):
 
 ```json
 "score_distribution": {
+  "basis": "case_means_test",
   "values": [0.0, 0.67, 1.0, ...],
   "n": 34, "zero": 10, "perfect": 21,
   "min": 0.0, "q1": 0.0, "median": 1.0, "q3": 1.0, "max": 1.0
@@ -311,22 +361,16 @@ Both halves of that matter, and a real run demonstrated why:
   metric like this they are the *only* informative part of the summary, so they are required, not
   optional.
 
-`values` is the list of per-datapoint `score`s from that iteration's `eval_results.jsonl` (the
-last run's scored datapoints); `min`/`q1`/`median`/`q3`/`max` are computed from it. No new eval
-work — the scores already exist; just collect them and compute the quartiles when you append the row.
+`values` is the list of per-case means (`per_case_means.values()`, averaged across each case's
+usable reps) on the headline split (`test`, or `all` in `split_mode: all_rows`);
+`min`/`q1`/`median`/`q3`/`max` are computed from it by nearest rank. Because the harness now keeps
+every rep's rows and emits `per_case_means`, the distribution describes the exact per-case sample
+behind the reported headline.
 
-**Know what this distribution is and isn't.** When `runs > 1` the iteration's `score`/`after_score`
-is the **mean of the run means**, while these `values` come from the **last run only** —
-`eval_results.jsonl` holds the final pass's per-line detail. So the spread describes one pass, not
-the sample the reported mean was computed from, and the median will not generally equal the score.
-That is fine — the distribution answers "how were the points spread within a run" (uniformly decent
-vs. split perfect/zero), not "how noisy is the mean across runs", which is what `stdev`/`run_means`
-already answer. Do not present it as the distribution of the reported score.
-
-The **summary is also published to LLM-Obs** on that iteration's metric as `dist_*` tags (see the
-distribution tags under **Report each iteration's score to LLM-Obs**), so the spread travels with the
-score instead of living only on disk. `values` stays local — the per-datapoint array is too large for
-a tag list; the experiment event carries the summary, `config.json` carries the raw scores.
+The **summary is also published to LLM-Obs** on that iteration's metric as `dist_*` tags with
+`dist_basis:case_means_test` (see `references/reporting.md`), so the spread travels with the score
+instead of living only on disk. `values` stays local — the per-datapoint array is too large for a
+tag list; the experiment event carries the summary, `config.json` carries the raw scores.
 
 ## Scope — optimize the whole selected surface, not just the prompt
 
@@ -410,9 +454,11 @@ estimate its token usage from that template plus the datapoint content. A determ
   never `total_interactions`, since the pending backlog is not scoreable); `ml_app` / `trace_ids` → the count of `trace_ids` if
   explicit, else the ~100-trace default Step 1 would fetch (state which); `local_dataset_path` →
   count the rows/lines directly. If none of these is determinable cheaply, say so and skip the whole
-  estimate rather than guess a count. **Each scored pass reads only the val split (~70%)**, so state
-  the estimate as an upper bound on the corpus count, or refine it once Step 1 records
-  `val_case_count` — refining is preferred if the recap has not been shown yet.
+  estimate rather than guess a count. **Each scored iteration evaluates BOTH splits (100% of the
+  corpus: `val` + `test`)**, so `case_count` is the exact per-pass case count (about **1.43×** a
+  `val`-only pass; plus the end-of-run pooled confirm run on `test` at `max_runs`). Record the
+  looked-up per-token rate card into `config.json.prices` so the orchestrator can price actual
+  per-row `usage` during the run without hard-coding rates in the harness.
 - **Determine calls-per-case and cost-per-call, preferring measured data over static guesswork, in
   this priority order:**
   1. **Historical traces (measured, preferred).** If the data source is `ml_app` / `dataset_id` /
@@ -729,16 +775,19 @@ credential value**; you are checking that auth works, not reading what it is.
 
    ```
    cache/
+   holdout/cache/
    data*.jsonl
    ```
 
    The eval rows live in Datadog Datasets (Step 1); the local copies are a disposable cache with a
    Datadog source of truth, and committing a user's dataset content into their repo is not this
-   skill's job. `eval_results.jsonl`, `result.json`, `census.json` and `config.json` **stay
-   committed** — they are this run's measurements, not corpus data.
-4. This run reports one score per iteration to the LLM-Obs experiment identified by the
-   `$experiment-id` argument (validated at the intake gate; persisted to `config.json` as
-   `dd_auto_experiment_id`). See **Report each iteration's score to LLM-Obs**.
+   skill's job. `eval_results.val.jsonl`, `holdout/eval_results.test.jsonl`, the `errors.*.jsonl`
+   sidecars, `result.json`, `census.json`, `narrative.md` and `config.json` **stay committed** —
+   they are this run's measurements, not corpus data. Note the asymmetry inside `holdout/`: the
+   cache is ignored, the results are not.
+4. This run reports one score per iteration (plus per-case events) to the LLM-Obs experiment
+   identified by the `$experiment-id` argument (or auto-created at intake; persisted to `config.json`
+   as `dd_auto_experiment_id`). See `references/reporting.md`.
 5. **Record the run context on the experiment before iterations start.** Call
    `update_llmobs_experiment` once with `experiment_id` = `$experiment-id`
    and `metadata` set to a JSON struct containing the repo name, the scratch branch name, the
@@ -788,12 +837,15 @@ ran because you intended it to.
 | 5 | run context on experiment | confirm the `update_llmobs_experiment` call (or `pup llm-obs experiments update`) **actually returned a success response in hand** (not merely that you intended to call it). For the us5 MCP that response is `updated_fields` containing `"metadata"` — accept that, or any non-error response acknowledging the metadata write if the tool's shape differs. The check is "the call was made and acknowledged", so do not hard-block on one exact field name; if it errored or was never called, re-run it. |
 | 6 | backend reachable | with `datadog_backend: pup`, `pup auth status` (or `$PUP_BIN auth status`) returned `authenticated: true` for the expected site — run the check, don't assume the binary works. A missing or unauthenticated pup is a **STOP**, not a fallback (see **Datadog backend**). With `datadog_backend: mcp`, step 5's acknowledged response is itself the proof the backend is reachable. Record `backend_used` in `config.json` either way. **Under pup, `experiments update` must exit 0, then read the experiment back** (`pup llm-obs experiments list --filter-project-id …`) and confirm the metadata you wrote. |
 | 7 | dataset writes possible | in `dataset_mode: datadog`, `project_id` in `config.json` is a real project you resolved (`get_llmobs_project` / `pup llm-obs projects list` returned it) — not a guessed UUID. In `dataset_mode: local_file`, no project is needed; confirm the mode came from an explicit user answer, not a default. |
-| 8 | corpus data not committed | `.auto_experiment/.gitignore` exists with `cache/` and `data*.jsonl`, and `git check-ignore -v .auto_experiment/cache/x.jsonl` confirms it applies |
+| 8 | corpus data not committed | `.auto_experiment/.gitignore` exists with `cache/`, `holdout/cache/` and `data*.jsonl`, and `git check-ignore -v .auto_experiment/holdout/cache/x.jsonl` confirms it applies. The **results** files (`eval_results.val.jsonl`, `holdout/eval_results.test.jsonl`, error sidecars) stay committed |
+| 9 | goal resolved to an object | `config.json` `goal` has `text` (verbatim), `target`, `direction` and `hold[]` — all four from explicit user answers, never inferred from the text |
+| 10 | shipping threshold known | `min_shippable_delta` is a number the user explicitly approved. Without it the Step 2.6 climbability gate can report a noise floor but cannot judge it |
 
-Steps 7–8 are gate checks for Setup; the **split datasets themselves** are created in Step 1, so
+Steps 7–10 are gate checks for Setup; the **split datasets themselves** are created in Step 1, so
 check them at the end of that step instead: `val_dataset_id`, `test_dataset_id`,
-`split_created_at`, and both case counts present in `config.json`, and
-`val_case_count + test_case_count` equal to the corpus count.
+`split_created_at`, `split_mode`, `split_strata`, and both case counts present in `config.json`,
+every record carrying its `split` field, and `val_case_count + test_case_count` equal to the corpus
+count (or `split_mode: "all_rows"` for 10–29 confirmed cases).
 
 State the gate result briefly (each step ✓ with its evidence) before Step 1. This same
 "external-effect step → verify against an artifact" discipline is why per-iteration score
@@ -814,8 +866,23 @@ Split the two roles so context stays clean and iterations don't anchor on each o
   you have accumulated, so an un-passed note is a misread waiting to happen), and
   **one-line summaries of prior attempts** (what was tried → kept/discarded, from `iteration_results`)
   so it won't repeat them. Its job: make ONE change + return a short summary (what it changed, which
-  bucket, feasibility-probe result). You (orchestrator) run the harness, apply the mechanism audit +
-  noise/confidence labeling, commit/keep/discard, and update state.
+  bucket, feasibility-probe result). You (orchestrator) run the harness on BOTH splits, apply the
+  memorization check + mechanism audit + overfit/guardrail gates + confidence labeling,
+  commit/keep/discard, rewrite `narrative.md`, and update state.
+- **Four things go into every sub-agent briefing, verbatim**, because a fresh agent cannot infer them:
+  1. **"Never open `.auto_experiment/holdout/`."** That directory is the held-out `test` split. The
+     orchestrator reads it; nothing else does. Name the files the agent *may* read —
+     `eval_results.val.jsonl`, `census.json`, the `val` cache — and say that the list is exhaustive.
+  2. **"Describe the behavior, not the content."** The change must encode what goes wrong, not the
+     nouns it went wrong on. No phrase, entity, id or constant from a datapoint may appear in an
+     edited file; the orchestrator checks the diff for verbatim 5-grams afterwards, and an
+     unexplained hit discards the iteration whatever the score did.
+  3. **"When you propose removing something, name which cases you expect to regress."** A transcript
+     shows what a block makes the model *do*, never what it quietly prevents, so a removal's cost is
+     invisible unless someone predicts it in advance.
+  4. **"Proposing a different lever is a legitimate answer."** Especially early: a tool description,
+     a parameter, a retrieval step. A search that only ever rewords the prompt will not find
+     headroom that lives elsewhere.
 - **Why:** a fresh bounded context per iteration avoids anchoring on dead ideas and stops the
   orchestrator's context from bloating over a long run — the same reason the production loop spawns a
   new `claude --print` per iteration instead of one long-lived agent. If sub-agents are unavailable,
@@ -870,11 +937,14 @@ traces — and materialize it:
    - **`datadog`** → create a corpus dataset from those rows and continue exactly like every other
      source. This path is no longer offline (it writes the rows into the user's org), which is
      precisely why the choice was theirs and not yours.
-   - **`local_file`** → stay on disk: write `.auto_experiment/data.jsonl` and split into
-     `.auto_experiment/data.val.jsonl` / `.auto_experiment/data.test.jsonl`. **These files are
-     gitignored, not committed** (Setup step 3). This is the only fully offline path; say so in
-     `data_note`, set `dataset_mode: "local_file"`, and skip the rest of this step's dataset work —
-     the harness reads the split file directly via `AUTO_EXP_DATA`.
+   - **`local_file`** → stay on disk: write `.auto_experiment/data.jsonl`, still run the **Corpus
+     size gate**, stratification, `split_mode`, and `split` stamping below, and split into
+     `.auto_experiment/data.val.jsonl` / `.auto_experiment/data.test.jsonl` (or keep
+     `.auto_experiment/data.jsonl` in `split_mode: "all_rows"`). **These files are gitignored, not
+     committed** (Setup step 3). This is the only fully offline path; say so in `data_note`, set
+     `dataset_mode: "local_file"`, record `val_case_count`/`test_case_count`/`split_mode`/`split_strata`
+     and assert the split sum, and skip **only** the Datadog Dataset API writes — the harness reads
+     the split files directly via `AUTO_EXP_SPLIT` + `AUTO_EXP_DATA`.
 2. **else `dataset_id` present** → load **every** record: on `mcp` page `get_llmobs_dataset_records` until `next_cursor` is empty; on `pup` call `datasets records-all --dataset-id D` (see **Loading the whole dataset** — the plain `records` subcommand caps at ~19 and must not be used for the corpus). Assert the loaded count equals the dataset's size before splitting. **Create no corpus dataset** — the user's dataset *is* the corpus; record `corpus_dataset_id` = that id and leave it untouched (the run only ever reads it).
 3. **else `annotation_queue_id` present** → the corpus is the queue's **human-labelled**
    interactions. See **Reading an annotation queue** for the per-backend mechanics.
@@ -928,264 +998,353 @@ with a scoreable target span; exclude infra/setup spans from the set entirely. F
 from their fields directly and skip the span-extraction step.
 
 **Carry the eval-set `id` into the records.** Every record written to a dataset keeps its `id` (in
-the record's `metadata`, and mirrored in the cache rows), because `eval_results.jsonl`, the census,
-and the mechanism audit all cite datapoints by that id (`references/rubrics.md` — *Refer to
+the record's `metadata`, and mirrored in the cache rows), because `eval_results.<split>.jsonl`, the
+census, and the mechanism audit all cite datapoints by that id (`references/rubrics.md` — *Refer to
 datapoints by their eval-set id everywhere*). A dataset record's own UUID is not a substitute: it
 changes when rows are re-inserted, and the id must be stable across the whole run.
 
-Then **split once, deterministically** (hash of datapoint id, ~70/30) into a **val dataset** (the
-hill-climb gate) and a **test dataset** (held out) — see the rubric's **Held-out split**. Create
-both with the timestamped names above and insert each side's records, then:
-
-- record `val_dataset_id`, `test_dataset_id`, `split_dataset_names`, `split_created_at`,
-  `val_case_count`, `test_case_count` in `config.json` — this is the create-once record;
-- apply the **Corpus size gate** below *before* creating the split — a corpus too small to support
-  a conclusion is cheapest to catch here;
-- **assert `val_case_count + test_case_count` equals the corpus count** before proceeding. A
-  mismatch means records were dropped or double-inserted; fix it now, not after three iterations of
-  scores measured on a corpus that isn't the one you think.
-
-Every iteration scores on **val** (`AUTO_EXP_DATASET_ID=<val_dataset_id>`); `test` is read only in
-the final report.
-
-#### Corpus size gate — check it BEFORE splitting
+#### Corpus size gate & `split_mode` — check it BEFORE splitting
 
 Every statistic this run produces is bounded by how many cases it scores, and a thin corpus fails
-quietly: a 30-trace pull splits into 21 val / 9 test, where a single flipped case moves the test
-score by 11 points and no held-out claim means anything. Count the scoreable corpus (after the
+quietly: a 20-case pull splits into 14 val / 6 test, where a single flipped case moves the test
+score by 17 points and no held-out claim means anything. Count the **scoreable** corpus (after the
 exclusions above) and act on it:
 
-| corpus | action |
-|---|---|
-| **< 10 scoreable cases** | **STOP.** Report the count and what was excluded, and ask the user for a larger window, more `trace_ids`, a dataset, or a queue. Do not split, do not score — a 7-case val split cannot support any keep/discard decision, and running anyway manufactures a number the user will quote. |
-| **10–49** | **Warn explicitly and ask** (`AskUserQuestion`) whether to proceed: state the val/test sizes this yields, that one flipped case is worth `1/test_count` of the headline, and offer "widen the source" as the first option. Proceed only on an explicit answer, and record `data_note: "small corpus (N cases) — user confirmed"`. |
-| **≥ 50** | Proceed. Still record the counts; the final report states them next to the headline. |
+| scoreable corpus | action | `split_mode` |
+|---|---|---|
+| **< 10** | **STOP.** Report the count and what was excluded, and ask the user for a larger window, more `trace_ids`, a dataset, or a queue. Do not split, do not score. | — |
+| **10–29** | **Warn explicitly and ask** (`AskUserQuestion`, offering "widen the source" first). If confirmed, do **not** fake a 3–8 case holdout: score all rows every iteration (`AUTO_EXP_SPLIT=all`, `eval_results.all.jsonl`, no `holdout/`) and label every number **in-sample and optimistic** in `data_note` and every report (the overfit gate cannot fire). | `all_rows` |
+| **30–49** | **Warn explicitly and ask** (`AskUserQuestion`, offering "widen the source" first): state the val/test sizes and that one flipped case is worth `1/test_count` of the headline. Proceed only on an explicit answer, recording `data_note: "small corpus (N cases) — user confirmed"`. | `val_test` |
+| **≥ 50** | Proceed with ~70/30 `val` / `test` split. When **≥ 100**, **offer** an optional 3-way split (`val` / `select` / `test`, where `test` stays genuinely untouched until the end); never choose it silently. | `val_test` (or 3-way if chosen) |
 
-This gate is about **scoreable** cases, so run it after exclusions, not on the raw trace count — 30
-traces of which 18 have no scoreable target span is a 12-case corpus, and that is the number that
-matters. When the source is an `ml_app`, prefer widening the time window or raising the trace
-limit over accepting the gate's warning: more real traffic is nearly always available and is the
-cheapest fix.
+When the source is an `ml_app`, prefer widening the time window or raising the trace limit over
+accepting a small-corpus warning: more real traffic is nearly always available and is the cheapest
+fix.
+
+**Then seal the split — and do it before anything reads the rows.** The exclusions above are the
+last step that looks at content; the split comes next, and nothing downstream (the census, the
+describers, the improver) exists yet. Full rules in `references/rubrics.md` **Held-out split**:
+
+1. **Pick the stratification key** in priority order — the queue's categorical `expected_output`
+   label, else explicit `stratify_by` from intake, else target span's operation `name`, else
+   categorical-like `expected_output` (≲10 distinct values), else input-length tercile. Record it
+   and per-stratum counts in `config.json.split_strata` (note in `data_note` if the length fallback
+   was used).
+2. **Split deterministically** (in `split_mode: val_test`) — hash of datapoint id seeded by
+   `split_seed` (`0` on the first draw), ~70/30, stratified by the key from step 1. Splitting by
+   baseline score is structurally impossible here because no score exists yet.
+3. **Stamp `split` onto every record** (`"val"` / `"test"`, or `"all"` in `all_rows` mode) before
+   inserting/writing, so the datasets, caches, harness, and census cannot disagree about which rows
+   are which. The harness hard-errors on a cache holding rows from another split.
+4. Create both datasets with the timestamped names above (or write `data.val.jsonl` /
+   `data.test.jsonl` in `local_file` mode), insert each side's records, and record `val_dataset_id`,
+   `test_dataset_id`, `split_dataset_names`, `split_created_at`, `val_case_count`, `test_case_count`,
+   `split_mode`, `split_seed`, `split_strata` in `config.json` — this is the create-once record.
+5. **Assert `val_case_count + test_case_count` equals the corpus count** (or `case_count` in
+   `all_rows` mode) before proceeding.
+
+**Every iteration scores BOTH splits** — `val` (`AUTO_EXP_SPLIT=val AUTO_EXP_DATASET_ID=<val_dataset_id>`)
+and `test` (`AUTO_EXP_SPLIT=test AUTO_EXP_DATASET_ID=<test_dataset_id>`). `val` is the only split
+the census, describers, and improvement sub-agent ever read; `test` is the headline and picks the
+winner, and nothing but the orchestrator touches its rows. The single sanctioned exception to
+create-once is the one baseline population re-draw at Step 2.6, before any change exists.
 
 ### Step 1.5 — Hydrate the local cache (the harness cannot call Datadog)
 
 The harness is a plain `python`/`node` process: it has no MCP tools, and shelling out to `pup` per
 eval pass would re-download the corpus on every one of `runs` passes. So **you** (the orchestrator)
-hydrate a cache through the selected backend, and the harness reads that:
+hydrate caches through the selected backend, and the harness reads them:
 
 ```
-.auto_experiment/cache/<dataset_id>.jsonl     # one record per line, uncommitted, disposable
+.auto_experiment/cache/<val_dataset_id>.jsonl          # val split (uncommitted, disposable)
+.auto_experiment/holdout/cache/<test_dataset_id>.jsonl # test split (uncommitted, orchestrator-only)
 ```
 
-- **Hydrate `val` before Step 2**, and `test` only in the final report — reading the held-out split
-  earlier is what the split exists to prevent.
-- **Verify before every harness run**: the cache file exists and its line count equals the
-  `val_case_count` recorded in Step 1. If it is missing or the count differs, **re-hydrate from the
-  same `val_dataset_id`** — never re-split, never rebuild the corpus, never top up a partial file
-  with a second source.
+- **Hydrate BOTH splits before Step 2** (in `split_mode: val_test`). The wall between the loop and
+  the held-out split is the directory **`.auto_experiment/holdout/`**: the orchestrator reads it,
+  **no sub-agent ever opens `.auto_experiment/holdout/`**, and that sentence goes verbatim into
+  every sub-agent briefing. Measuring `test` every iteration is how a machine-driven loop detects
+  and reverts `val`-overfitting immediately instead of finding out after the budget is spent.
+- **Verify before every harness run**: the target split's cache file exists and its line count
+  equals that split's `<split>_case_count` recorded in Step 1 (`val_case_count` for `val`,
+  `test_case_count` for `test`). If one is missing or a count differs, **re-hydrate from that
+  split's dataset id** — never re-split, never rebuild the corpus, never top up a partial file.
+- **Preserve the `split` field** stamped in Step 1; the harness refuses a file whose rows disagree
+  with `AUTO_EXP_SPLIT`, whose dataset id disagrees with `config.json`, or whose row count disagrees
+  with `<split>_case_count`.
 - Fetch cache rows with the same whole-dataset read Step 1 uses (`records-all` on pup, paged
-  `get_llmobs_dataset_records` / direct REST on mcp) — the ~19-record preview cap applies here too,
-  and a truncated cache is a silently smaller eval set.
-- **Normalize each cache row to the harness's shape** — `{id, input, expected_output?}` — lifting
-  the eval-set `id` back out of the record's `metadata` where Step 1 put it. The harness reads
-  `line["id"]` straight into `eval_results.jsonl`, so an unmapped id turns every downstream citation
-  into `null` and quietly breaks the census and the mechanism audit.
-- The cache is **gitignored** (Setup step 3) because it is derived data with a Datadog source of
-  truth. `eval_results.jsonl` is not derived data in this sense — it is this run's measurements, and
-  stays committed.
-- **`dataset_mode: local_file` skips this step entirely** — there is nothing to hydrate; the harness
-  reads `data.val.jsonl` / `data.test.jsonl` via `AUTO_EXP_DATA`.
+  `get_llmobs_dataset_records` / direct REST on mcp) — the ~19-record preview cap applies here too.
+- **Normalize each cache row to `{id, split, input, expected_output?}`** — lifting the eval-set `id`
+  and `split` back out of `metadata` where Step 1 put them.
+- Both cache directories are **gitignored** (Setup step 3); `eval_results.val.jsonl`,
+  `holdout/eval_results.test.jsonl`, and error sidecars stay committed.
+- **`dataset_mode: local_file` skips Datadog hydration** — verify `.auto_experiment/data.val.jsonl`
+  and `.auto_experiment/data.test.jsonl` exist and match `val_case_count`/`test_case_count`, and
+  pass them via `AUTO_EXP_SPLIT=val AUTO_EXP_DATA=...` and `AUTO_EXP_SPLIT=test AUTO_EXP_DATA=...`.
+- **`split_mode: all_rows` hydrates one cache** and runs with `AUTO_EXP_SPLIT=all`; there is no
+  `holdout/` directory and no second invocation.
 
 ### Step 2 — Build the harness and compute BEFORE (baseline)
 
 **Pick the harness language to match the code under test (auto-detect, with override).** The loop is
 language-agnostic — it only reads the harness's stdout JSON contract — so the harness must be written
-in whatever runtime can import/run `files_to_optimize`. There are two templates: a Python one
-(`references/eval_harness_template.py`) and a Node/ESM one (`references/eval_harness_template.mjs`);
-both emit the identical JSON and honor the same env vars.
+in whatever runtime can import/run `files_to_optimize`. There are two parity templates: Python
+(`references/eval_harness_template.py`) and Node/ESM (`references/eval_harness_template.mjs`).
 
-- **Detect the runtime** from the edit scope, in this order: (1) if any file in `files_to_optimize`
-  is `.js`/`.ts`/`.mjs`/`.cjs`, or the nearest enclosing package manifest is a `package.json` →
-  **Node**; (2) if any is `.py`, or the manifest is `pyproject.toml`/`requirements.txt`/`setup.py` →
-  **Python**; (3) if the scope is language-neutral (e.g. a `.md` prompt file), fall back to the
-  language of the app whose entrypoint `generate_output`/`generateOutput` must call.
-- **Default to Python when the runtime is neither Node nor Python.** If the code under test is in
-  some other language (Go, Ruby, Rust, …), or the language can't be determined, use the **Python**
-  harness: it can drive any code-under-test out-of-process via `subprocess` (the language-agnostic
-  path — the harness spawns the real code and reads its stdout), so it is the safe general-purpose
-  default. The native Node harness is just the in-process convenience for Node/TS apps; everything
-  else goes through Python.
-- **Honor an explicit `runtime` override** if the user set one at intake. If detection is genuinely
-  ambiguous (e.g. both a `package.json` and a `pyproject.toml`/`requirements.txt` enclose the scope),
-  you may **ask the user** for `runtime` (`python` | `node`) rather than guess — but absent an
-  answer, default to **Python** per the rule above.
+- **Detect the runtime** from the edit scope: (1) `.js`/`.ts`/`.mjs`/`.cjs` or enclosing
+  `package.json` → **Node**; (2) `.py` or `pyproject.toml`/`requirements.txt`/`setup.py` →
+  **Python**; (3) language-neutral (e.g. `.md`) → runtime of the entrypoint `generate` calls.
+- **Default to Python** when the runtime is neither Node nor Python (driving the code out-of-process
+  via `subprocess`), or when ambiguous without a user override.
+- **Honor an explicit `runtime` override** if set at intake.
 
-Then copy the matching template and fill in the two functions (`generate_output`/`generateOutput`
-runs the REAL code under test from `files_to_optimize`; `judge` scores it):
+Copy the matching template and fill in the two functions (`generate` runs the REAL code under test
+on a **redacted** row; `grade` scores it against the reference or `evaluators` verbatim):
 
-- **Python** → copy `references/eval_harness_template.py` to `.auto_experiment/eval_harness.py`; run
-  with `python .auto_experiment/eval_harness.py`.
-- **Node** → copy `references/eval_harness_template.mjs` to `.auto_experiment/eval_harness.mjs`; run
-  with `node .auto_experiment/eval_harness.mjs` (for a TypeScript entrypoint,
-  `npx tsx .auto_experiment/eval_harness.mjs`). The `.mjs` extension keeps it ESM regardless of the
-  repo's `package.json` `type`.
+- **Python** → copy `references/eval_harness_template.py` to `.auto_experiment/eval_harness.py`.
+- **Node** → copy `references/eval_harness_template.mjs` to `.auto_experiment/eval_harness.mjs` (use
+  `npx tsx` for TypeScript entrypoints).
 
-Record the resolved `runtime` and `harness_path` in `config.json`. **Everywhere below that says
-`python .auto_experiment/eval_harness.py`, use the Node command instead when the runtime is Node** —
-the loop logic, the keep/discard gate, the `AUTO_EXP_DATASET_ID` / `AUTO_EXP_DATA` /
-`AUTO_EXP_RUNS` / `AUTO_EXP_EVALUATORS` env vars, and the stdout contract (`{mean, stdev, runs, scored, excluded, run_means}`) are all
-identical across the two templates.
+Also copy **`references/stats.py`** to `.auto_experiment/stats.py` — the paired bootstrap, paired
+case-level t-test, two-sample t-test, Wilson interval, and noise floor that the orchestrator calls
+every iteration (always Python regardless of `runtime`).
+
+Record `runtime` and `harness_path` in `config.json`. Both templates share the exact same env vars
+(`AUTO_EXP_SPLIT`, `AUTO_EXP_DATASET_ID`, `AUTO_EXP_DATA`, `AUTO_EXP_RESULTS`, `AUTO_EXP_RUNS`,
+`AUTO_EXP_EVALUATORS`, `AUTO_EXP_DOMAIN_NOTES`, `AUTO_EXP_ITERATION`, `AUTO_EXP_REGRADE`) and stdout
+JSON contract:
+
+```
+{split, dataset_id, data_path, mean, stdev, runs, scored, excluded, errored, errored_cases,
+ truncated, refusals, run_means, per_case_means, latency_p50, latency_p95, usage, models_seen,
+ grader_version}
+```
+
+**One invocation per split, two per iteration.** `AUTO_EXP_SPLIT` is required (no silent default),
+and setting both `AUTO_EXP_DATASET_ID` and `AUTO_EXP_DATA` is a hard error.
 
 **Prefer a deterministic ground-truth metric** (reference output / programmatic checker / pipeline
-count) and use an LLM-as-judge only when no ground truth exists — see the rubric's **Metric
-selection**. **No score literals anywhere.**
+count) and use an LLM-as-judge only when no ground truth exists — see `references/rubrics.md`
+**Metric selection**. **No score literals anywhere.**
 
-Run it against the **original, unmodified** code on the **val** split — with
-`AUTO_EXP_DATASET_ID=<val_dataset_id>` and its cache hydrated per Step 1.5, or
-`AUTO_EXP_DATA=.auto_experiment/data.val.jsonl` in `dataset_mode: local_file` — with a **fixed
-pilot** `AUTO_EXP_RUNS` (**3** — an
-internal bootstrap value, not a user param): the harness re-runs the whole eval R times and prints
-`{mean, stdev, run_means, ...}`. `before_score` = the printed `mean`; also record `stdev` (the
-noise floor). Both computed numbers, never literals — obey the scoring policy and the **Noise &
-keep/discard policy** in the rubric. This pilot noise is what Step 2.4 turns into the real `runs`
-and `min_delta`.
+**Before the pilot, run the Harness trust gate — Step 2.2.** It costs 1–2 cases and stops a pilot
+costing `3 × corpus` from measuring a broken harness or grader.
 
-Commit the harness (`eval_harness.py` or `eval_harness.mjs`), `config.json` (which now carries the
-split dataset ids), and `eval_results.jsonl`. **Do not commit corpus data** — no `data*.jsonl`, no
-`cache/`; they are gitignored, and the rows they hold are reachable from the dataset ids in
-`config.json`.
+Then run the harness against the **original, unmodified** code on **both splits** with fixed pilot
+`AUTO_EXP_RUNS=3` and `AUTO_EXP_ITERATION=0`:
 
-**Do NOT report the baseline to LLM-Obs yet.** Step 2.4 may raise `runs` and re-run the baseline,
-which **replaces** this pilot `mean`/`stdev`. Reporting the pilot now would publish an
-`iteration:0` score that disagrees with the baseline the keep/discard gate actually uses. The
-iteration-0 report is deferred to the end of Step 2.4, once the final derived-runs baseline exists.
+```bash
+AUTO_EXP_SPLIT=val  AUTO_EXP_DATASET_ID=<val_dataset_id>  AUTO_EXP_RUNS=3 AUTO_EXP_ITERATION=0 python .auto_experiment/eval_harness.py
+AUTO_EXP_SPLIT=test AUTO_EXP_DATASET_ID=<test_dataset_id> AUTO_EXP_RUNS=3 AUTO_EXP_ITERATION=0 python .auto_experiment/eval_harness.py
+```
+
+(In `dataset_mode: local_file`, replace `AUTO_EXP_DATASET_ID=...` with
+`AUTO_EXP_DATA=.auto_experiment/data.val.jsonl` / `data.test.jsonl` — never pass both. In
+`split_mode: all_rows`, run once with `AUTO_EXP_SPLIT=all`.)
+
+Record `val.before`/`val.stdev` and `test.before`/`test.stdev`, plus baseline per-case cost (from
+`usage` × `config.json.prices` or direct `cost_usd`) and p50/p95 latency as the baseline values every
+later guardrail ratio compares against.
+
+Commit the harness, `stats.py`, `config.json`, both results files (`eval_results.val.jsonl` and
+`holdout/eval_results.test.jsonl`), and any error sidecars. **Never commit corpus data**
+(`cache/`, `holdout/cache/`, `data*.jsonl`).
+
+**Do NOT report the baseline to LLM-Obs yet.** Steps 2.3 (zero triage) and 2.4 (derived `runs`) may
+clean the denominator or re-run the baselines, replacing the pilot numbers. The iteration-0 report
+is deferred to the end of Step 2.4.
+
+### Step 2.2 — Harness trust gate (run BEFORE the pilot)
+
+A runnable harness is not yet a trustworthy one, and the pilot costs `3 × corpus`. **Run every check
+in `references/eval_audit.md` Gate 1** (each is a hard **STOP** on failure):
+
+- **oracle** — reference answer fed through `grade` must score near 1.0;
+- **null baseline** — empty string, `"I don't know"`, and a confident answer to a different question
+  must all fail;
+- **judge determinism** — re-grade ~5 stored `val` outputs twice, record `config.json.judge_flip_rate`;
+- **ground-truth isolation** — confirm `generate` received a redacted row and does not re-open the cache;
+- **mechanism wired** — disabling the target tool/retrieval/file moves the score on a smoke case;
+- **served model** — `models_seen` (from the response, not config) matches what was requested;
+- **resolved scope** — case counts × reps × split(s) × dataset id(s) × model × estimated cost match
+  the approved recap;
+- **headline recomputes** — mean recomputed from raw rows equals printed `mean` to `1e-9` (re-check
+  this every iteration);
+- **tier-1 corpus checks** — duplicates, stratum balance, schema validity, and zero `val ∩ test`
+  overlap.
+
+Record outcomes in `config.json.preflight` and `judge_flip_rate`.
+
+### Step 2.3 — Triage the zeros (run BEFORE deriving the noise)
+
+Run `references/eval_audit.md` **Gate 2** before Step 2.4 because dropping harness-error rows
+changes the denominator and therefore the `stdev` Step 2.4 derives `runs`/`min_delta` from:
+
+1. Classify every exactly-zero baseline datapoint as **harness error** or **grader verdict**, using
+   `errors.val.jsonl` (plus `holdout/errors.test.jsonl` error classes) and reading `val` outputs.
+2. Drop harness-error rows from the denominator on **both** splits for the rest of the run, record
+   counts in `data_note`, and **re-score both baselines** after the drop.
+3. Spot-check the lowest-scoring `val` grader verdicts. If more than ~1 in 10 look like grader
+   errors, fix the rubric/reference **with explicit user approval**, re-grade both baselines in place
+   via `AUTO_EXP_REGRADE=1` (no model re-run), and bump `grader_version`.
+4. If the corpus itself is broken, name the sibling eval-construction skill and stop.
 
 ### Step 2.4 — Derive `runs` and `min_delta` from the measured baseline noise
-The pilot baseline (3 runs) gives a **real** noise floor (`stdev`, `run_means`). `runs` and
-`min_delta` are **computed from it**, not chosen — derive both here, silently (no user prompt; they
-are surfaced only in the final report, with reasoning):
 
-The two numbers are **one derivation, not two independent ones** — `min_delta` is the smallest
-effect this run can actually confirm at its run ceiling, and `runs` is what it takes to confirm it.
-Deriving them independently is what used to make the whole mechanism inert: with
-`min_delta = max(0.02, 0.5·σ)`, any metric noisier than `σ = 0.04` lands on the `0.5·σ` branch,
-where `runs ≥ 8·(σ/0.5σ)² = 32` **always** — above any allowed `max_runs`, so every such run was
-flagged underpowered forever and no gain could ever be labeled significant. The fix is to pick
-`min_delta` **at** the resolution the budget affords instead of below it.
+The pilot baseline (3 runs) gives real noise floors (`stdev_val`, `stdev_test`, `run_means`). `runs`,
+`min_delta`, and `guardrail_floors` are **computed from them**, not chosen — derive them silently
+here (surfaced in the final report with reasoning):
+
+Let `σ = max(stdev_val, stdev_test)` (or `stdev_all` in `split_mode: all_rows`) — taking the larger
+of the two splits' stdevs because `test` is the smaller split and the one the keep decision is made
+on. The two numbers are **one resolvable derivation**, so `runs` always lands inside the clamp:
 
 - **`min_delta`** (compute first — `runs` depends on it) — the smallest effect resolvable at the
-  run ceiling, floored at the practical minimum:
-  **`min_delta = max(0.02, baseline_stdev · sqrt(8 / max_runs))`**.
-  The `sqrt(8/max_runs)` term is the derivation below solved for the effect size rather than for
-  the run count: a noisy metric gets a higher bar (because that is the smallest difference the
-  budget can actually tell from noise), a rock-steady one keeps the `0.02` floor. Nothing here is
-  chosen by hand — both terms are measured or an intake budget.
-- **`runs`** — the confidence t-test compares a *difference of two means*, so the noise that matters
-  is the standard error of that difference: `SE_diff ≈ stdev · sqrt(2 / runs)`. For a real gain of
-  size `min_delta` to be *confirmable as significant* (clear the band at ~2·SE), you need
-  `SE_diff ≲ min_delta / 2`, i.e. **`runs = clamp(ceil(8 · (baseline_stdev / min_delta)²), 3, max_runs)`**.
-  Because `min_delta` was chosen at exactly that resolution, this now **always lands inside the
-  clamp**: a noisy metric resolves to `runs = max_runs`, a quiet one stays at `3`. If the derived
-  `runs` exceeds the pilot's 3, **re-run the baseline** at the new `runs` (the re-run's
-  `mean`/`stdev` replace the pilot's).
-- **Report the resolution, do not hide it.** When `min_delta` lands above the `0.02` floor, the run
-  is not underpowered — it is honestly coarse: record in `config.json` and state in the final
-  report that *"this metric's noise means the run can only confirm effects of ≥ `<min_delta>`;
-  raising `max_runs` to N would tighten that to `<value>`"*. Smaller real gains are still **kept**
-  (the keep needs only a higher-in-direction point estimate plus the mechanism audit) — they are
-  labeled `within_noise`, which is the truth about what this budget can see, not a defect.
-- **Deterministic metrics short-circuit it.** With `baseline_stdev == 0` (ground-truth checker, no
-  judge), `min_delta = 0.02` and `runs = 3`; the extra runs would re-measure the same number.
+  run ceiling, floored at the practical minimum AND at the measured `judge_flip_rate` from Step 2.2
+  (a threshold finer than the grader's own reproducibility can never fire honestly):
+  **`min_delta = max(0.02, judge_flip_rate, σ · sqrt(8 / max_runs))`**.
+  Also compute per-guardrail relative floors for every metric `h` in `goal.hold[]`:
+  **`min_delta_h = max(0.02 × baseline_h, stdev_h · sqrt(8 / max_runs))`**, written to
+  `config.json.guardrail_floors`.
+- **`runs`** — for a gain of size `min_delta` to clear `|t| ≥ 2` (`SE_diff ≲ min_delta / 2`):
+  **`runs = clamp(ceil(8 · (σ / min_delta)²), 3, max_runs)`**.
+  Because `min_delta ≥ σ · sqrt(8 / max_runs)`, this always lands inside `[3, max_runs]`. If the
+  derived `runs` exceeds the pilot's `3`, **re-run BOTH baselines** at the new `runs` (replacing the
+  pilot numbers).
+- **Report the resolution, do not hide it.** When `min_delta` lands above `0.02`, record in
+  `config.json` and state in the final report what this budget can resolve (*"this metric's noise
+  means the run can only confirm effects of ≥ `<min_delta>`; raising `max_runs` to N would tighten
+  that to `<value>`"*). Smaller gains are still kept when `test` and `val` move in direction,
+  labeled `within_noise`.
+- **Deterministic metrics short-circuit it.** With `σ == 0` and `judge_flip_rate == 0`,
+  `min_delta = 0.02` and `runs = 3`.
 
-Write the derived `runs` and `min_delta` into `config.json` (they started `null`) alongside the raw
-baseline `stdev` + `run_means` you derived them from (audit trail). Every downstream iteration uses
-these values. Do this once, here — do not recompute the gate mid-run.
+Write `runs`, `min_delta`, `guardrail_floors`, both splits' raw `stdev` + `run_means`, and
+`judge_flip_rate` into `config.json`. Do this once here — do not recompute mid-run.
 
-**First commit the final baseline state, THEN report it to LLM-Obs as iteration 0** (deferred from
-Step 2 so it reflects the final derived-runs baseline, not the pilot). If Step 2.4 raised `runs` and
-re-ran the baseline, the working tree's `eval_results.jsonl` + `config.json` now hold the re-run
-numbers but the commit from Step 2 still holds the pilot — **commit the updated baseline artifacts
-now** (amend the Step 2 commit or add a new one) so a single commit contains the final
-`eval_results.jsonl`, derived `runs`/`min_delta`, and `run_means`. Only then submit exactly one
-eval-metric datapoint with `score_value` = the **final** `before_score` (the re-run mean if `runs`
-was raised, else the pilot mean) and tags `["iteration:0",
-"git.commit.sha:<baseline_commit_sha>", "decision:baseline"]` plus `basis:baseline`,
-`time_start_ms`/`time_end_ms`, and the eight `dist_*` tags (the baseline has a computed score, so it
-carries its distribution summary too). **Iteration 0 omits `delta_vs_best`, `delta_sign`, `t_stat`
-and `significant`** — there is no previous best to compare against and no t-test was run, so there
-is no honest value for them; emitting `delta_vs_best:0` or `significant:false` would be inventing a
-comparison that never happened. Absent is correct. The sha is the **full 40-character**
-hash of that just-committed final-baseline commit (`git rev-parse HEAD`), and the score must match
-the `before_score` every downstream iteration gates against. Same call shape and rules as **Report
-each iteration's score to LLM-Obs**; this is the only submission with `iteration:0` and
-`decision:baseline`.
+**First commit the final baseline state, THEN report it to LLM-Obs as iteration 0** (per
+`references/reporting.md`). If Step 2.3 or 2.4 re-ran the baselines, commit the updated
+`eval_results.val.jsonl`, `holdout/eval_results.test.jsonl`, `errors.*.jsonl`, `narrative.md`, and
+`config.json` now so one commit holds the final baseline artifacts. Only then submit:
+1. Exactly one `auto_experiment_score` metric with `score_value` = the **final `test` baseline**
+   (or `all` in `all_rows` mode), `iteration:0`, `git.commit.sha:<full-40-char-sha>`,
+   `decision:baseline`, `basis:baseline`, `split:<test|all>`, `split_mode`, `val_score`/`test_score`,
+   `goal_target`/`goal_direction`, `grader_version`, `time_start_ms`/`time_end_ms`, `dist_*` with
+   `dist_basis:case_means_test`, and measured usage tags. **Omit `delta_vs_best`, `delta_sign`,
+   `t_stat`, `significant`, `n_moved`, and `overfit_gap`** on iteration 0.
+2. Per-case `auto_experiment_case_score` events (split-tagged) per `references/reporting.md`.
 
 ### Step 2.5 — Census the baseline failures
-Before changing anything, decompose **where the baseline loses** per the rubric's **Baseline
-failure census**. Two phases, in order, and they must stay separate:
 
-- **Phase A — describe.** Fan out parallel describer sub-agents over **every** failing datapoint
-  (batch several per agent; cap at a random 200 if there are more — rubric: *The census file*).
-  Full coverage is the default: describing is parallel, read-only and cheap, and a census drawn
-  from whichever failures were convenient ranks buckets by the sample rather than by the problem. Each returns a factual sentence or two about what its datapoints actually did
-  versus what the reference wanted. **Hand them no category list** — describers that are shown
-  candidate labels fit everything into those labels, and the census stops being able to surface a
-  failure mode you had not already guessed. Parallel is safe because the task is purely descriptive:
-  each agent needs only its own datapoints.
-- **Phase B — synthesize.** You group the descriptions and name the buckets from what they actually
-  say. The taxonomy emerges from the data.
+Before changing anything, decompose **where the baseline loses** per `references/rubrics.md`
+**Baseline failure census**. Two phases, kept strictly separate (Step 2.3 already triaged zeros):
 
-Write `.auto_experiment/census.json` (descriptions + emergent buckets + `failing_total`/`described`
-coverage counts — schema in the rubric), commit it, and surface the ranked buckets **with their
-coverage** ("47 of 47 failures inspected", or "200 of 612, randomly sampled" at the cap). Anything
-short of full coverage needs a stated reason in the census file. This tells you which lever is worth pulling — and whether
-the dominant failure mode is even reachable by editing `files_to_optimize`.
+- **Phase A — describe.** Fan out parallel describer sub-agents over **every** failing `val`
+  datapoint (batch several per agent; cap at a **random** 200 if more exist, recording
+  `"sampling": "random-200"`). Three load-bearing constraints:
+  - **No category list.** Ask *what happened*, never *which bucket is this*.
+  - **No `expected_output`.** Hand describers input, output, and judge justification (or a derived
+    difference for deterministic checks) — never the raw gold string, which leaks content into the
+    change.
+  - **`val` only.** Never `.auto_experiment/holdout/`. Put that sentence in every briefing verbatim.
+- **Phase B — synthesize.** Group the descriptions, name emergent buckets, write one-line
+  definitions, and compute each bucket's **reachable ceiling**
+  (`bucket_count / scored × (1 − mean_bucket_score)`). Also record `holdout_failing_total` — a bare
+  count from `test` rows, no descriptions.
+
+Write `.auto_experiment/census.json` (descriptions + buckets + reachable ceilings +
+`failing_total`/`described` + `holdout_failing_total` + Step 2.3 triage counts), commit it, and
+surface the ranked buckets with coverage ("47 of 47 `val` failures inspected").
+
+### Step 2.6 — Climbability gate (the last thing before the first change)
+
+Before spending iteration 1, run `references/eval_audit.md` **Gate 3** in full:
+
+1. **The three numbers, side by side:** measured `test` **noise floor** (`stats.noise_floor` on
+   `per_case_means`), **headroom** (`1 − test.before` for maximize, noting reachable census ceiling
+   is smaller), and user's **`min_shippable_delta`**. If noise floor exceeds either of the other two,
+   stop and offer levers (more `max_runs`, more cases, finer-grained metric).
+2. **Saturation class** (`always_zero` / `perfect` / `saturated` / `struggling` / `interesting`).
+   `always_zero` and `perfect` are STOPs; `saturated` offers switching `goal.target` to cost/latency.
+3. **`val` and `test` are the same population** (`split_mode: val_test`): the two baseline means
+   must agree within `2 · SE_diff` (or within bootstrap CIs when `SE_diff == 0`). If not, take the
+   **one** sanctioned re-draw (`split_seed` 0 → 1, new dataset names, old ids recorded in
+   `superseded_split_dataset_ids`, `split_redraws = 1`, re-run both baselines). A second failure is
+   a finding — ask (`AskUserQuestion`: proceed with caveat / enlarge corpus / abort).
+4. **Disclose selection bias:** state that `test` picks the winner every iteration and will be
+   mitigated by the end-of-run pooled confirm run (or untouched 3rd split if chosen).
+
+Write `config.json.preflight` (`GO`, `GO with caveat: <text>`, or `STOP: <reason>`) and present it
+with evidence. **A `STOP` means ask, never narrate-and-continue.**
 
 ### Step 3 — Improve
-Read the whole scope (`files_to_optimize`, expanded). Make **ONE focused change** toward `goal`,
-aimed at the **largest census bucket you can plausibly move** (name that bucket in the iteration's
-`reasoning`), **in whichever in-scope file holds the lever** — edit the tool/retrieval code if the
-census says the misses are retrieval, the output/format code if they're formatting, and so on. Do
-**not** default to rewording a prompt when the lever is elsewhere. Commit it on the scratch branch
-with a message explaining what changed and why.
 
-Before the (expensive) full eval, run a **feasibility probe** per the rubric's **Feasibility probe**:
-the cheapest offline check that this change *could* move a failing census bucket. If the probe
-reaches 0 failing datapoints, record the iteration `no_change` with the probe result and skip to the
-next hypothesis — do **not** spend a full eval on a dead lever.
+Read the whole scope (`files_to_optimize`, expanded). Spawn a fresh improvement sub-agent (with the
+four verbatim briefing rules, `val`-only access, and `domain_notes`) to make **ONE focused change**
+toward `goal`, aimed at the **largest census bucket it can plausibly move**, in whichever in-scope
+file holds the lever. Commit it on the scratch branch with a clear message.
 
-### Step 4 — Compute AFTER (re-run the SAME harness)
-Re-run the committed harness (`eval_harness.py` or `eval_harness.mjs`, per `runtime`) with the same
-`evaluate_line`/`evaluateLine` and the same data, against the changed
-code. `after_score` = the new printed mean. Re-write `eval_results.jsonl`. Write the metric object
-(schema in the rubric) to `.auto_experiment/result.json` and commit it **in the same commit** as
-the change. `delta = after_score - before_score`.
+Before the full two-split eval, run two cheap checks:
 
-Decide `is_best` per the optimization direction in `goal` **and the Noise & keep/discard policy**:
-keep the change as best if it **moves the point estimate in the goal's direction AND passes the
-Mechanism audit** — it does **not** have to clear the t-test. Then compute the **two-sample t-test**
-— `|t| = |after_score − before_score| / SE_diff` where
-`SE_diff = √(after_stdev²/runs + best_stdev²/runs)` — and the practical floor
-`|after_score − before_score| ≥ min_delta` **as a confidence label, not a keep gate**: `|t| ≥ 2`
-and `≥ min_delta` → `significant`; a higher-in-direction move that is only within noise (`|t| < 2`
-or below `min_delta`) is **still kept as best but flagged tentative** (`within_noise`), and its
-`reasoning` must say the gain could be noise and the score should be read carefully. Do **not** gate
-on the raw-stdev band (it never shrinks with runs). If `SE_diff == 0` (deterministic metric — both
-stdevs 0), the t is undefined: a direction-positive move is kept, labeled `significant` iff
-`|after_score − before_score| ≥ min_delta` else `within_noise` (guard the division; see the rubric's
-zero-variance case). Run the **Mechanism audit** (rubric) before keeping — diff this iteration's
-`eval_results.jsonl` against the baseline's (same-count denominator; the gain comes from datapoints
-the change touched); a change that fails the audit (denominator artifact) is `is_best: false`
-(discarded, `basis:audit_failed`), as is any move that does not improve the point estimate in the
-goal's direction (`basis:regression` if significantly worse, else `basis:within_noise`). If
-iteration 1 moves in the goal's direction AND
-passes the audit, it becomes the best (`best_sha` = this commit, `best_score` = after_score), with
-its confidence label recorded. Append the row to `config.json` `iteration_results`, including
-`time_start` (when this iteration began) and `time_end` (now) per **Per-iteration timing**, and
-`score_distribution` per **Per-iteration score distribution**.
+1. **Feasibility probe + ceiling sizing** (`references/rubrics.md` **Feasibility probe**): cheapest
+   offline check that the change can flip failing `val` datapoints, AND confirm the targeted
+   bucket's reachable ceiling clears `min_delta`. If it reaches 0 failing datapoints or its ceiling
+   is below `min_delta`, record `no_change` with the probe result and skip the full eval.
+2. **Mechanical memorization check** (`references/rubrics.md` **Anti-memorization & data
+   isolation**): test every added line of ≥5 words in `git diff` for verbatim 5-gram overlap with
+   any `val` row's `input` or `expected_output`. Review any hit; an unexplained hit discards the
+   iteration (`basis:memorized`) before/regardless of scoring. Record `memorization_check`.
 
-Then report this iteration's score to LLM-Obs (tag `iteration:1`) — see **Report each iteration's
-score to LLM-Obs**.
+### Step 4 — Compute AFTER (re-run the SAME harness, on BOTH splits)
+
+Confirm the harness has not drifted (`git diff --quiet -- <harness_path>`; a modified harness is a
+STOP). Then re-run the committed harness against the changed code — **twice, once per split** — with
+`AUTO_EXP_ITERATION=1` and the derived `AUTO_EXP_RUNS`:
+
+```bash
+AUTO_EXP_SPLIT=val  AUTO_EXP_DATASET_ID=<val_dataset_id>  AUTO_EXP_RUNS=<runs> AUTO_EXP_ITERATION=1 python .auto_experiment/eval_harness.py
+AUTO_EXP_SPLIT=test AUTO_EXP_DATASET_ID=<test_dataset_id> AUTO_EXP_RUNS=<runs> AUTO_EXP_ITERATION=1 python .auto_experiment/eval_harness.py
+```
+
+(In `dataset_mode: local_file`, use `AUTO_EXP_DATA=.auto_experiment/data.{val,test}.jsonl` without
+`AUTO_EXP_DATASET_ID`. In `split_mode: all_rows`, run once with `AUTO_EXP_SPLIT=all`.)
+
+Recompute each split's mean from raw rows to verify it matches stdout to `1e-9`. Price each split's
+rows from `config.json.prices` (or direct `cost_usd`) and evaluate `goal.hold[]` guardrails. Write
+the split-qualified `.auto_experiment/result.json` (schema in `references/rubrics.md`) and commit it
+in the same commit as the change along with both results files (`eval_results.val.jsonl`,
+`holdout/eval_results.test.jsonl`) and any error sidecars.
+
+**Decide, per the keep/discard matrix in `references/rubrics.md` Noise & keep/discard policy:**
+
+- **`test` decides.** `best_score` is the `test` mean; keep requires the `test` point estimate to
+  move in the goal's direction (even if `within_noise`, flagged tentative).
+- **`val` can veto.** `val` up + `test` flat/down within noise → **discard and revert**,
+  `basis:overfit`. `test` up + `val` flat/down → `basis:unreplicated` (keep only if replicated on a
+  second run).
+- **Guardrails can veto.** Any `goal.hold[]` metric regressing outside `guardrail_floors[h]` →
+  discard, `basis:guardrail_regression`.
+- **Mechanism audit can veto.** Diff `eval_results.val.jsonl` vs best (`per_case_means`); verify
+  `excluded` is identical on both splits, `errored` is within tolerance (else void-and-re-run /
+  `basis:void_error_profile`), and paired-set delta agrees with full-set delta within `min_delta`
+  (else `basis:audit_failed`).
+- **Memorization check can veto** (`basis:memorized`).
+- **Label confidence (never gate on it)** using `.auto_experiment/stats.py` on `test`:
+  - `t_two_sample` over run means (`|t| ≥ 2` and `|Δ| ≥ min_delta`, or `SE_diff == 0` with
+    `|Δ| ≥ min_delta`), AND
+  - `paired_bootstrap_delta` + `paired_case_test` over `per_case_means` (`ci_95`, `p_two_sided`,
+    `t_case`, **`n_moved`**).
+- **Suspicion check** (`references/rubrics.md`): if `|test.delta| > max(3 × min_delta, 0.15)` or
+  exceeds the targeted bucket's reachable ceiling, hand-check 3–5 flipped **`val`** rows before
+  accepting; if the judge was gamed, discard (`basis:audit_failed`).
+
+If iteration 1 survives, it becomes best (`best_sha` = this commit, `best_score` = its **`test`**
+mean). Append the row to `config.json.iteration_results` with `time_start`/`time_end`,
+`score_distribution` (`basis: "case_means_test"`), `grader_version`, and `change_class`
+(`REQUIRED` or `TUNE`).
+
+Then rewrite `.auto_experiment/narrative.md` and report iteration 1 (iteration-level + per-case
+events) to LLM-Obs per `references/reporting.md`.
 
 ## Iterations 2+ — hill climb
 
@@ -1193,384 +1352,174 @@ Mirrors `build_followup_prompt`. Baseline is already known — **do not recomput
 
 1. **Restore to the best-so-far**, so a discarded attempt cannot contaminate this one:
    - if a commit was kept → `git reset --hard <best_sha>` (stays on the scratch branch; the
-     committed harness lives in that commit, so it is preserved — do not recreate it; the corpus is
-     not in git at all, it lives in the datasets `config.json` points at).
+     committed harness and `stats.py` live in that commit).
    - if nothing has been kept yet → `git checkout <base_branch> -- <files_to_optimize>` (restore
-     only the target files; the harness lives only in the previous commit on this branch, so a hard
-     reset to base would delete it).
-2. `before_score` = the current best score (from `iteration_results`; iteration-1 baseline if
-   nothing kept yet). Do NOT re-run the baseline.
-3. Reuse the **val dataset** already recorded in `config.json` (`val_dataset_id`) and the committed
-   harness (`eval_harness.py` or `eval_harness.mjs`) — do not reload, rebuild, re-create, or
-   re-split. If the local cache is gone (a reset wipes it — it is gitignored), re-hydrate it from
-   that same id per **Step 1.5**; that is a re-download, not a new split.
-4. Make **ONE new change, different from every previous attempt** (you can see prior attempts in
-   `iteration_results`), aimed at a named `census.json` bucket, **in whichever in-scope file holds
-   the lever** (tool/retrieval/pipeline/config/prompt — not prompt-only). Commit it.
-5. **Feasibility probe first** (rubric): cheap offline check the change can move its target bucket;
-   if it reaches 0 failing datapoints, record `no_change` and skip the full eval. Otherwise re-run
-   the SAME harness on `val` → `after_score`. Re-write `eval_results.jsonl` + `result.json`, commit.
-6. **Keep or discard**: keep as best if the change **moves the point estimate in the goal's
-   direction and passes the Mechanism audit** (rubric) — diff `eval_results.jsonl` vs the best
-   commit's (`git show <best_sha>:.auto_experiment/eval_results.jsonl`); same denominator, gain from
-   datapoints the change touched. Then → update `best_sha`/`best_score`, decision `kept`, with a
-   confidence label from the **two-sample t-test** (`|t| = |after_score − before_score| / SE_diff`,
-   `SE_diff = √(after_stdev²/runs + best_stdev²/runs)`) and the `min_delta` floor: `|t| ≥ 2` and
-   `≥ min_delta` → `significant`; a higher-in-direction move only within noise → kept but
-   `within_noise` (tentative), reasoning must warn the gain could be noise. `SE_diff == 0` →
-   label by `|Δ| ≥ min_delta` (zero-variance rule). Any move that does **not** improve the point
-   estimate in the goal's direction is `discarded`, best unchanged — `basis:regression` if it is
-   *significantly* worse (`significant:true` in the wrong direction), else `basis:within_noise` (a
-   flat/slightly-worse wobble, `significant:false`). A change that fails the mechanism audit
-   (denominator artifact) is `discarded` `basis:audit_failed` regardless of its point estimate.
-   Append the row, including `time_start` (when this iteration began, step 4), `time_end` (now)
-   per **Per-iteration timing**, and `score_distribution` per **Per-iteration score distribution**.
-   (Basis precedence when several could apply: **`audit_failed` > `regression` >
-   `significant` > `within_noise`**.)
-   (A `within_noise` best is the candidate the optional **Higher-power confirmation** re-tests at
-   more runs to *upgrade* its confidence, not to decide the keep.)
-7. Report this iteration's score to LLM-Obs (tag `iteration:<n>`) — see **Report each iteration's
-   score to LLM-Obs**.
+     only the target files so the harness is preserved).
+2. **`before` for each split** = the current best's `val` and `test` means (from `iteration_results`;
+   the iteration-0 baseline if nothing has been kept yet). Do NOT re-run the baseline.
+3. Reuse **both dataset ids** already recorded in `config.json` (`val_dataset_id`,
+   `test_dataset_id`) and the committed harness — do not reload, rebuild, re-create, or re-split.
+   If a local cache is missing (gitignored), re-hydrate it from that same id per **Step 1.5**.
+4. Spawn a fresh sub-agent (with the four verbatim briefing rules) to make **ONE new change,
+   different from every previous attempt**, aimed at a named `census.json` bucket, in whichever
+   in-scope file holds the lever. Commit it.
+5. **Feasibility probe (with ceiling check) and 5-gram memorization check first** (Step 3). Then
+   confirm `git diff --quiet -- <harness_path>`, re-run the SAME harness on **BOTH splits** with
+   `AUTO_EXP_ITERATION=<n>`, verify raw-row mean recomputation, and price the rows. Write both
+   results files + `result.json`, commit.
+6. **Keep or discard** using the exact Step 4 matrix (`test` decides, `val` vetoes `overfit`,
+   guardrails veto `guardrail_regression`, mechanism audit vetoes `audit_failed`, memorization check
+   vetoes `memorized`, suspicion check verifies implausible jumps; `stats.py` labels confidence with
+   both run-level t-test and paired case-level bootstrap + `t_case` + `n_moved`).
+   Basis precedence: **`audit_failed` > `guardrail_regression` > `memorized` > `regression` >
+   `overfit` > `unreplicated` > `significant` > `within_noise`**.
+   Append the row to `config.json.iteration_results` with `time_start`/`time_end`,
+   `score_distribution`, `grader_version`, and `change_class`.
+7. Rewrite `.auto_experiment/narrative.md` and report iteration `<n>` (iteration-level + per-case
+   events) to LLM-Obs per `references/reporting.md`.
 
-## Report each iteration's score to LLM-Obs (every scored iteration)
+## Reporting — read `references/reporting.md`
 
-Once you have a computed score for an iteration, submit **exactly one** eval-metric datapoint to
-LLM-Obs with the `submit_llmobs_experiment_events` MCP tool. Do this once per iteration, right
-after the score is computed and the iteration's commit / `result.json` is written — including
-iteration 1 and the **iteration-0 baseline** (reported at the end of Step 2.4; there `score_value`
-= `before_score` and the decision tag is `decision:baseline`).
+Two channels, and they must always agree: the **LLM-Obs experiment** is the machine record
+(`auto_experiment_score` + split-tagged `auto_experiment_case_score`), and
+**`.auto_experiment/narrative.md`** is the human record (status table + one paragraph, rewritten
+wholesale every iteration and committed).
 
-Immediately after this submission, **recompute `estimated_duration_time`** (the ETA in seconds to
-the end of the whole run — `avg_iteration_elapsed × iterations_left`, → `0` after the last
-iteration; see **Setup** step 5) and `update_llmobs_experiment` — one call, re-sending
-`repo`/`branch`/`model` unchanged.
+`references/reporting.md` is the full authority on:
 
-Call `submit_llmobs_experiment_events` — or, under `datadog_backend: pup`,
-`pup llm-obs experiments events submit --metrics '[{…}]' <EXPERIMENT_ID>` with the same metric objects passed inline — with a single metric shaped exactly like this:
+- **per-iteration LLM-Obs events** (`score_value` = **`test`** score in `val_test` mode, full tag
+  catalogue, Datadog tag-normalization rules, consumer dedup, `promoted` and `regraded` corrections,
+  and `no_change` carried-forward markers);
+- **per-case LLM-Obs events** (`auto_experiment_case_score`, split-tagged `split:test`/`split:val`,
+  trace linkage via `trace_id`/`case_span_id`, 2000-event cap, `per_case_events` tracking);
+- **`narrative.md`** (columns, >20% cost/latency callout, generalization-gap commentary);
+- **the final report** (pooled confirm run, `n_moved`, merge recommendation, `[REQUIRED]`/`[TUNE]`,
+  before/after `val` pairs, failure taxonomy, selection-bias disclosure).
 
-- `experiment_id`: `$experiment-id` (the validated skill argument, also persisted to `config.json`
-  as `dd_auto_experiment_id`). Do not ask the user and do not invent one.
-- `metrics`: an array containing exactly one object with these fields and no others:
-  - `label`: always the literal string `auto_experiment_score`.
-  - `metric_type`: `score`.
-  - `score_value`: the score this iteration produced (`after_score`) — the number computed by the
-    harness, never a literal or a rounded-for-display value.
-  - `timestamp_ms`: the current wall-clock time as an epoch timestamp in **milliseconds**.
-  - `tags`: start with `["iteration:<n>", "git.commit.sha:<sha>", "decision:<decision>"]` and
-    **also add the decision-legibility tags below**. `<n>` is this iteration's number (`1` for the
-    first improvement, `2` for the next, and so on), `<sha>` is the **full 40-character** Git commit
-    SHA of the commit this iteration created for its change — the complete hash from
-    `git rev-parse HEAD` after committing the iteration (e.g.
-    `fd0fbab7c1232e125df7b22d9df856a2ef73ab65`), **never the abbreviated 7/8-char short hash** — and
-    `<decision>` is this iteration's keep/discard decision recorded in `iteration_results` (`kept` or
-    `discarded`; `baseline` for iteration 0; `no_change` for an iteration whose feasibility probe or
-    harness produced no measured score — see **No-change iterations** below).
-  - ⚠️ **Datadog NORMALIZES tag values — encode accordingly.** Tag values are lowercased and some
-    characters are rewritten, so a tag is **not** a byte-faithful channel. Two rules follow, both
-    learned from inspecting really-ingested events rather than from review:
-    - **Never put a leading `+` in a tag value.** It is rewritten to `_`: a tag sent as
-      `delta_vs_best:+0.0447` lands as `delta_vs_best:_0.0447`. The sign — the entire point of a
-      delta — is destroyed. Worse, `-` *survives*, so negatives would land as `-0.1180` while
-      positives land as `_0.1180`, an asymmetric encoding a consumer has to reverse-engineer.
-    - **Never put case-sensitive text in a tag value.** `time_start:2026-07-22T14:31:07Z` lands as
-      `...t14:31:07z`, which is no longer valid ISO-8601 and no longer byte-matches the
-      `iteration_results` row.
-    Keep the faithful values in `config.json`; put only normalization-safe forms in tags (unsigned
-    decimals, integers, lowercase enums, epoch millis).
-  - **Decision-legibility tags (required on every scored iteration).** `score_value` alone hides
-    *how much to trust the move*: a `kept` best can be either a solid, significant gain or a
-    within-noise wobble that was kept only because the point estimate rose — a raw number cannot
-    show which. Surface the decision's basis **and its confidence** as structured, filterable tags
-    so the "why" sits next to the score:
-    - `basis:<significant|within_noise|regression|audit_failed|promoted|baseline|no_change>` — the
-      one-word basis (`significant` = kept, `significant:true` (cleared the t-test **and** `|Δ| ≥
-      min_delta`); `within_noise` = **not significant** (`significant:false` — `|t| < 2` OR
-      `|Δ| < min_delta`), read the score carefully — pair with the `decision` tag: `decision:kept` +
-      `within_noise` is a **tentative best** (point estimate rose in the goal's direction but not
-      significant), while `decision:discarded` + `within_noise` is a not-significant wobble that did
-      **not** beat the best; `regression` = discarded, significantly worse (moved the wrong way);
-      `audit_failed` = discarded, the mechanism audit failed (e.g. the denominator shrank) so the
-      higher mean is an artifact — regardless of the point estimate; `promoted` = a `within_noise`
-      best later confirmed `significant` at higher power).
-    - `delta_vs_best:<X.XXXX>` (**absolute value, no sign character**) plus
-      `delta_sign:<pos|neg|zero>` — the delta against the **previous best** (the number the decision
-      uses), NOT vs baseline. The sign is a separate tag because a leading `+` does not survive tag
-      normalization (see the warning above); splitting it keeps the magnitude filterable and the
-      direction unambiguous in both directions. `delta_sign` is arithmetic (`after − best`), so on a
-      minimize goal an improvement is `neg` — read improvement off `basis:`/`decision:`, not the sign.
-    - `t_stat:<value>` (or `t_stat:null` when `se_diff == 0`) and `significant:<true|false>` — for a
-      `within_noise` best, `significant:false` is what flags the kept score as low-confidence.
-    - These four (`delta_vs_best`, `delta_sign`, `t_stat`, `significant`) describe a **comparison
-      against the previous best**, so they apply only to an iteration that made one. **Iteration 0
-      omits all four** (no previous best, no t-test) — see Step 2.4.
-    - `time_start_ms:<epoch_millis>` and `time_end_ms:<epoch_millis>` — this iteration's wall-clock
-      start/end as **integer epoch milliseconds**, so the experiment view can show per-iteration
-      duration. They must be the exact instants recorded as ISO-8601 in the `iteration_results` row
-      (see **Per-iteration timing**), just expressed as millis; never fabricate or round to a
-      different instant. Epoch millis rather than ISO because tag normalization lowercases the `T`
-      and `Z` of an ISO string, leaving a value that neither parses as ISO-8601 nor byte-matches the
-      row — integers pass through untouched.
-  - **Distribution tags (required on every iteration that has a computed score).** `score_value` is
-    a single mean — it hides whether the iteration scored uniformly well or split into perfect and
-    zero datapoints, which is the difference between "broadly better" and "traded one bucket for
-    another". Publish the row's `score_distribution` (see **Per-iteration score distribution**) as
-    eight tags. Copy them from the `iteration_results` row — the same numbers, never re-derived by
-    hand and never estimated:
-    - **counts, as integers** — `dist_n:<int>`, `dist_zero:<int>`, `dist_perfect:<int>` (cases
-      scored, cases scoring exactly 0.0, cases scoring exactly 1.0).
-    - **nearest-rank five-number summary, 4 decimal places** — `dist_min:<X.XXXX>`,
-      `dist_q1:<X.XXXX>`, `dist_median:<X.XXXX>`, `dist_q3:<X.XXXX>`, `dist_max:<X.XXXX>`.
-  - **Resource-usage tags (every iteration that has a computed score).** `latency_ms_mean:<int>`
-    and `latency_ms_p95:<int>` (the harness always measures these), plus `tokens_per_case:<int>`
-    (`input_tokens_mean + output_tokens_mean`, rounded) and `cost_usd_per_case:<X.XXXXXX>` **only
-    when the harness actually measured them**. **Omit an unmeasured tag rather than sending `0`** —
-    an absent tag reads as unknown, a `0` is a false claim that the iteration was free. Copy them
-    from the row's `usage` block; never re-derive by hand. Omit all four on a `no_change`
-    iteration, for the same reason the `dist_*` tags are omitted.
-
-    **The counts are not decoration — on a near-binary metric they are the only part that moves.**
-    A real run had 26 of 34 cases at exactly 1.0, which pins `q1 = median = q3 = 1.0` and makes the
-    quartiles look frozen across iterations, while `dist_zero` fell 10 → 5 and captured the actual
-    improvement. Publishing quartiles alone would have reported a flat distribution for a run whose
-    distribution changed substantially. The `dist_*` prefix keeps these distinct from `min_delta`, the
-    keep/discard floor, which is unrelated to the score spread. The raw `values` array is **not**
-    tagged (35+ tags per event); it stays in `config.json`. **Omit all eight on a `no_change`
-    iteration** — it has no computed distribution (see **No-change iterations**).
-    **These summarize the last run's per-datapoint spread, not the sample behind `score_value`**
-    (which is the mean across `runs` — see **Per-iteration score distribution**), so
-    `dist_median` will not generally equal `score_value` and a consumer must not read them as
-    quartiles *of* the reported score. Say so in `reasoning` if the two look far apart.
-  - `reasoning`: this iteration's `reasoning` string from `iteration_results`. **Lead with a
-    one-line verdict** that states the decision and its basis in plain terms before the details,
-    e.g. `"KEPT (tentative) — higher point estimate in the goal's direction (Δvs_best +0.016) but
-    within noise (t=0.94, not significant); new best, but the gain may be noise — read the score
-    carefully / confirm at higher power."` Then the usual detail (what was tried, which
-    census bucket, mechanism-audit result). Use the same text recorded in `result.json`; do not
-    fabricate. The lead line + the tags must agree.
-  - Do **not** include `span_id`, `categorical_value`, or `boolean_value`.
-
-Example arguments for iteration 5 whose harness computed a score of `0.72`:
-
-```json
-{
-  "experiment_id": "$experiment-id",
-  "metrics": [
-    {
-      "label": "auto_experiment_score",
-      "metric_type": "score",
-      "score_value": 0.72,
-      "reasoning": "KEPT — significant (Δvs_best +0.048, t=3.1). Rewrote the retrieval query builder to include entity synonyms (targeting the 'missed-retrieval' census bucket); cleared the t-test (|t|≥2) and passed the mechanism audit.",
-      "timestamp_ms": 1752430000000,
-      "tags": ["iteration:5", "git.commit.sha:33ec6e0959bd46b0ea9c337cf6a28a763d3eeb0a", "decision:kept", "basis:significant", "delta_vs_best:0.0480", "delta_sign:pos", "t_stat:3.1", "significant:true", "time_start_ms:1753194667000", "time_end_ms:1753195132000", "dist_n:34", "dist_zero:5", "dist_perfect:26", "dist_min:0.0000", "dist_q1:1.0000", "dist_median:1.0000", "dist_q3:1.0000", "dist_max:1.0000"]
-    }
-  ]
-}
-```
-
-Rules:
-
-- **One `auto_experiment_score` metric per iteration, plus at most one correction.** Submit exactly
-  one *iteration-level* metric per iteration at the time it is scored, and never batch several
-  iterations into one call. This rule governs the `auto_experiment_score` label only — the per-case
-  `auto_experiment_case_score` events below are a different label and are expected to be many per
-  iteration (see **Report per-case scores to LLM-Obs**). The **only**
-  second event allowed for the same iteration is a **promotion correction** (see final-report
-  Higher-power confirmation): re-submitting that iteration with `decision:kept` +
-  `basis:promoted` + `promoted:higher_power_confirmation` after a `within_noise` best is confirmed
-  `significant` at higher power. That correction re-labels confidence; it is not a second
-  measurement.
-- **Consumer dedup rule (state it, honor it).** Because the store is append-only, an iteration may
-  have two events (an earlier `basis:within_noise` and a later promotion correction). Consumers of
-  `auto_experiment_score` MUST dedupe **per `iteration:<n>` tag, keeping the event with the latest
-  `timestamp_ms`** — that event carries the iteration's final decision. Equivalently: a
-  `promoted:higher_power_confirmation` event supersedes any earlier decision for the same
-  `iteration:<n>`. Do not average or count both.
-- The value you submit is the same computed `after_score` recorded in `result.json`; the two must
-  always agree — **except a `no_change` iteration**, which has no computed `after_score` and instead
-  carries forward `best_score` as a `decision:no_change` marker (see **No-change iterations**).
-
-### Report per-case scores to LLM-Obs (every scored iteration)
-
-An iteration mean says a change helped; it cannot say **which cases moved and why**. Right after the
-iteration-level metric, submit **one event per scored datapoint** so every case in every iteration
-is inspectable in the experiment — that is what makes "open any case in any iteration and see what
-produced its score" true rather than aspirational. Without this step the per-case detail exists only
-in `.auto_experiment/eval_results.jsonl` in one person's checkout, and a teammate cannot review the
-run in Datadog at all.
-
-The source is **that iteration's `eval_results.jsonl`**, as written by the harness — copy the
-numbers, never re-derive or round them, and never submit a case the harness did not score.
-
-- `label`: the literal string `auto_experiment_case_score` (deliberately distinct from
-  `auto_experiment_score`, so a consumer can aggregate iteration means without double-counting
-  cases; **never mix the two labels in one aggregate**).
-- `metric_type`: `score`; `score_value`: that case's `score` from `eval_results.jsonl`.
-- `span_id`: the case's experiment span id **when one exists** (discover ids with
-  `list_llmobs_experiment_events`); attaching the metric to the span is what lets the UI open the
-  case directly. With no experiment span, **omit `span_id`** — the event is still submitted and the
-  case is still identified by its `case_id` tag. Never invent a span id to force attachment.
-- `tags`: `["iteration:<n>", "case_id:<eval-set id>", "git.commit.sha:<sha>"]`, plus
-  `trace_id:<id>` / `case_span_id:<id>` when the harness captured the code-under-test's trace
-  linkage (the `trace_id`/`span_id` fields it writes per row — present only when the code under test
-  is instrumented). Those two tags are the jump-off point from a score to the model and tool calls
-  behind it. Tag-normalization rules apply unchanged (lowercase, no leading `+`).
-- `reasoning`: the case's `justification` from `eval_results.jsonl`, truncated to a sane length —
-  the judge's or checker's own words, never a summary you wrote.
-- `timestamp_ms`: the submission time (the same instant for the whole batch is fine).
-
-Mechanics and guards:
-
-- **Batch, but stay within one iteration.** `submit_llmobs_experiment_events` takes an array, so
-  send the cases in batches (~50 per call is a reasonable size). Never mix two iterations' cases in
-  one call, and never re-submit a case already submitted for that iteration.
-- **Cap the volume.** `cases x iterations` grows fast. If `val_case_count x (max_iterations + 1)`
-  exceeds **2000** events, submit per-case events for the **baseline, every kept iteration, and the
-  final held-out comparison** only, and say so in the final report — a partial per-case record that
-  states its scope beats an unbounded one that stalls the run.
-- **Verify the first batch landed**, the same way the iteration metric is verified: the tool's
-  accepted-count response must match the number of metrics sent. If per-case submission fails,
-  **do not fail the run** — record `per_case_events: "failed: <reason>"` in `config.json` and carry
-  on; the iteration-level metric is the load-bearing one.
-- Record `per_case_events` in `config.json` as `"submitted"`, `"partial: <scope>"`, `"failed:
-  <reason>"` or `"skipped: <reason>"` for every run, so the report never claims per-case
-  inspectability the run did not actually deliver.
-- A `no_change` iteration has no scored cases, so it submits **no** per-case events.
-
-Pass the iteration number into the harness as `AUTO_EXP_ITERATION=<n>` on every eval invocation, so
-the rows it writes carry the iteration they belong to (both templates read it).
-
-### No-change iterations — emit a carried-forward marker, not a measurement
-
-A `no_change` iteration (feasibility probe inconclusive, harness wouldn't run, judge unreachable, no
-new commit) has **no computed score**. The event schema still requires a numeric `score_value` and a
-`reasoning`, so you cannot omit them — but you must **not** invent a measurement. Emit a labeled
-carry-forward instead:
-
-- `score_value`: the **current `best_score`** carried forward (the iteration-1 baseline if nothing
-  has been kept yet). This is `no_change`'s only honest value: the best is *unchanged*, so the score
-  is *unchanged*. **Never send `0`** — `0` reads as a catastrophic regression a naive chart plots as
-  a cliff. Carried-forward best plots as a flat line, which is the truth.
-- `tags`: `decision:no_change` — **this tag, not the value, is the discriminator.** A `score_value`
-  alone can never distinguish a no-eval carry-forward from a genuinely-measured `0`; only the
-  `decision` tag can. Consumers of `auto_experiment_score` **must** branch on `decision` — exclude
-  `decision:no_change` from any score aggregate (mean/best-pick), since its value is a marker, not a
-  measurement. **Send no `dist_*` tags** on a `no_change` event: no eval ran, so there is no
-  distribution — carrying the previous best's spread forward would dress a non-measurement up as a
-  measured one. Absent `dist_*` is the honest signal.
-- `reasoning`: state plainly that no full eval ran, why (e.g. the probe result), and that the value
-  is the carried-forward best — not a measured score.
-
-So `no_change` is still submitted (one metric, as every iteration), but it is unambiguously a
-non-measurement: carried-forward value + `decision:no_change`. Do **not** tag it `kept`/`discarded`
-(those assert a real measurement) and do **not** overload the value to signal state.
+Read `references/reporting.md` before the first submission, not after.
 
 ## Stop conditions & guards
 
 - Stop when `iteration == max_iterations`.
-- **Plateau — 3 discarded scored iterations in a row — stop early.** If the last **3 scored**
-  iterations were **all `decision:discarded`**, stop and report the current best with
-  `stop_reason: "plateau (3 consecutive discards)"`. Track the counter across iterations and reset it
-  on every `kept` iteration — **including a `within_noise` keep**: a kept change moved the point
-  estimate in the goal's direction and became the new best, so the search is still finding ground.
-  `no_change` iterations are **neither counted nor reset** (nothing was scored, so they say nothing
-  about the plateau); the **5-in-a-row `no_change`** rule below covers those. So three discards
-  interrupted by a kept within-noise change is *not* a plateau, and three discards separated only by
-  `no_change` iterations *is*. Continuing past a real plateau just burns budget re-proposing changes
-  the eval keeps rejecting; escalate instead (a new census bucket, a different dimension, or accept
-  the ceiling). Distinguish this from a real regression streak.
-  - **Why not "no significant improvement in 3"**, the obvious alternative: on a noisy metric
-    `min_delta` sits above every realistic per-iteration gain (Step 2.4), so *every* iteration is
-    `significant:false` and that rule fires at iteration 3 no matter how well the run is going —
-    including runs whose kept within-noise steps compound into a large, significant total gain by
-    iteration 10. It would stop exactly the runs this skill exists to perform, and it contradicts the
-    keep rule, which deliberately keeps within-noise improvements (Step 4 and
-    `references/rubrics.md`). Significance is a **confidence label**, never a stop condition; the
-    honest signal that the search is stuck is the
-    eval **rejecting** what's proposed. Confirm the compounded total at the end instead — the
-    **Higher-power confirmation** below and the held-out headline are where a chain of tentative
-    steps gets tested as one effect.
-  - Report `plateau_discard_streak` (the final value of the counter) in `final_result.reasoning` so
-    a reader can tell a plateau stop from a budget stop.
-- **A change with no computable score is `no_change`, never a fabricated number** (harness won't
-  run / no new commit / judge unreachable / feasibility probe reached 0). Record the blocker in
-  `reasoning`. Its LLM-Obs submission is the carried-forward marker (`decision:no_change`,
-  `score_value` = current best), not a measured score — see **No-change iterations**.
-- Track consecutive `no_change` iterations; after **5 in a row**, stop early and report the best
-  result so far with a stop reason (do not keep burning iterations).
+- **Plateau — 3 consecutive discarded scored iterations → Stall taxonomy, THEN stop.** Track
+  `plateau_discard_streak`: increment on every `decision:discarded` scored iteration and reset to
+  `0` on every `decision:kept` iteration — **including a `within_noise` keep** (significance is a
+  confidence label, never a stop condition, so chains of kept tentative steps can still compound).
+  `no_change` iterations neither increment nor reset the streak.
+  - On the **first** time `plateau_discard_streak == 3` (at most once per run, and only if ≥2
+    iterations remain), do **not** stop immediately and do **not** make a fourth blind guess. Spend
+    one iteration on the **Stall taxonomy** (`references/rubrics.md`): fresh describers over
+    remaining `val` failures bucketed by root cause (`decision:no_change`, `basis:stall_triage`,
+    saved to `census.json.stall_buckets`). Dispatch on what it finds:
+    - `artifact_gap` → reset `plateau_discard_streak` to `0` and continue (bad-lever streak, not a
+      ceiling).
+    - `grader_disagreement` → run the grader-disagreement path (user approval → snapshot →
+      `AUTO_EXP_REGRADE=1` → check ranking flip → re-submit `basis:regraded`).
+    - `harness_infra` → fix harness, exclude errored rows, void-and-re-run affected rounds.
+    - `structural` → reorganize or run one `breadth_pass` (if ≥6 small buckets); if the lever sits
+      **outside** `files_to_optimize`, stop and report the scope finding.
+    - `variance` → stop with `stop_reason: "noise floor reached (stall: variance)"` and offer higher
+      `max_runs` or a larger corpus.
+  - If `stall_triage` finds nothing actionable, or if `plateau_discard_streak == 3` triggers again
+    after `stall_triage` already ran (or <2 iterations remain), stop and report the current best
+    with `stop_reason: "plateau (3 consecutive discards)"`. Always record `plateau_discard_streak`
+    in `final_result`.
+- **A change with no computable score is `no_change`, never a fabricated number.** Record the
+  blocker in `reasoning` and emit the `decision:no_change` carry-forward marker per
+  `references/reporting.md`.
+- Track consecutive `no_change` iterations; after **5 in a row**, stop early and report best so far.
 
 ## Final report
 
-1. Ask yourself the run-level wrap-up and write `final_result` into `config.json`:
-   `{ "baseline_score", "best_score", "best_iteration", "best_sha", "iterations_run",
-   "stop_reason", "reasoning", "noise_calibration" }` (reasoning = what was tried across all
-   iterations, what worked, what didn't, why the winner won). `noise_calibration` records the
-   Step 2.4 derivation — **this is where `runs`/`min_delta` are first shown to the user**, since
-   they were never intake params:
-   `{ "runs_pilot", "runs_final", "baseline_stdev", "run_means", "min_delta",
-   "resolution_note" }` — where `resolution_note` is the plain-language statement of what this
-   budget could see ("effects below `min_delta` cannot be confirmed at `max_runs` runs; raising it
-   to N would resolve `<value>`"), per Step 2.4. State in the
-   summary that `runs`/`min_delta` were **computed from the measured baseline noise** (not chosen),
-   with the reasoning, so the user sees the confidence labeling that accompanied every keep/discard
-   decision.
-2. **Higher-power confirmation of a `within_noise` best** (**optional, but recommended when the final
-   best is `within_noise`**; skip it if the best is already `significant`). If you do it, do it
-   BEFORE the held-out test and before naming the best. If the current best was kept only
-   `within_noise` (its keep-time delta vs the prior best was in the goal's direction but
-   `significant:false`), its improvement is real-in-direction but **low-confidence** — worth
-   confirming so the headline is not a noise wobble. Re-run the **current best and the prior best
-   back-to-back at the `max_runs` ceiling** on `val` and **pool with the existing runs** (e.g.
-   3 + 3 → 6 per side — `max_runs` caps each harness invocation's `runs`, NOT the pooled total, so
-   pooling two invocations legitimately yields `n > max_runs` per side), then recompute
-   `|t| = |Δ| / SE_diff` (`SE_diff = √(stdev_best²/n_best + stdev_prior²/n_prior)`). The best does
-   **not** change here — it is already the highest-in-direction candidate; this step only re-labels
-   its **confidence**. If `|t| ≥ 2` AND `|Δ| ≥ min_delta` (floor still applies), relabel it
-   `significant` (basis `promoted`); otherwise it stays kept but `within_noise`, with the
-   higher-power numbers recorded. If `SE_diff == 0`, use `|Δ| ≥ min_delta` in the goal's direction
-   (zero-variance rule). The raw `pooled_stdev` does NOT shrink with more runs — only `SE_diff`
-   does, which is the point of the extra runs. Do this for the **single** best only — not every
-   within-band wobble — per the rubric's **Higher-power confirmation** rule.
-   - **Propagate a promotion to LLM-Obs.** The best's metric was already submitted with its
-     iteration-level `basis:within_noise`. If confirmation upgrades it to `significant`, that tag is
-     now stale. Re-submit that iteration's metric (same `iteration:<n>`, same sha, same
-     `score_value`, same `dist_*` tags — the confirmation re-labels confidence, it does not restate
-     the distribution) with `decision:kept` + `basis:promoted` + a `promoted:higher_power_confirmation`
-     tag and a `reasoning` stating it supersedes the earlier `within_noise` label (cite the t-test).
-     This is the one sanctioned exception to "exactly one metric per iteration" — the later event is
-     a correction, not a second measurement. Leave a best that stays `within_noise` as-is.
-3. **Held-out `test` comparison (the real headline).** Run the harness once on the **baseline**
-   commit and once on the **best** commit against the **held-out test dataset**
-   (`AUTO_EXP_DATASET_ID=<test_dataset_id>`; hydrate its cache now — this is the first and only time
-   the run reads it), both at the derived `runs` count. Report the
-   baseline-vs-best `test` delta with its two-sample t-test (`|t| = |Δ|/SE_diff ≥ 2` AND
-   `|Δ| ≥ min_delta`; if `SE_diff == 0`, `|Δ| ≥ min_delta` in direction — the same **confidence
-   label** the keep decision uses) as the run's result — the `val` hill-climb gain is not the
-   headline.
-   **Report the paired case-level test next to it** (rubric: **Two kinds of uncertainty**): pair
-   the two sides' `score_mean` by eval-set `id`, compute `|t_case| = |mean_d| / (sd_d/√n_cases)`,
-   and state `n_moved` — how many cases actually changed. The run-level t answers "does this
-   reproduce on rerun"; only the paired test speaks to "would this hold on other cases", and a
-   headline carried by one or two flipped cases **must say so in the same sentence as the number**. If `test` improves in the goal's direction but is not significant, keep the best as best
-   but **flag it tentative** and say plainly the `test` win is within noise / did not clearly
-   generalize (read the number carefully). Only if `test` shows **no improvement in the goal's
-   direction** (flat or a regression) treat baseline as best.
-4. Print a per-iteration table (iteration, val delta, decision, sha) and name the best commit.
-5. **If nothing beat the baseline on `test`**: report the baseline as the best result and leave the
-   original code in place (`best_sha` empty). Do not fabricate an improvement.
-6. Tell the user the scratch branch + best commit so they can open a PR from it if they want.
+Follow these steps **in exact order** — `final_result` is written **after** the pooled `test`
+confirm run so `config.json` always holds the confirmed `test` numbers, never stale `val` scores.
+Full presentation contract is in `references/reporting.md`.
+
+1. **Higher-power confirmation of a `within_noise` best (optional, recommended when the best is
+   `within_noise`; skip if already `significant`).** Re-run the **current best and the prior best**
+   back-to-back on **`test`** (`AUTO_EXP_SPLIT=test`) at `max_runs`, **pool** with existing runs,
+   and recompute `t_two_sample`, `paired_bootstrap_delta`, and `paired_case_test`. If it now clears
+   `|t| ≥ 2` and `|Δ| ≥ min_delta` (or `SE_diff == 0` and `|Δ| ≥ min_delta`), re-submit that
+   iteration's LLM-Obs metric with `decision:kept` + `basis:promoted` +
+   `promoted:higher_power_confirmation` (superseding the earlier `within_noise` tag).
+2. **The pooled `test` confirm run (the real headline).** Every iteration already scored `test`, so
+   `test` acted as a selection set across `selection_rounds` iterations. Mitigate selection bias by
+   re-running the harness on the **baseline code** and the **best code** against **`test`** at
+   `max_runs`, writing to separate output files so neither overwrites committed iteration results:
+   - Restore baseline code without deleting the harness:
+     `git checkout <start_sha> -- <files_to_optimize>`
+     Run:
+     `AUTO_EXP_SPLIT=test AUTO_EXP_DATASET_ID=<test_dataset_id> AUTO_EXP_RUNS=<max_runs> AUTO_EXP_RESULTS=.auto_experiment/holdout/confirm_baseline.test.jsonl python .auto_experiment/eval_harness.py`
+     (In `local_file` mode, use `AUTO_EXP_DATA=.auto_experiment/data.test.jsonl` instead of
+     `AUTO_EXP_DATASET_ID`; never pass both.)
+   - Restore best code:
+     `git checkout <best_sha> -- <files_to_optimize>`
+     Run:
+     `AUTO_EXP_SPLIT=test AUTO_EXP_DATASET_ID=<test_dataset_id> AUTO_EXP_RUNS=<max_runs> AUTO_EXP_RESULTS=.auto_experiment/holdout/confirm_best.test.jsonl python .auto_experiment/eval_harness.py`
+   - **Pool** each side's confirm runs with its already-recorded `test` runs, and compute via
+     `.auto_experiment/stats.py`:
+     - `paired_bootstrap_delta` (`delta`, `ci_95`, `p_two_sided`, `n_paired`, `n_moved`) — primary;
+     - `paired_case_test` (`mean_d`, `sd_d`, `t_case`, `n_cases`, `n_moved`);
+     - `t_two_sample` over pooled run means (with `min_delta` floor) — secondary;
+     - `wilson` pass-rate intervals when `is_binary` is true.
+   - *(If a 3-way split `val` / `select` / `test` was chosen at intake, run baseline and best on the
+     untouched `test` split here and report that as an unbiased holdout instead. If `split_mode:
+     all_rows`, skip the holdout claim and label the baseline-vs-best numbers explicitly in-sample.)*
+3. **Determine `merge_recommendation`:**
+   - If `test` shows **no improvement in the goal's direction** (flat or regression) →
+     `merge_recommendation = "do_not_merge_regression"`, leave original code in place
+     (`best_sha = ""`), report baseline as best.
+   - If `test` improves in direction, but the bootstrap CI straddles zero OR paired test is not
+     significant (`t_case < 2` or `n_moved ≤ 2` or within noise) →
+     `merge_recommendation = "do_not_merge_within_noise"`; keep `best_sha` pointing at the winner
+     but explicitly recommend **not merging** and state the uncertainty.
+   - Otherwise (confirmed gain clearing noise) → `merge_recommendation = "merge"`.
+4. **Write `final_result` into `config.json` (and commit):**
+   ```json
+   {
+     "split_mode": "val_test",
+     "best_iteration": <int|0>,
+     "best_sha": "<full 40-char sha or empty string>",
+     "iterations_run": <int>,
+     "selection_rounds": <int — scored iterations that selected on test>,
+     "plateau_discard_streak": <int>,
+     "stop_reason": "<reason>",
+     "merge_recommendation": "merge|do_not_merge_within_noise|do_not_merge_regression",
+     "val":  {"dataset_id": "...", "case_count": <int>, "baseline_score": <float>, "best_score": <float>, "delta": <float>},
+     "test": {"dataset_id": "...", "case_count": <int>, "baseline_score": <float>, "best_score": <float>,
+              "delta": <float>, "t_stat": <float|null>, "bootstrap": {...}, "paired_case": {...},
+              "n_moved": <int>, "pooled_runs_per_side": <int>},
+     "noise_calibration": {"runs_pilot": 3, "runs_final": <int>, "baseline_stdev_val": <float>,
+                           "baseline_stdev_test": <float>, "run_means": {...}, "min_delta": <float>,
+                           "judge_flip_rate": <float>, "guardrail_floors": {...},
+                           "resolution_note": "<plain-language statement of what this budget resolved>"},
+     "reasoning": "<what was tried, what worked/failed, why the winner won, selection-bias disclosure>"
+   }
+   ```
+5. **Final verification gate — run BEFORE marking the experiment completed:**
+   - If `split_mode != "all_rows"`: confirm `final_result.test` is populated, its `dataset_id` (or
+     `data_path`) is the **`test`** split (never `val`), `scored + excluded == test_case_count` on
+     both baseline and best confirm runs, and `stdout.split == "test"` was verified on both.
+   - Confirm `merge_recommendation`, `selection_rounds`, `n_moved`, and `noise_calibration` are all
+     populated in `config.json`.
+   - If any check fails, fix it before proceeding to step 6.
+6. **Print the final report** (per `references/reporting.md`): confirmed `test` headline with
+   bootstrap CI + `t_case` + `n_moved` in the same sentence + selection-bias disclosure (`"test
+   picked the winner across N iterations, so expect shrinkage relative to a never-selected
+   holdout"`), `merge_recommendation`, final `narrative.md` status table, `[REQUIRED]`/`[TUNE]` tags
+   on kept iterations, 2–3 before/after `val` pairs, failure taxonomy of remaining zeros, next
+   levers (including out-of-scope buckets), scratch branch + best commit, and the LLM-Obs
+   experiment link.
 7. **Mark the experiment finished in LLM-Obs.** Call `update_llmobs_experiment` with
-   `experiment_id` = `$experiment-id` exactly once at the very end — after
-   the last iteration, or immediately whenever you give up early. Set `status: "completed"` for any
-   run that reached the final report (including one where baseline stayed best — a run that
-   finished cleanly is completed, not failed). Set `status: "failed"` with a short `error` when the
-   run could not finish — the harness never ran, setup was blocked, or you abandoned before any
-   scored iteration. This status update is separate from the per-iteration metric submissions; make
-   it once, last.
+   `experiment_id` = `$experiment-id` exactly once at the very end — after the final verification
+   gate passes, or immediately if giving up early. Set `status: "completed"` for any run that
+   reached the final report (even if baseline stayed best); set `status: "failed"` with a short
+   `error` only when the run could not finish.
 
 ## Notes
 
 - Every score is computed by running code. If you ever find yourself about to type a score
   number, stop — run the harness instead.
-- Keep `.auto_experiment/` committed **except `cache/` and `data*.jsonl`** (gitignored corpus
-  data); the committed part plus the dataset ids in `config.json` is the reproducible record of the
-  run.
+- Keep `.auto_experiment/` committed **except `cache/`, `holdout/cache/`, and `data*.jsonl`**
+  (gitignored corpus data); the committed measurements plus the dataset ids in `config.json` are
+  the reproducible record of the run.
