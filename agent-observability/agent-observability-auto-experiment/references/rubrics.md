@@ -508,6 +508,7 @@ keys, env vars, and failure classes. A change to either is a change to both.
 - `AUTO_EXP_DATASET_ID` or `AUTO_EXP_DATA` (exactly ONE; setting both is a **hard error** so a
   stale `AUTO_EXP_DATA` can never silently shadow `AUTO_EXP_DATASET_ID`)
 - `AUTO_EXP_RESULTS` (optional explicit output file path, e.g. for confirm runs)
+- `AUTO_EXP_WORKERS` (optional per-pass concurrency, default `1`; set `4`–`8` for I/O-bound LLM calls without rewriting the harness; preserves deterministic row order)
 - `AUTO_EXP_RUNS`, `AUTO_EXP_EVALUATORS`, `AUTO_EXP_DOMAIN_NOTES`, `AUTO_EXP_ITERATION`,
   `AUTO_EXP_REGRADE`
 

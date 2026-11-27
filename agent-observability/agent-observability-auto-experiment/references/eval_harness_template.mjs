@@ -81,6 +81,10 @@ const REGRADE = !["", "0", "false", "False"].includes((process.env.AUTO_EXP_REGR
 // Floor of 3 (the pilot value); the orchestrator owns the upper cap (`max_runs`, default 5).
 const RUNS = Math.max(3, parseInt(process.env.AUTO_EXP_RUNS || "3", 10));
 
+// Optional per-pass concurrency (default 1 = sequential). Set AUTO_EXP_WORKERS=4..8 for I/O-bound
+// LLM calls so agents do not have to rewrite this harness for concurrency. Row order is preserved.
+const WORKERS = Math.max(1, parseInt(process.env.AUTO_EXP_WORKERS || "1", 10));
+
 // The EVALUATOR text (config `evaluators` field) — NEVER `goal`.
 const EVALUATORS =
   process.env.AUTO_EXP_EVALUATORS || "<paste the config `evaluators` rubric here>";
@@ -341,12 +345,33 @@ async function evaluateLine(line, rep) {
   ];
 }
 
+async function mapConcurrent(items, concurrency, fn) {
+  if (concurrency <= 1 || items.length <= 1) {
+    const out = [];
+    for (let i = 0; i < items.length; i += 1) out.push(await fn(items[i], i));
+    return out;
+  }
+  const out = new Array(items.length);
+  let nextIdx = 0;
+  const workerCount = Math.min(concurrency, items.length);
+  const workers = Array.from({ length: workerCount }, async () => {
+    while (true) {
+      const idx = nextIdx;
+      nextIdx += 1;
+      if (idx >= items.length) break;
+      out[idx] = await fn(items[idx], idx);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
 async function onePass(lines, rep) {
+  const outcomes = await mapConcurrent(lines, WORKERS, (line) => evaluateLine(line, rep));
   const results = [];
   const errors = [];
   let excluded = 0;
-  for (const line of lines) {
-    const [result, error] = await evaluateLine(line, rep);
+  for (const [result, error] of outcomes) {
     if (error !== null) errors.push(error);
     else if (result === null) excluded += 1;
     else results.push(result);
@@ -368,9 +393,7 @@ async function regrade(file) {
   if (DATA && fs.existsSync(DATA)) {
     for (const row of readJsonl(DATA)) byId.set(row.id, row);
   }
-  const results = [];
-  const errors = [];
-  for (const row of rows) {
+  const outcomes = await mapConcurrent(rows, WORKERS, async (row) => {
     const line = byId.get(row.id) || { id: row.id, input: row.input };
     const generation = {
       output: row.output || "",
@@ -382,19 +405,28 @@ async function regrade(file) {
     };
     try {
       const [score, justification] = await grade(line, generation);
-      results.push({ ...row, score: Number(score), justification });
+      return [{ ...row, score: Number(score), justification }, null];
     } catch (err) {
-      errors.push({
-        id: row.id,
-        split: SPLIT,
-        rep: row.rep,
-        iteration: row.iteration ?? ITERATION,
-        failure_class: err instanceof HarnessError ? err.failureClass : "judge_error",
-        message: String(err && err.message ? err.message : err).slice(0, 1000),
-        latency_s: null,
-        timestamp: Date.now(),
-      });
+      return [
+        null,
+        {
+          id: row.id,
+          split: SPLIT,
+          rep: row.rep,
+          iteration: row.iteration ?? ITERATION,
+          failure_class: err instanceof HarnessError ? err.failureClass : "judge_error",
+          message: String(err && err.message ? err.message : err).slice(0, 1000),
+          latency_s: null,
+          timestamp: Date.now(),
+        },
+      ];
     }
+  });
+  const results = [];
+  const errors = [];
+  for (const [result, error] of outcomes) {
+    if (error !== null) errors.push(error);
+    else if (result !== null) results.push(result);
   }
   return [results, errors];
 }

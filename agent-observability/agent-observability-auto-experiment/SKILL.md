@@ -1111,8 +1111,8 @@ every iteration (always Python regardless of `runtime`).
 
 Record `runtime` and `harness_path` in `config.json`. Both templates share the exact same env vars
 (`AUTO_EXP_SPLIT`, `AUTO_EXP_DATASET_ID`, `AUTO_EXP_DATA`, `AUTO_EXP_RESULTS`, `AUTO_EXP_RUNS`,
-`AUTO_EXP_EVALUATORS`, `AUTO_EXP_DOMAIN_NOTES`, `AUTO_EXP_ITERATION`, `AUTO_EXP_REGRADE`) and stdout
-JSON contract:
+`AUTO_EXP_WORKERS`, `AUTO_EXP_EVALUATORS`, `AUTO_EXP_DOMAIN_NOTES`, `AUTO_EXP_ITERATION`,
+`AUTO_EXP_REGRADE`) and stdout JSON contract:
 
 ```
 {split, dataset_id, data_path, mean, stdev, runs, scored, excluded, errored, errored_cases,

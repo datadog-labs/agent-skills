@@ -65,6 +65,7 @@ import re
 import statistics
 import time
 import traceback
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 HERE = Path(__file__).parent
@@ -111,6 +112,10 @@ REGRADE = os.environ.get("AUTO_EXP_REGRADE", "").strip() not in ("", "0", "false
 # (`max_runs`, default 5 — the test split is the smaller and noisier one, and it is the split the
 # keep decision is made on). Same value across every iteration and both splits.
 RUNS = max(3, int(os.environ.get("AUTO_EXP_RUNS", "3")))
+
+# Optional per-pass concurrency (default 1 = sequential). Set AUTO_EXP_WORKERS=4..8 for I/O-bound
+# LLM calls so agents do not have to rewrite this harness for concurrency. Row order is preserved.
+WORKERS = max(1, int(os.environ.get("AUTO_EXP_WORKERS", "1")))
 
 # The EVALUATOR text (config `evaluators` field), copied from .auto_experiment/config.json and used
 # verbatim as the judge rubric so scoring is reproducible. This is the `evaluators` field, NOT
@@ -472,12 +477,16 @@ def evaluate_line(line: dict, rep: int) -> "tuple[dict | None, dict | None]":
 
 
 def _one_pass(lines: list, rep: int) -> "tuple[list[dict], list[dict], int]":
-    """Score every scoreable line ONCE. Returns (results, errors, excluded_count)."""
+    """Score every scoreable line ONCE, preserving input row order. Returns (results, errors, excluded)."""
+    if WORKERS <= 1 or len(lines) <= 1:
+        outcomes = [evaluate_line(line, rep) for line in lines]
+    else:
+        with ThreadPoolExecutor(max_workers=min(WORKERS, len(lines))) as pool:
+            outcomes = list(pool.map(lambda line: evaluate_line(line, rep), lines))
     results: list[dict] = []
     errors: list[dict] = []
     excluded = 0
-    for line in lines:
-        result, error = evaluate_line(line, rep)
+    for result, error in outcomes:
         if error is not None:
             errors.append(error)
         elif result is None:
@@ -485,6 +494,32 @@ def _one_pass(lines: list, rep: int) -> "tuple[list[dict], list[dict], int]":
         else:
             results.append(result)
     return results, errors, excluded
+
+
+def _regrade_one(row: dict, by_id: dict) -> "tuple[dict | None, dict | None]":
+    line = by_id.get(row.get("id"), {"id": row.get("id"), "input": row.get("input")})
+    generation = {
+        "output": row.get("output") or "",
+        "model": row.get("model"),
+        "usage": row.get("usage") or {},
+        "latency_s": row.get("latency_s"),
+        "stop_reason": row.get("stop_reason"),
+        "refusal": bool(row.get("refusal")),
+    }
+    try:
+        score, justification = grade(line, generation)
+    except HarnessError as exc:
+        return None, {
+            "id": row.get("id"),
+            "split": SPLIT,
+            "rep": row.get("rep"),
+            "iteration": row.get("iteration", ITERATION),
+            "failure_class": exc.failure_class,
+            "message": exc.message[:1000],
+            "latency_s": None,
+            "timestamp": int(time.time() * 1000),
+        }
+    return {**row, "score": float(score), "justification": justification}, None
 
 
 def _regrade(path: Path) -> "tuple[list[dict], list[dict]]":
@@ -506,33 +541,18 @@ def _regrade(path: Path) -> "tuple[list[dict], list[dict]]":
         if raw.strip():
             row = json.loads(raw)
             by_id[row.get("id")] = row
+    if WORKERS <= 1 or len(rows) <= 1:
+        outcomes = [_regrade_one(row, by_id) for row in rows]
+    else:
+        with ThreadPoolExecutor(max_workers=min(WORKERS, len(rows))) as pool:
+            outcomes = list(pool.map(lambda row: _regrade_one(row, by_id), rows))
     results: list[dict] = []
     errors: list[dict] = []
-    for row in rows:
-        line = by_id.get(row.get("id"), {"id": row.get("id"), "input": row.get("input")})
-        generation = {
-            "output": row.get("output") or "",
-            "model": row.get("model"),
-            "usage": row.get("usage") or {},
-            "latency_s": row.get("latency_s"),
-            "stop_reason": row.get("stop_reason"),
-            "refusal": bool(row.get("refusal")),
-        }
-        try:
-            score, justification = grade(line, generation)
-        except HarnessError as exc:
-            errors.append({
-                "id": row.get("id"),
-                "split": SPLIT,
-                "rep": row.get("rep"),
-                "iteration": row.get("iteration", ITERATION),
-                "failure_class": exc.failure_class,
-                "message": exc.message[:1000],
-                "latency_s": None,
-                "timestamp": int(time.time() * 1000),
-            })
-            continue
-        results.append({**row, "score": float(score), "justification": justification})
+    for result, error in outcomes:
+        if error is not None:
+            errors.append(error)
+        elif result is not None:
+            results.append(result)
     return results, errors
 
 
