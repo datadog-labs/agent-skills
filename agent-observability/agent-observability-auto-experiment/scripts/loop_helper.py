@@ -8,6 +8,9 @@ final verification gate out of prose and into tested stdlib Python.
 
 Subcommands:
   split               Stratified deterministic corpus split + corpus-size gate
+  audit-corpus        Gate 1 Tier-1 corpus checks (dupes, schema, lengths, zero split overlap)
+  verify-mean         Gate 1 + per-iteration raw-row mean recomputation check to 1e-9
+  check-climbability  Gate 3 climbability, saturation class, and val/test population check
   calibrate           Resolvable min_delta, runs, and per-guardrail floors
   check-memorization  5-gram overlap scan over git diff added lines vs val rows
   distribution        Nearest-rank five-number summary + zero/perfect counts
@@ -227,6 +230,177 @@ def cmd_split(args: argparse.Namespace) -> None:
         "split_seed": args.seed,
         "small_corpus_warning": n < 50,
     }))
+
+
+def cmd_audit_corpus(args: argparse.Namespace) -> None:
+    split_ids: dict[str, set[str]] = {}
+    split_stats: dict[str, dict] = {}
+    seen_inputs: dict[str, int] = {}
+    errors: list[str] = []
+
+    for spec in args.splits:
+        if "=" not in spec:
+            raise SystemExit(f"expected name=path for --splits, got {spec!r}")
+        name, path_str = spec.split("=", 1)
+        rows = _read_jsonl(Path(path_str))
+        ids: set[str] = set()
+        missing_id = 0
+        missing_input = 0
+        in_lens: list[int] = []
+        ref_lens: list[int] = []
+        for r in rows:
+            cid = r.get("id")
+            if cid in (None, ""):
+                missing_id += 1
+            else:
+                ids.add(str(cid))
+            inp = r.get("input")
+            if inp in (None, ""):
+                missing_input += 1
+            else:
+                text = inp if isinstance(inp, str) else json.dumps(inp, sort_keys=True)
+                in_lens.append(len(text))
+                seen_inputs[text] = seen_inputs.get(text, 0) + 1
+            ref = r.get("expected_output")
+            if ref not in (None, "", [], {}):
+                ref_lens.append(len(ref if isinstance(ref, str) else json.dumps(ref)))
+        if missing_id:
+            errors.append(f"{name}: {missing_id} rows missing id")
+        if missing_input:
+            errors.append(f"{name}: {missing_input} rows missing input")
+        in_sorted = sorted(in_lens)
+        split_ids[name] = ids
+        split_stats[name] = {
+            "rows": len(rows),
+            "unique_ids": len(ids),
+            "missing_id": missing_id,
+            "missing_input": missing_input,
+            "input_len_min": in_sorted[0] if in_sorted else None,
+            "input_len_median": in_sorted[len(in_sorted) // 2] if in_sorted else None,
+            "input_len_max": in_sorted[-1] if in_sorted else None,
+            "rows_with_reference": len(ref_lens),
+        }
+
+    overlap_pairs: dict[str, list[str]] = {}
+    names = sorted(split_ids)
+    for i in range(len(names)):
+        for j in range(i + 1, len(names)):
+            a, b = names[i], names[j]
+            ov = sorted(split_ids[a] & split_ids[b])
+            if ov:
+                overlap_pairs[f"{a}&{b}"] = ov[:20]
+                errors.append(f"overlap between {a} and {b}: {len(ov)} shared ids")
+
+    dup_inputs = sum(c - 1 for c in seen_inputs.values() if c > 1)
+    total_rows = sum(s["rows"] for s in split_stats.values())
+    out = {
+        "ok": not errors,
+        "total_rows": total_rows,
+        "exact_duplicate_inputs": dup_inputs,
+        "duplicate_rate": round(dup_inputs / total_rows, 4) if total_rows else 0.0,
+        "overlap_ids": overlap_pairs,
+        "splits": split_stats,
+        "errors": errors,
+    }
+    print(json.dumps(out, indent=2))
+    if errors:
+        raise SystemExit(1)
+
+
+def cmd_verify_mean(args: argparse.Namespace) -> None:
+    rows = _read_jsonl(Path(args.results_jsonl))
+    if not rows:
+        raise SystemExit(f"no rows in {args.results_jsonl}")
+    by_rep: dict[int, list[float]] = {}
+    for row in rows:
+        by_rep.setdefault(int(row.get("rep", 0)), []).append(float(row["score"]))
+    rep_means = [sum(v) / len(v) for _, v in sorted(by_rep.items()) if v]
+    recomputed = sum(rep_means) / len(rep_means)
+    printed = float(args.printed_mean)
+    diff = abs(recomputed - printed)
+    ok = diff <= 1e-9
+    print(json.dumps({
+        "ok": ok,
+        "recomputed_mean": recomputed,
+        "printed_mean": printed,
+        "abs_diff": diff,
+        "reps": len(rep_means),
+    }))
+    if not ok:
+        raise SystemExit(1)
+
+
+def cmd_check_climbability(args: argparse.Namespace) -> None:
+    stats = _load_stats()
+    test_obj = json.loads(Path(args.test_stdout).read_text())
+    pcm = test_obj["per_case_means"]
+    vals = [float(v) for v in pcm.values()]
+    if not vals:
+        raise SystemExit("empty per_case_means in --test-stdout")
+    test_mean = float(test_obj["mean"])
+    nf_test = stats.noise_floor(pcm)
+    higher = args.direction == "higher"
+    headroom = round((1.0 - test_mean) if higher else test_mean, 4)
+    min_ship = float(args.min_shippable_delta)
+
+    v_min, v_max = min(vals), max(vals)
+    if v_max == 0.0:
+        sat = "always_zero"
+    elif v_min == 1.0:
+        sat = "perfect"
+    elif test_mean >= 0.99 and v_min < 1.0:
+        sat = "saturated"
+    elif test_mean < 0.70:
+        sat = "struggling"
+    else:
+        sat = "interesting"
+
+    pop_check = None
+    if args.val_stdout and args.split_mode != "all_rows":
+        val_obj = json.loads(Path(args.val_stdout).read_text())
+        val_mean = float(val_obj["mean"])
+        gap = abs(val_mean - test_mean)
+        t_pop = stats.t_two_sample(test_mean, float(test_obj["stdev"]), val_mean, float(val_obj["stdev"]), int(test_obj["runs"]), int(val_obj["runs"]))
+        if t_pop is not None:
+            threshold = round(2.0 * t_pop["se_diff"], 4)
+        else:
+            nf_val = stats.noise_floor(val_obj["per_case_means"]) or 0.0
+            threshold = round(max(nf_val, nf_test or 0.0), 4)
+        agree = gap <= threshold
+        pop_check = {
+            "agree": agree,
+            "val_mean": round(val_mean, 6),
+            "test_mean": round(test_mean, 6),
+            "gap": round(gap, 6),
+            "threshold": threshold,
+            "needs_redraw": not agree,
+        }
+
+    stops = []
+    if sat in ("always_zero", "perfect"):
+        stops.append(f"saturation_class={sat}")
+    if nf_test is not None and nf_test > min_ship:
+        stops.append(f"noise_floor ({nf_test:.4f}) > min_shippable_delta ({min_ship:.4f})")
+    if nf_test is not None and nf_test > headroom:
+        stops.append(f"noise_floor ({nf_test:.4f}) > headroom ({headroom:.4f})")
+    if pop_check is not None and not pop_check["agree"]:
+        stops.append(f"val/test baselines disagree (gap={pop_check['gap']:.4f} > {pop_check['threshold']:.4f}) — eligible for 1 split redraw")
+
+    if stops:
+        preflight = "STOP: " + "; ".join(stops)
+    elif sat == "saturated":
+        preflight = "GO with caveat: metric is saturated (mean >= 0.99); consider switching goal.target to cost_usd or latency_s"
+    else:
+        preflight = "GO"
+
+    print(json.dumps({
+        "noise_floor_test": nf_test,
+        "headroom": headroom,
+        "min_shippable_delta": min_ship,
+        "saturation_class": sat,
+        "population_check": pop_check,
+        "preflight": preflight,
+    }, indent=2))
 
 
 def cmd_calibrate(args: argparse.Namespace) -> None:
@@ -1068,6 +1242,23 @@ def main() -> None:
     sp.add_argument("--three-way", action="store_true")
     sp.add_argument("--force-split", action="store_true")
     sp.set_defaults(func=cmd_split)
+
+    ac = sub.add_parser("audit-corpus")
+    ac.add_argument("--splits", nargs="+", required=True, help="name=path pairs, e.g. val=v.jsonl test=t.jsonl")
+    ac.set_defaults(func=cmd_audit_corpus)
+
+    vm = sub.add_parser("verify-mean")
+    vm.add_argument("--results-jsonl", required=True)
+    vm.add_argument("--printed-mean", type=float, required=True)
+    vm.set_defaults(func=cmd_verify_mean)
+
+    cc = sub.add_parser("check-climbability")
+    cc.add_argument("--test-stdout", required=True)
+    cc.add_argument("--val-stdout")
+    cc.add_argument("--min-shippable-delta", type=float, required=True)
+    cc.add_argument("--direction", choices=("higher", "lower"), default="higher")
+    cc.add_argument("--split-mode", choices=("val_test", "three_way", "all_rows"), default="val_test")
+    cc.set_defaults(func=cmd_check_climbability)
 
     cal = sub.add_parser("calibrate")
     cal.add_argument("--val-stdev", type=float, required=True)

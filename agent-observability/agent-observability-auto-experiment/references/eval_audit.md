@@ -133,8 +133,9 @@ not a warning — something upstream disagrees about what the corpus is.
 
 ### Headline recomputes from raw rows
 
-**Procedure.** Recompute the mean from `eval_results.<split>.jsonl` yourself (mean of per-rep means)
-and compare it to the `mean` the harness printed.
+**Procedure.** Run `python .auto_experiment/loop_helper.py verify-mean --results-jsonl
+<eval_results.<split>.jsonl> --printed-mean <mean>` to recompute the mean of per-rep means from raw
+rows and compare it to the `mean` the harness printed.
 
 **Pass.** Equal to `1e-9`.
 
@@ -144,9 +145,9 @@ iteration**; it costs nothing.
 
 ### Tier-1 corpus checks
 
-**Procedure.** One short script over the hydrated cache(s) reporting: exact- and near-duplicate
-rate, stratum balance, input and reference length distributions, schema validity, missing fields,
-malformed rows, and confirmation that no `id` appears in both `val` and `test`.
+**Procedure.** Run `python .auto_experiment/loop_helper.py audit-corpus --splits val=<val.jsonl>
+test=<test.jsonl>` over the hydrated cache(s) to check exact-duplicate rate, input and reference
+length distributions, schema validity, missing fields, and zero `val ∩ test` overlap.
 
 **Pass.** Nothing anomalous, zero `val ∩ test` overlap, or anomalies the user recognises and
 accepts.
@@ -195,6 +196,10 @@ derivation reads. In summary, and in this order:
 ---
 
 ## Gate 3 — climbability (SKILL.md Step 2.6)
+
+Run `python .auto_experiment/loop_helper.py check-climbability --val-stdout <val.json> --test-stdout
+<test.json> --min-shippable-delta <d>` to compute all checks below mechanically, then present them
+to the user:
 
 ### The three numbers
 

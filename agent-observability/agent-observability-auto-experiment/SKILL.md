@@ -28,7 +28,7 @@ eval harness, and Datadog MCP or `pup`).
 | `references/eval_audit.md` | Three hard-STOP pre-climb gates: Gate 1 (harness trust), Gate 2 (zero triage), Gate 3 (climbability) |
 | `references/reporting.md` | LLM-Obs `auto_experiment_score` + per-case `auto_experiment_case_score` contracts, tag normalization, `narrative.md`, final report |
 | `references/eval_harness_template.{py,mjs}` | Language-parity harness skeletons (`generate` on redacted row, `grade` on full row, `AUTO_EXP_SPLIT`, `AUTO_EXP_WORKERS`, `AUTO_EXP_REGRADE`) |
-| `scripts/stats.py` & `scripts/loop_helper.py` | Copied to `.auto_experiment/`; deterministic CLI for `split`, `calibrate`, `check-memorization`, `distribution`, `audit`, `decide`, `pool-confirm`, `record`, `stop-check`, `build-tags`, `submit-payload`, `case-payloads`, `render-narrative`, `verify-final` |
+| `scripts/stats.py` & `scripts/loop_helper.py` | Copied to `.auto_experiment/`; deterministic CLI for `split`, `audit-corpus`, `verify-mean`, `check-climbability`, `calibrate`, `check-memorization`, `distribution`, `audit`, `decide`, `pool-confirm`, `record`, `stop-check`, `build-tags`, `submit-payload`, `case-payloads`, `render-narrative`, `verify-final` |
 
 **Split vocabulary:** This skill names the two splits **`val`** (the 70% search/analysis split —
 equivalent to **`train`** in standard ML / Anthropic's `eval-hillclimb.md`, read by census,
@@ -297,9 +297,9 @@ in `local_file` mode), record `val_dataset_id`, `test_dataset_id`, `val_case_cou
    generation)` (prefer deterministic ground-truth check; LLM-judge fallback using
    `build_judge_prompt`). Set `AUTO_EXP_WORKERS=4..8` for I/O-bound LLM calls if helpful.
 3. **Step 2.2 — Gate 1 (Harness trust, `references/eval_audit.md`):** Run all universal checks
-   (oracle, ground-truth isolation, mechanism wired, resolved scope, raw-row mean recompute to
-   `1e-9`, tier-1 corpus checks incl. `val ∩ test == ∅`) plus conditional LLM checks (`judge_flip_rate`,
-   null-baseline, `models_seen`). Hard **STOP** on failure.
+   (oracle, ground-truth isolation, mechanism wired, resolved scope, `loop_helper.py verify-mean` to
+   `1e-9`, `loop_helper.py audit-corpus` incl. `val ∩ test == ∅`) plus conditional LLM checks
+   (`judge_flip_rate`, null-baseline, `models_seen`). Hard **STOP** on failure.
 4. Run pilot (`AUTO_EXP_RUNS=3`, `AUTO_EXP_ITERATION=0`) on **both splits** (explicit
    `AUTO_EXP_SPLIT`, never passing both `AUTO_EXP_DATA` and `AUTO_EXP_DATASET_ID`):
    ```bash
@@ -341,7 +341,8 @@ and commit `.auto_experiment/census.json`.
 
 ### Step 2.6 — Gate 3 (Climbability, `references/eval_audit.md`)
 
-Present: (1) `test` noise floor (`stats.noise_floor`), headroom, and `min_shippable_delta`; (2)
+Run `python .auto_experiment/loop_helper.py check-climbability --val-stdout … --test-stdout … --min-shippable-delta <d>`
+and present: (1) `test` noise floor (`stats.noise_floor`), headroom, and `min_shippable_delta`; (2)
 saturation class; (3) `val` vs `test` population check (`|val − test| ≤ 2·SE_diff`, allowing **at
 most one** split re-draw here before iteration 1); (4) selection-bias disclosure (`test` selects
 winners every round; pooled confirm shrinks rerun noise, not case-selection bias). Record
