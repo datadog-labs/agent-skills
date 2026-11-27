@@ -428,6 +428,7 @@ async function regrade(file) {
           iteration: row.iteration ?? ITERATION,
           failure_class: err instanceof HarnessError ? err.failureClass : "judge_error",
           message: String(err && err.message ? err.message : err).slice(0, 1000),
+          ...(err instanceof HarnessError ? {} : { trace: String(err && err.stack).slice(-2000) }),
           latency_s: null,
           timestamp: Date.now(),
         },
@@ -466,6 +467,31 @@ function pstdev(values) {
   if (values.length < 2) return 0;
   const m = mean(values);
   return Math.sqrt(mean(values.map((v) => (v - m) ** 2)));
+}
+
+function metricStats(rows, extractor) {
+  const byRep = new Map();
+  const byCase = new Map();
+  for (const row of rows) {
+    const val = extractor(row);
+    if (typeof val !== "number" || Number.isNaN(val)) continue;
+    const rep = row.rep ?? 0;
+    if (!byRep.has(rep)) byRep.set(rep, []);
+    byRep.get(rep).push(val);
+    if (!byCase.has(row.id)) byCase.set(row.id, []);
+    byCase.get(row.id).push(val);
+  }
+  const repKeys = [...byRep.keys()].sort((a, b) => a - b);
+  const rMeans = repKeys.map((k) => byRep.get(k)).filter((v) => v.length).map(mean);
+  if (rMeans.length === 0) return null;
+  const pcm = {};
+  for (const [id, vals] of byCase) pcm[id] = Number(mean(vals).toFixed(6));
+  return {
+    mean: mean(rMeans),
+    stdev: pstdev(rMeans),
+    run_means: rMeans,
+    per_case_means: pcm,
+  };
 }
 
 function usageSummary(rows) {
@@ -613,6 +639,15 @@ async function main() {
 
   const latencies = allResults.map((r) => r.latency_s).filter((v) => typeof v === "number");
 
+  const allMetricStats = {
+    score: metricStats(allResults, (r) => r.score),
+    latency_s: metricStats(allResults, (r) => r.latency_s),
+    cost_usd: metricStats(
+      allResults,
+      (r) => (r.usage && typeof r.usage === "object" ? r.usage.cost_usd : null),
+    ),
+  };
+
   console.log(
     JSON.stringify({
       split: SPLIT,
@@ -629,6 +664,7 @@ async function main() {
       refusals: allResults.filter((r) => r.refusal).length,
       run_means: runMeans,
       per_case_means: perCaseMeans,
+      metric_stats: allMetricStats,
       latency_p50: percentile(latencies, 0.5),
       latency_p95: percentile(latencies, 0.95),
       usage: usageSummary(allResults),

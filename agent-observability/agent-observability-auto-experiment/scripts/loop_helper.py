@@ -565,11 +565,43 @@ def _paired_full_disagreement(best_pcm: dict, cand_pcm: dict) -> tuple[float, fl
     return round(paired_delta, 6), round(full_delta, 6), round(abs(paired_delta - full_delta), 6)
 
 
+def _extract_target_stats(stdout_obj: dict, target: str, label: str) -> dict:
+    """Extract {mean, stdev, per_case_means, runs} for the configured goal.target."""
+    if target == "score":
+        ms = (stdout_obj.get("metric_stats") or {}).get("score")
+        if isinstance(ms, dict):
+            return {
+                "mean": float(ms["mean"]),
+                "stdev": float(ms["stdev"]),
+                "per_case_means": ms["per_case_means"],
+                "runs": int(stdout_obj.get("runs", len(ms.get("run_means") or []))),
+            }
+        return {
+            "mean": float(stdout_obj["mean"]),
+            "stdev": float(stdout_obj["stdev"]),
+            "per_case_means": stdout_obj["per_case_means"],
+            "runs": int(stdout_obj["runs"]),
+        }
+    ms = (stdout_obj.get("metric_stats") or {}).get(target)
+    if not isinstance(ms, dict) or not ms.get("per_case_means"):
+        raise SystemExit(
+            f"{label}: goal target {target!r} was not measured (missing metric_stats.{target}); "
+            "measure it in generate() / harness instead of falling back to quality score"
+        )
+    return {
+        "mean": float(ms["mean"]),
+        "stdev": float(ms["stdev"]),
+        "per_case_means": ms["per_case_means"],
+        "runs": len(ms.get("run_means") or []) or int(stdout_obj["runs"]),
+    }
+
+
 def cmd_decide(args: argparse.Namespace) -> None:
     stats = _load_stats()
     min_delta = float(args.min_delta)
     higher = args.direction == "higher"
     split_mode = args.split_mode
+    target = args.target
 
     def dir_sign(delta: float) -> float:
         return delta if higher else -delta
@@ -583,10 +615,12 @@ def cmd_decide(args: argparse.Namespace) -> None:
             raise SystemExit("--split-mode all_rows requires --best-all and --cand-all")
         best_a = json.loads(Path(args.best_all).read_text())
         cand_a = json.loads(Path(args.cand_all).read_text())
-        delta = cand_a["mean"] - best_a["mean"]
-        t_res = stats.t_two_sample(cand_a["mean"], cand_a["stdev"], best_a["mean"], best_a["stdev"], cand_a["runs"], best_a["runs"])
-        boot = stats.paired_bootstrap_delta(best_a["per_case_means"], cand_a["per_case_means"])
-        paired = stats.paired_case_test(best_a["per_case_means"], cand_a["per_case_means"])
+        ba_t = _extract_target_stats(best_a, target, "best_all")
+        ca_t = _extract_target_stats(cand_a, target, "cand_all")
+        delta = ca_t["mean"] - ba_t["mean"]
+        t_res = stats.t_two_sample(ca_t["mean"], ca_t["stdev"], ba_t["mean"], ba_t["stdev"], ca_t["runs"], ba_t["runs"])
+        boot = stats.paired_bootstrap_delta(ba_t["per_case_means"], ca_t["per_case_means"])
+        paired = stats.paired_case_test(ba_t["per_case_means"], ca_t["per_case_means"])
         sig = abs(delta) >= min_delta and (t_res is None or t_res["t_stat"] >= 2.0)
 
         audit_failed_reasons = []
@@ -596,7 +630,7 @@ def cmd_decide(args: argparse.Namespace) -> None:
         case_count = max(1, best_a["scored"] + best_a.get("errored_cases", 0))
         if cand_a["errored"] > best_a["errored"] + max(1, int(0.05 * case_count)):
             void_error = True
-        _, _, diff_gap = _paired_full_disagreement(best_a["per_case_means"], cand_a["per_case_means"])
+        _, _, diff_gap = _paired_full_disagreement(ba_t["per_case_means"], ca_t["per_case_means"])
         if diff_gap > min_delta:
             audit_failed_reasons.append(f"all paired-vs-full delta gap {diff_gap:.4f} > min_delta {min_delta:.4f}")
 
@@ -617,25 +651,26 @@ def cmd_decide(args: argparse.Namespace) -> None:
         else:
             decision, is_best, basis = "discarded", False, "within_noise"
 
-        suspicion_bar = max(3.0 * min_delta, 0.15)
+        suspicion_bar = max(3.0 * min_delta, 0.15) if target == "score" else max(3.0 * min_delta, 0.15 * abs(ba_t["mean"]))
         suspicious_reason = None
         if dir_sign(delta) > suspicion_bar:
-            suspicious_reason = f"in-sample delta {delta:+.4f} exceeds 3*min_delta/0.15 bar ({suspicion_bar:.4f})"
+            suspicious_reason = f"in-sample {target} delta {delta:+.4f} exceeds suspicion bar ({suspicion_bar:.4f})"
         elif args.target_ceiling is not None and dir_sign(delta) > float(args.target_ceiling):
-            suspicious_reason = f"in-sample delta {delta:+.4f} exceeds targeted bucket ceiling ({float(args.target_ceiling):.4f})"
+            suspicious_reason = f"in-sample {target} delta {delta:+.4f} exceeds targeted bucket ceiling ({float(args.target_ceiling):.4f})"
 
         print(json.dumps({
             "headline_split": "all",
             "split_mode": "all_rows",
+            "target": target,
             "in_sample_warning": True,
             "grader_version": cand_a.get("grader_version", 1),
-            "runs": cand_a["runs"],
+            "runs": ca_t["runs"],
             "min_delta": min_delta,
             "all": {
                 "dataset_id": cand_a.get("dataset_id"),
-                "before": best_a["mean"],
-                "after": cand_a["mean"],
-                "stdev": cand_a["stdev"],
+                "before": ba_t["mean"],
+                "after": ca_t["mean"],
+                "stdev": ca_t["stdev"],
                 "delta": round(delta, 6),
                 "se_diff": t_res["se_diff"] if t_res else 0.0,
                 "t_stat": t_res["t_stat"] if t_res else None,
@@ -649,7 +684,7 @@ def cmd_decide(args: argparse.Namespace) -> None:
             "overfit_gap": None,
             "guardrails": guardrails,
             "usage": cand_a.get("usage", {}),
-            "score_distribution": compute_distribution(cand_a["per_case_means"], "case_means_all"),
+            "score_distribution": compute_distribution(ca_t["per_case_means"], "case_means_all"),
             "decision": decision,
             "significant": bool(sig),
             "is_best": is_best,
@@ -673,25 +708,33 @@ def cmd_decide(args: argparse.Namespace) -> None:
     best_test = json.loads(Path(best_h_path).read_text())
     cand_test = json.loads(Path(cand_h_path).read_text())
 
-    val_delta = cand_val["mean"] - best_val["mean"]
-    test_delta = cand_test["mean"] - best_test["mean"]
-    t_val = stats.t_two_sample(cand_val["mean"], cand_val["stdev"], best_val["mean"], best_val["stdev"], cand_val["runs"], best_val["runs"])
-    t_test = stats.t_two_sample(cand_test["mean"], cand_test["stdev"], best_test["mean"], best_test["stdev"], cand_test["runs"], best_test["runs"])
-    boot_test = stats.paired_bootstrap_delta(best_test["per_case_means"], cand_test["per_case_means"])
-    paired_test = stats.paired_case_test(best_test["per_case_means"], cand_test["per_case_means"])
+    bv_t = _extract_target_stats(best_val, target, "best_val")
+    cv_t = _extract_target_stats(cand_val, target, "cand_val")
+    bt_t = _extract_target_stats(best_test, target, f"best_{headline_key}")
+    ct_t = _extract_target_stats(cand_test, target, f"cand_{headline_key}")
+
+    val_delta = cv_t["mean"] - bv_t["mean"]
+    test_delta = ct_t["mean"] - bt_t["mean"]
+    t_val = stats.t_two_sample(cv_t["mean"], cv_t["stdev"], bv_t["mean"], bv_t["stdev"], cv_t["runs"], bv_t["runs"])
+    t_test = stats.t_two_sample(ct_t["mean"], ct_t["stdev"], bt_t["mean"], bt_t["stdev"], ct_t["runs"], bt_t["runs"])
+    boot_test = stats.paired_bootstrap_delta(bt_t["per_case_means"], ct_t["per_case_means"])
+    paired_test = stats.paired_case_test(bt_t["per_case_means"], ct_t["per_case_means"])
 
     test_sig = abs(test_delta) >= min_delta and (t_test is None or t_test["t_stat"] >= 2.0)
 
     # 3-valued mechanism audit
     audit_failed_reasons = []
     void_error = False
-    for name, b, c in (("val", best_val, cand_val), (headline_key, best_test, cand_test)):
+    for name, b, c, bt_m, ct_m in (
+        ("val", best_val, cand_val, bv_t, cv_t),
+        (headline_key, best_test, cand_test, bt_t, ct_t),
+    ):
         if b["excluded"] != c["excluded"]:
             audit_failed_reasons.append(f"{name} excluded changed ({b['excluded']} -> {c['excluded']})")
         case_count = max(1, b["scored"] + b.get("errored_cases", 0))
         if c["errored"] > b["errored"] + max(1, int(0.05 * case_count)):
             void_error = True
-        _, _, diff_gap = _paired_full_disagreement(b["per_case_means"], c["per_case_means"])
+        _, _, diff_gap = _paired_full_disagreement(bt_m["per_case_means"], ct_m["per_case_means"])
         if diff_gap > min_delta:
             audit_failed_reasons.append(f"{name} paired-vs-full delta gap {diff_gap:.4f} > min_delta {min_delta:.4f}")
 
@@ -719,24 +762,25 @@ def cmd_decide(args: argparse.Namespace) -> None:
     else:
         decision, is_best, basis = "discarded", False, "within_noise"
 
-    suspicion_bar = max(3.0 * min_delta, 0.15)
+    suspicion_bar = max(3.0 * min_delta, 0.15) if target == "score" else max(3.0 * min_delta, 0.15 * abs(bt_t["mean"]))
     suspicious_reason = None
     if dir_sign(test_delta) > suspicion_bar:
-        suspicious_reason = f"{headline_key} delta {test_delta:+.4f} exceeds 3*min_delta/0.15 bar ({suspicion_bar:.4f}) — hand-check val flips"
+        suspicious_reason = f"{headline_key} {target} delta {test_delta:+.4f} exceeds suspicion bar ({suspicion_bar:.4f}) — hand-check val flips"
     elif args.target_ceiling is not None and dir_sign(test_delta) > float(args.target_ceiling):
-        suspicious_reason = f"{headline_key} delta {test_delta:+.4f} exceeds targeted bucket ceiling ({float(args.target_ceiling):.4f}) — hand-check val flips"
+        suspicious_reason = f"{headline_key} {target} delta {test_delta:+.4f} exceeds targeted bucket ceiling ({float(args.target_ceiling):.4f}) — hand-check val flips"
 
     out = {
         "headline_split": headline_key,
         "split_mode": split_mode,
+        "target": target,
         "grader_version": cand_test.get("grader_version", 1),
-        "runs": cand_test["runs"],
+        "runs": ct_t["runs"],
         "min_delta": min_delta,
         "val": {
             "dataset_id": cand_val.get("dataset_id"),
-            "before": best_val["mean"],
-            "after": cand_val["mean"],
-            "stdev": cand_val["stdev"],
+            "before": bv_t["mean"],
+            "after": cv_t["mean"],
+            "stdev": cv_t["stdev"],
             "delta": round(val_delta, 6),
             "se_diff": t_val["se_diff"] if t_val else 0.0,
             "t_stat": t_val["t_stat"] if t_val else None,
@@ -747,9 +791,9 @@ def cmd_decide(args: argparse.Namespace) -> None:
         },
         headline_key: {
             "dataset_id": cand_test.get("dataset_id"),
-            "before": best_test["mean"],
-            "after": cand_test["mean"],
-            "stdev": cand_test["stdev"],
+            "before": bt_t["mean"],
+            "after": ct_t["mean"],
+            "stdev": ct_t["stdev"],
             "delta": round(test_delta, 6),
             "se_diff": t_test["se_diff"] if t_test else 0.0,
             "t_stat": t_test["t_stat"] if t_test else None,
@@ -760,10 +804,10 @@ def cmd_decide(args: argparse.Namespace) -> None:
             "errored": cand_test["errored"],
             "truncated": cand_test["truncated"],
         },
-        "overfit_gap": round(val_delta - test_delta, 6),
+        "overfit_gap": round(dir_sign(val_delta) - dir_sign(test_delta), 6),
         "guardrails": guardrails,
         "usage": cand_test.get("usage", {}),
-        "score_distribution": compute_distribution(cand_test["per_case_means"], f"case_means_{headline_key}"),
+        "score_distribution": compute_distribution(ct_t["per_case_means"], f"case_means_{headline_key}"),
         "decision": decision,
         "significant": bool(test_sig),
         "is_best": is_best,
@@ -777,23 +821,49 @@ def cmd_decide(args: argparse.Namespace) -> None:
     print(json.dumps(out, indent=2))
 
 
-def _pool_jsonl_files(paths: list[str]) -> tuple[list[float], dict[str, float]]:
+def _row_metric_value(row: dict, target: str, prices: dict | None = None) -> float | None:
+    if target == "score":
+        v = row.get("score")
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+    if target == "latency_s":
+        v = row.get("latency_s")
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+    if target == "cost_usd":
+        usage = row.get("usage") if isinstance(row.get("usage"), dict) else {}
+        if isinstance(usage.get("cost_usd"), (int, float)):
+            return float(usage["cost_usd"])
+        if prices and row.get("model") in prices:
+            rate = prices[row["model"]]
+            in_tok = usage.get("input_tokens")
+            out_tok = usage.get("output_tokens")
+            if isinstance(in_tok, (int, float)) and isinstance(out_tok, (int, float)):
+                return (
+                    float(in_tok) * float(rate.get("input_per_token", 0.0))
+                    + float(out_tok) * float(rate.get("output_per_token", 0.0))
+                )
+        return None
+    raise SystemExit(f"unsupported target metric: {target!r}")
+
+
+def _pool_jsonl_files(paths: list[str], target: str = "score", prices: dict | None = None) -> tuple[list[float], dict[str, float]]:
     run_means: list[float] = []
     per_case: dict[str, list[float]] = {}
-    for file_idx, p in enumerate(paths):
+    for p in paths:
         rows = _read_jsonl(Path(p))
         by_rep: dict[int, list[float]] = {}
         for row in rows:
+            val = _row_metric_value(row, target, prices)
+            if val is None:
+                continue
             rep = int(row.get("rep", 0))
-            score = float(row["score"])
-            by_rep.setdefault(rep, []).append(score)
-            per_case.setdefault(str(row["id"]), []).append(score)
+            by_rep.setdefault(rep, []).append(val)
+            per_case.setdefault(str(row["id"]), []).append(val)
         for rep in sorted(by_rep):
             vals = by_rep[rep]
             if vals:
                 run_means.append(sum(vals) / len(vals))
     if not run_means:
-        raise SystemExit(f"no scored rows across pooled files: {paths}")
+        raise SystemExit(f"no rows with measurable target {target!r} across pooled files: {paths}")
     pcm = {k: round(sum(v) / len(v), 6) for k, v in per_case.items()}
     return run_means, pcm
 
@@ -807,8 +877,10 @@ def _pstdev(xs: list[float]) -> float:
 
 def cmd_pool_confirm(args: argparse.Namespace) -> None:
     stats = _load_stats()
-    base_runs, base_pcm = _pool_jsonl_files(args.baseline_results)
-    best_runs, best_pcm = _pool_jsonl_files(args.best_results)
+    target = args.target
+    prices = json.loads(args.prices_json) if args.prices_json else None
+    base_runs, base_pcm = _pool_jsonl_files(args.baseline_results, target=target, prices=prices)
+    best_runs, best_pcm = _pool_jsonl_files(args.best_results, target=target, prices=prices)
 
     base_mean = sum(base_runs) / len(base_runs)
     best_mean = sum(best_runs) / len(best_runs)
@@ -826,12 +898,32 @@ def cmd_pool_confirm(args: argparse.Namespace) -> None:
 
     wilson_base = (
         stats.wilson(sum(1 for v in base_pcm.values() if v == 1.0), len(base_pcm))
-        if stats.is_binary(base_pcm) else None
+        if target == "score" and stats.is_binary(base_pcm) else None
     )
     wilson_best = (
         stats.wilson(sum(1 for v in best_pcm.values() if v == 1.0), len(best_pcm))
-        if stats.is_binary(best_pcm) else None
+        if target == "score" and stats.is_binary(best_pcm) else None
     )
+
+    # Optional quality guardrail check when optimizing cost_usd / latency_s
+    held_score_check = None
+    held_score_regressed = False
+    if target != "score" and args.hold_score_min_delta is not None:
+        sb_runs, _ = _pool_jsonl_files(args.baseline_results, target="score")
+        sg_runs, _ = _pool_jsonl_files(args.best_results, target="score")
+        sb_m, sg_m = sum(sb_runs) / len(sb_runs), sum(sg_runs) / len(sg_runs)
+        sb_sd, sg_sd = _pstdev(sb_runs), _pstdev(sg_runs)
+        s_delta = sg_m - sb_m
+        s_t = stats.t_two_sample(sg_m, sg_sd, sb_m, sb_sd, len(sg_runs), len(sb_runs))
+        s_floor = float(args.hold_score_min_delta)
+        held_score_regressed = s_delta < 0 and abs(s_delta) >= s_floor and (s_t is None or s_t["t_stat"] >= 2.0)
+        held_score_check = {
+            "baseline_score": round(sb_m, 6),
+            "best_score": round(sg_m, 6),
+            "delta": round(s_delta, 6),
+            "t_stat": s_t["t_stat"] if s_t else None,
+            "regressed": held_score_regressed,
+        }
 
     ci_clears = False
     if boot is not None:
@@ -840,7 +932,7 @@ def cmd_pool_confirm(args: argparse.Namespace) -> None:
     t_case = (paired or {}).get("t_case")
     case_sig = ci_clears and (t_case is None or t_case >= 2.0) and n_moved > 2 and abs(delta) >= min_delta
 
-    if dir_delta <= 0:
+    if dir_delta <= 0 or held_score_regressed:
         rec = "do_not_merge_regression"
     elif not case_sig:
         rec = "do_not_merge_within_noise"
@@ -848,6 +940,7 @@ def cmd_pool_confirm(args: argparse.Namespace) -> None:
         rec = "merge"
 
     print(json.dumps({
+        "target": target,
         "dataset_id": args.dataset_id,
         "case_count": len(set(base_pcm) & set(best_pcm)),
         "baseline_score": round(base_mean, 6),
@@ -864,6 +957,7 @@ def cmd_pool_confirm(args: argparse.Namespace) -> None:
         "paired_case": paired,
         "wilson_baseline": wilson_base,
         "wilson_best": wilson_best,
+        "held_score_guardrail": held_score_check,
         "n_moved": n_moved,
         "merge_recommendation": rec,
     }, indent=2))
@@ -1030,8 +1124,10 @@ def cmd_record(args: argparse.Namespace) -> None:
     rows.append(row)
 
     it = int(row.get("iteration", 0))
-    split = row.get("headline_split") or ("all" if cfg.get("split_mode") == "all_rows" else "test")
-    score_block = row.get(split) or row.get("test") or row.get("all") or {}
+    sm = cfg.get("split_mode")
+    default_split = "all" if sm == "all_rows" else ("select" if sm == "three_way" else "test")
+    split = row.get("headline_split") or default_split
+    score_block = row.get(split) or row.get("select") or row.get("test") or row.get("all") or {}
     headline_score = score_block.get("after") if isinstance(score_block, dict) else row.get("after_score")
 
     if row.get("decision") == "baseline" and it == 0:
@@ -1229,7 +1325,10 @@ def cmd_case_payloads(args: argparse.Namespace) -> None:
 def cmd_render_narrative(args: argparse.Namespace) -> None:
     cfg = json.loads(Path(args.config).read_text())
     rows = cfg.get("iteration_results") or []
-    all_rows = cfg.get("split_mode") == "all_rows"
+    split_mode = cfg.get("split_mode")
+    all_rows = split_mode == "all_rows"
+    three_way = split_mode == "three_way"
+    primary_col = "select" if three_way else "test"
 
     if all_rows:
         lines = [
@@ -1238,15 +1337,15 @@ def cmd_render_narrative(args: argparse.Namespace) -> None:
         ]
     else:
         lines = [
-            "| iter | layer | change (one line) | test | val | Δtest | n_moved | basis | $/case | p50 s | scored/excl/err | sha |",
-            "|------|-------|-------------------|------|-----|-------|---------|-------|--------|-------|-----------------|-----|",
+            f"| iter | layer | change (one line) | {primary_col} | val | Δ{primary_col} | n_moved | basis | $/case | p50 s | scored/excl/err | sha |",
+            "|------|-------|-------------------|--------|-----|--------|---------|-------|--------|-------|-----------------|-----|",
         ]
 
     base_cost = None
     base_p95 = None
     for row in rows:
         it = row.get("iteration", 0)
-        layer = str(row.get("lever_layer") or ("—" if it == 0 else "—"))
+        layer = str(row.get("lever_layer") or "—")
         change = str(row.get("change") or ("baseline" if it == 0 else "")).replace("|", "/")[:60]
         basis = row.get("basis") or row.get("decision") or "—"
         sha = str(row.get("sha") or "")[:7] or "—"
@@ -1265,7 +1364,8 @@ def cmd_render_narrative(args: argparse.Namespace) -> None:
                 warn += " [p95>+20%]"
         cost_s = f"{cost:.4f}" if isinstance(cost, (int, float)) else "—"
         p50_s = f"{p50:.2f}" if isinstance(p50, (int, float)) else "—"
-        t = row.get("test") or row.get("all") or {}
+        hs = row.get("headline_split")
+        t = (row.get(hs) if hs else None) or row.get("select") or row.get("test") or row.get("all") or {}
         v = row.get("val") or {}
         counts = f"{t.get('scored', '—')}/{t.get('excluded', '—')}/{t.get('errored', '—')}"
         delta = t.get("delta")
@@ -1296,6 +1396,16 @@ def cmd_verify_final(args: argparse.Namespace) -> None:
     if cfg.get("split_mode") != "all_rows":
         test = fr.get("test") or {}
         val = fr.get("val") or {}
+        if not val:
+            errors.append("final_result.val is missing")
+        else:
+            if cfg.get("val_dataset_id") and val.get("dataset_id") != cfg["val_dataset_id"]:
+                errors.append(f"final_result.val.dataset_id ({val.get('dataset_id')}) != config.val_dataset_id ({cfg['val_dataset_id']})")
+            if isinstance(cfg.get("val_case_count"), int) and val.get("case_count") != cfg["val_case_count"]:
+                errors.append(f"final_result.val.case_count ({val.get('case_count')}) != config.val_case_count ({cfg['val_case_count']})")
+            for sub in ("baseline_score", "best_score", "delta"):
+                if val.get(sub) is None:
+                    errors.append(f"final_result.val.{sub} is missing")
         if not test:
             errors.append("final_result.test is missing")
         else:
@@ -1384,6 +1494,7 @@ def main() -> None:
     dec.add_argument("--best-all")
     dec.add_argument("--cand-all")
     dec.add_argument("--min-delta", type=float, required=True)
+    dec.add_argument("--target", choices=("score", "cost_usd", "latency_s"), default="score")
     dec.add_argument("--direction", choices=("higher", "lower"), default="higher")
     dec.add_argument("--target-ceiling", type=float)
     dec.add_argument("--guardrails-json")
@@ -1398,7 +1509,10 @@ def main() -> None:
     pc.add_argument("--baseline-results", nargs="+", required=True)
     pc.add_argument("--best-results", nargs="+", required=True)
     pc.add_argument("--min-delta", type=float, required=True)
+    pc.add_argument("--target", choices=("score", "cost_usd", "latency_s"), default="score")
     pc.add_argument("--direction", choices=("higher", "lower"), default="higher")
+    pc.add_argument("--prices-json")
+    pc.add_argument("--hold-score-min-delta", type=float)
     pc.add_argument("--dataset-id")
     pc.set_defaults(func=cmd_pool_confirm)
 

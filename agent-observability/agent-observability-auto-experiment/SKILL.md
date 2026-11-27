@@ -379,9 +379,9 @@ Enforce the **code-before-prompt rule** (`rubrics.md`): do not tweak a prompt to
 retrieval, tool I/O, preprocessing, routing, parsing, or parameters; if `loop_helper.py stop-check`
 reports `require_non_prompt_lever: true` (2 consecutive discarded prompt-only iterations while
 non-prompt code is in scope), the next attempt MUST target a code/tool/retrieval/parameter lever.
-Pass `--lever-layer` into `loop_helper.py decide` so `result.json`, `narrative.md`, and LLM-Obs tags
-record which layer changed. Commit on the scratch branch, then run before spending a full two-split
-eval:
+Pass `--target <score|cost_usd|latency_s>` and `--lever-layer` into `loop_helper.py decide` so
+`result.json`, `narrative.md`, and LLM-Obs tags evaluate the configured `goal.target` and record
+which layer changed. Commit on the scratch branch, then run before spending a full two-split eval:
 
 1. **Feasibility probe + ceiling sizing** (`rubrics.md`): if probe reaches 0 failing `val` cases or
    targeted bucket ceiling `< min_delta` → record `no_change`, skip full eval.
@@ -461,9 +461,9 @@ every iteration to evaluate the exact state machine (`continue` | `stall_triage`
    - Best code: `git checkout <best_sha> -- <files_to_optimize>` → run with
      `AUTO_EXP_RESULTS=.auto_experiment/holdout/confirm_best.test.jsonl`.
    - Pool each side with its existing `test` runs via
-     `python .auto_experiment/loop_helper.py pool-confirm --baseline-results … --best-results … --min-delta <d> --direction <dir> --dataset-id <test_id>`,
+     `python .auto_experiment/loop_helper.py pool-confirm --baseline-results … --best-results … --target <goal.target> --min-delta <d> --direction <dir> [--hold-score-min-delta <floor>] --dataset-id <test_id>`,
      which computes `paired_bootstrap_delta`, `paired_case_test`, `t_two_sample`, `wilson` (if
-     binary), `n_moved`, and `merge_recommendation` deterministically.
+     binary score), `n_moved`, held-score guardrail check, and `merge_recommendation` deterministically.
    - *(3-way split: run baseline vs best on the untouched `test` split instead. `all_rows`: skip
      holdout claims and label results in-sample.)*
 3. **Determine `merge_recommendation`:**

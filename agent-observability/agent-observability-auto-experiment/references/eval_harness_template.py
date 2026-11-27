@@ -530,6 +530,18 @@ def _regrade_one(row: dict, by_id: dict) -> "tuple[dict | None, dict | None]":
             "latency_s": None,
             "timestamp": int(time.time() * 1000),
         }
+    except Exception as exc:  # noqa: BLE001 — match evaluate_line & Node regrade parity
+        return None, {
+            "id": row.get("id"),
+            "split": SPLIT,
+            "rep": row.get("rep"),
+            "iteration": row.get("iteration", ITERATION),
+            "failure_class": "judge_error",
+            "message": f"{type(exc).__name__}: {exc}"[:1000],
+            "trace": traceback.format_exc()[-2000:],
+            "latency_s": None,
+            "timestamp": int(time.time() * 1000),
+        }
     return {**row, "score": float(score), "justification": justification}, None
 
 
@@ -574,6 +586,28 @@ def _percentile(values: list, fraction: float) -> "float | None":
         return None
     rank = max(1, min(len(clean), int(-(-fraction * len(clean) // 1))))
     return round(float(clean[rank - 1]), 4)
+
+
+def _metric_stats(rows: list, extractor) -> "dict | None":
+    """Compute {mean, stdev, run_means, per_case_means} for any numeric row metric."""
+    by_rep: dict = {}
+    by_case: dict = {}
+    for row in rows:
+        val = extractor(row)
+        if not isinstance(val, (int, float)) or isinstance(val, bool):
+            continue
+        fval = float(val)
+        by_rep.setdefault(row.get("rep", 0), []).append(fval)
+        by_case.setdefault(row["id"], []).append(fval)
+    r_means = [sum(v) / len(v) for _, v in sorted(by_rep.items()) if v]
+    if not r_means:
+        return None
+    return {
+        "mean": statistics.mean(r_means),
+        "stdev": statistics.pstdev(r_means) if len(r_means) > 1 else 0.0,
+        "run_means": r_means,
+        "per_case_means": {k: round(sum(v) / len(v), 6) for k, v in by_case.items()},
+    }
 
 
 def _usage_summary(rows: list) -> dict:
@@ -707,10 +741,19 @@ def main() -> None:
     mean = statistics.mean(run_means)
     stdev = statistics.pstdev(run_means) if len(run_means) > 1 else 0.0
 
+    metric_stats = {
+        "score": _metric_stats(all_results, lambda r: r.get("score")),
+        "latency_s": _metric_stats(all_results, lambda r: r.get("latency_s")),
+        "cost_usd": _metric_stats(
+            all_results,
+            lambda r: r["usage"].get("cost_usd") if isinstance(r.get("usage"), dict) else None,
+        ),
+    }
+
     # `mean` is the before/after score the loop reads for THIS split; `stdev` feeds SE_diff for the
     # two-sample t-test, and `per_case_means` feeds the paired bootstrap and paired case-level test.
-    # Both label confidence — the keep decision itself is made on the TEST split's point estimate
-    # plus the val/test overfit check plus the mechanism audit. All computed, never literals.
+    # `metric_stats` exposes the same stats for `score`, `latency_s`, and `cost_usd` so `decide`
+    # optimizes the configured `goal.target` directly instead of only quality score.
     print(json.dumps({
         "split": SPLIT,
         "dataset_id": DATASET_ID or None,
@@ -728,6 +771,7 @@ def main() -> None:
         "refusals": sum(1 for r in all_results if r.get("refusal")),
         "run_means": run_means,
         "per_case_means": per_case_means,
+        "metric_stats": metric_stats,
         "latency_p50": _percentile(latencies, 0.50),
         "latency_p95": _percentile(latencies, 0.95),
         "usage": _usage_summary(all_results),

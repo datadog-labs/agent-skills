@@ -559,8 +559,8 @@ disagrees with `<split>_dataset_id`; (2) any row carries a `split` field that di
 
 ```
 {split, dataset_id, data_path, mean, stdev, runs, scored, excluded, errored, errored_cases,
- truncated, refusals, run_means, per_case_means, latency_p50, latency_p95, usage, models_seen,
- grader_version}
+ truncated, refusals, run_means, per_case_means, metric_stats, latency_p50, latency_p95, usage,
+ models_seen, grader_version}
 ```
 
 Write `.auto_experiment/eval_harness.py` (or `.mjs`) with:

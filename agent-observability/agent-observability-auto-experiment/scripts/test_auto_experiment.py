@@ -244,17 +244,100 @@ class TestLoopHelper(unittest.TestCase):
         self.assertEqual(json.loads(r_cp.stdout)["total_cases"], 10)
         self.assertEqual(_run_helper(["render-narrative", "--config", str(cfg), "--out", str(self.tdir / "narrative.md")]).returncode, 0)
 
+        # render-narrative in three_way mode renders `select` column & values (not em dashes)
+        cfg3 = self.tdir / "cfg3.json"
+        cfg3.write_text(json.dumps({
+            "split_mode": "three_way",
+            "iteration_results": [
+                {"iteration": 0, "decision": "baseline", "basis": "baseline", "headline_split": "select", "sha": "0" * 40, "val": {"after": 0.5}, "select": {"after": 0.55, "scored": 30, "excluded": 0, "errored": 0}},
+                {"iteration": 1, "lever_layer": "retrieval", "change": "fix query", "decision": "kept", "basis": "significant", "significant": True, "headline_split": "select", "n_moved": 4, "sha": "1" * 40, "val": {"after": 0.7}, "select": {"after": 0.68, "delta": 0.13, "scored": 30, "excluded": 0, "errored": 0}},
+            ],
+        }))
+        narr3 = self.tdir / "narr3.md"
+        self.assertEqual(_run_helper(["render-narrative", "--config", str(cfg3), "--out", str(narr3)]).returncode, 0)
+        narr3_txt = narr3.read_text()
+        self.assertIn("| select | val | Δselect |", narr3_txt)
+        self.assertIn("0.6800", narr3_txt)
+        self.assertIn("**+0.1300**", narr3_txt)
+
+        # verify-final rejects missing final_result.val in non-all_rows runs
         cfg_data = json.loads(cfg.read_text())
+        cfg_data["val_case_count"] = 10
         cfg_data["final_result"] = {
             "merge_recommendation": pc["merge_recommendation"],
             "selection_rounds": 3,
             "noise_calibration": {"runs_final": 5, "min_delta": 0.02},
             "reasoning": "done",
-            "val": {"dataset_id": "d1", "case_count": 10, "baseline_score": 0.4, "best_score": 0.8, "delta": 0.4},
             "test": pc,
         }
         cfg.write_text(json.dumps(cfg_data))
+        self.assertNotEqual(_run_helper(["verify-final", "--config", str(cfg)]).returncode, 0)
+
+        cfg_data["final_result"]["val"] = {"dataset_id": "d1", "case_count": 10, "baseline_score": 0.4, "best_score": 0.8, "delta": 0.4}
+        cfg.write_text(json.dumps(cfg_data))
         self.assertEqual(_run_helper(["verify-final", "--config", str(cfg)]).returncode, 0)
+
+    def test_cost_and_latency_targets_in_decide_and_pool_confirm(self) -> None:
+        # Quality stays flat at 0.8, but cost_usd drops from 0.05 to 0.02 across 10 cases
+        q_pcm = {f"c{i}": 0.8 for i in range(10)}
+        cost_hi = {f"c{i}": 0.05 + (0.002 * (i % 3)) for i in range(10)}
+        cost_lo = {f"c{i}": 0.02 + (0.001 * (i % 3)) for i in range(10)}
+        lat_hi = {f"c{i}": 2.0 + (0.1 * (i % 3)) for i in range(10)}
+        lat_lo = {f"c{i}": 1.0 + (0.05 * (i % 3)) for i in range(10)}
+
+        def mk_std(ds: str, cost_m: dict, lat_m: dict, q_mean: float = 0.8) -> str:
+            cm = sum(cost_m.values()) / len(cost_m)
+            lm = sum(lat_m.values()) / len(lat_m)
+            return self._wj(f"{ds}_{cm:.4f}_{lm:.2f}.json", {
+                "dataset_id": ds, "mean": q_mean, "stdev": 0.0, "runs": 3, "scored": 10,
+                "excluded": 0, "errored": 0, "errored_cases": 0, "truncated": 0,
+                "per_case_means": q_pcm,
+                "metric_stats": {
+                    "score": {"mean": q_mean, "stdev": 0.0, "run_means": [q_mean] * 3, "per_case_means": q_pcm},
+                    "cost_usd": {"mean": cm, "stdev": 0.001, "run_means": [cm] * 3, "per_case_means": cost_m},
+                    "latency_s": {"mean": lm, "stdev": 0.02, "run_means": [lm] * 3, "per_case_means": lat_m},
+                },
+                "usage": {},
+            })
+
+        bv = mk_std("v1", cost_hi, lat_hi)
+        cv = mk_std("v1", cost_lo, lat_lo)
+        bt = mk_std("t1", cost_hi, lat_hi)
+        ct = mk_std("t1", cost_lo, lat_lo)
+
+        # Optimizing cost_usd lower keeps a real cost drop even when quality score is flat
+        r_cost = _run_helper(["decide", "--target", "cost_usd", "--direction", "lower", "--best-val", bv, "--cand-val", cv, "--best-test", bt, "--cand-test", ct, "--min-delta", "0.005"])
+        self.assertEqual(r_cost.returncode, 0, r_cost.stderr)
+        dc = json.loads(r_cost.stdout)
+        self.assertEqual((dc["target"], dc["decision"], dc["basis"], dc["n_moved"]), ("cost_usd", "kept", "significant", 10))
+        self.assertLess(dc["test"]["delta"], 0.0)
+
+        # Quality regression with UNCHANGED cost_usd must NOT be kept as a cost win!
+        cv_badq = mk_std("v1", cost_hi, lat_hi, q_mean=0.2)
+        ct_badq = mk_std("t1", cost_hi, lat_hi, q_mean=0.2)
+        r_badq = _run_helper(["decide", "--target", "cost_usd", "--direction", "lower", "--best-val", bv, "--cand-val", cv_badq, "--best-test", bt, "--cand-test", ct_badq, "--min-delta", "0.005"])
+        self.assertEqual(json.loads(r_badq.stdout)["decision"], "discarded")
+
+        # Missing target measurement hard-errors instead of silently falling back to score
+        no_cost = self._wj("no_cost.json", {"dataset_id": "t1", "mean": 0.8, "stdev": 0.0, "runs": 3, "scored": 10, "excluded": 0, "errored": 0, "errored_cases": 0, "truncated": 0, "per_case_means": q_pcm, "metric_stats": {"score": {"mean": 0.8, "stdev": 0.0, "run_means": [0.8] * 3, "per_case_means": q_pcm}, "cost_usd": None, "latency_s": None}})
+        self.assertNotEqual(_run_helper(["decide", "--target", "cost_usd", "--direction", "lower", "--best-val", bv, "--cand-val", no_cost, "--best-test", bt, "--cand-test", no_cost, "--min-delta", "0.005"]).returncode, 0)
+
+        # pool-confirm on cost_usd lower -> merge; with regressed held quality -> do_not_merge_regression
+        b_rows = self.tdir / "cost_base.jsonl"
+        g_rows = self.tdir / "cost_good.jsonl"
+        badq_rows = self.tdir / "cost_badq.jsonl"
+        b_rows.write_text("".join(json.dumps({"id": k, "rep": r, "score": 0.8, "latency_s": lat_hi[k], "usage": {"cost_usd": cost_hi[k]}}) + "\n" for r in range(3) for k in cost_hi))
+        g_rows.write_text("".join(json.dumps({"id": k, "rep": r, "score": 0.8, "latency_s": lat_lo[k], "usage": {"cost_usd": cost_lo[k]}}) + "\n" for r in range(3) for k in cost_lo))
+        badq_rows.write_text("".join(json.dumps({"id": k, "rep": r, "score": 0.4, "latency_s": lat_lo[k], "usage": {"cost_usd": cost_lo[k]}}) + "\n" for r in range(3) for k in cost_lo))
+
+        r_pc = _run_helper(["pool-confirm", "--target", "cost_usd", "--direction", "lower", "--baseline-results", str(b_rows), "--best-results", str(g_rows), "--min-delta", "0.005", "--hold-score-min-delta", "0.02"])
+        self.assertEqual(r_pc.returncode, 0, r_pc.stderr)
+        pc = json.loads(r_pc.stdout)
+        self.assertEqual((pc["target"], pc["merge_recommendation"]), ("cost_usd", "merge"))
+        self.assertLess(pc["delta"], 0.0)
+
+        r_pc_reg = _run_helper(["pool-confirm", "--target", "cost_usd", "--direction", "lower", "--baseline-results", str(b_rows), "--best-results", str(badq_rows), "--min-delta", "0.005", "--hold-score-min-delta", "0.02"])
+        self.assertEqual(json.loads(r_pc_reg.stdout)["merge_recommendation"], "do_not_merge_regression")
 
 
 class TestHarnessTemplateParity(unittest.TestCase):
@@ -348,6 +431,36 @@ class TestHarnessTemplateParity(unittest.TestCase):
                     rg = run(cmd, {"AUTO_EXP_SPLIT": sp, "AUTO_EXP_DATASET_ID": ds, "AUTO_EXP_REGRADE": "1", "AUTO_EXP_WORKERS": "4"})
                     self.assertEqual(rg.returncode, 0, rg.stderr)
                     self.assertEqual(json.loads(rg.stdout)["mean"], j["mean"])
+                    self.assertIn("metric_stats", j)
+                    self.assertIsNotNone(j["metric_stats"]["cost_usd"])
+                    self.assertIsNotNone(j["metric_stats"]["latency_s"])
+
+            # Verify unexpected non-HarnessError exception in grade() during regrade records judge_error
+            # instead of aborting the whole regrade, on BOTH Python and Node!
+            py_rg_err = py_wired.replace(
+                'return (1.0 if "FINAL_TAIL_TOKEN" in generation["output"] else 0.0, "checked")',
+                'if REGRADE and line["id"] == "trunc": raise RuntimeError("transient client boom")\n    return (1.0 if "FINAL_TAIL_TOKEN" in generation["output"] else 0.0, "checked")',
+            )
+            mjs_rg_err = mjs_wired.replace(
+                'return [generation.output.includes("FINAL_TAIL_TOKEN") ? 1.0 : 0.0, "checked"];',
+                'if (REGRADE && line.id === "trunc") throw new Error("transient client boom");\n  return [generation.output.includes("FINAL_TAIL_TOKEN") ? 1.0 : 0.0, "checked"];',
+            )
+            (tdir / "eval_harness_rgerr.py").write_text(py_rg_err)
+            (tdir / "eval_harness_rgerr.mjs").write_text(mjs_rg_err)
+            rg_cmds = [("py", [sys.executable, "eval_harness_rgerr.py"])]
+            if node_bin:
+                rg_cmds.append(("mjs", [node_bin, "eval_harness_rgerr.mjs"]))
+            for label, cmd in rg_cmds:
+                # Seed fresh results first, then regrade with one row throwing a plain exception
+                seed = run(cmd, {"AUTO_EXP_SPLIT": "test", "AUTO_EXP_DATASET_ID": "ds-test", "AUTO_EXP_RUNS": "3"})
+                self.assertEqual(seed.returncode, 0, f"{label} seed: {seed.stderr}")
+                rg = run(cmd, {"AUTO_EXP_SPLIT": "test", "AUTO_EXP_DATASET_ID": "ds-test", "AUTO_EXP_REGRADE": "1"})
+                self.assertEqual(rg.returncode, 0, f"{label} regrade should not abort: {rg.stderr}")
+                rg_j = json.loads(rg.stdout)
+                self.assertEqual(rg_j["scored"], 2)  # ok1 + refuse survived; trunc errored
+                self.assertEqual(rg_j["errored"], 3)
+                errs = [json.loads(l) for l in (tdir / "holdout" / "errors.test.jsonl").read_text().splitlines() if l.strip()]
+                self.assertTrue(all(e["failure_class"] == "judge_error" and "trace" in e for e in errs), errs)
 
             if node_bin:
                 for sp in ("test", "select"):
